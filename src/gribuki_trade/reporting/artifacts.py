@@ -1,0 +1,271 @@
+"""Export a research report as searchable Markdown and readable PNG pages.
+
+QQ clients do not provide a dependable Markdown/LaTeX rendering contract.  The
+Markdown file is therefore the copyable archival form, while PNG pages are the
+portable visual form.  This module never sends either artifact over a network.
+"""
+
+from __future__ import annotations
+
+import html
+import os
+import re
+import uuid
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from PySide6.QtGui import QTextDocument
+
+_SECTION = re.compile(r"^[一二三四五六七八九十百]+、\S")
+_SAFE_STEM = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$")
+
+
+@dataclass(frozen=True, slots=True)
+class ReportArtifactBundle:
+    """Paths to one Markdown report and zero or more rendered PNG pages."""
+
+    markdown_path: Path
+    image_paths: tuple[Path, ...]
+
+
+def report_text_to_markdown(report_text: str) -> str:
+    """Convert the existing line-oriented QQ report into simple Markdown."""
+
+    normalized = report_text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized:
+        raise ValueError("report_text must not be empty")
+    output: list[str] = []
+    for index, raw_line in enumerate(normalized.splitlines()):
+        line = raw_line.rstrip()
+        if index == 0 and line.startswith("【") and line.endswith("】"):
+            output.append(f"# {line[1:-1]}")
+        elif _SECTION.match(line):
+            output.append(f"## {line}")
+        else:
+            output.append(line)
+    return "\n".join(output).rstrip() + "\n"
+
+
+def export_report_artifacts(
+    report_text: str,
+    output_dir: Path,
+    stem: str,
+    *,
+    render_images: bool = True,
+    overwrite: bool = False,
+    page_width: int = 1240,
+    page_height: int = 1754,
+) -> ReportArtifactBundle:
+    """Atomically export Markdown and, optionally, paginated PNG images."""
+
+    if not _SAFE_STEM.fullmatch(stem):
+        raise ValueError("stem must contain only safe ASCII filename characters")
+    if page_width < 640 or page_height < 800:
+        raise ValueError("rendered pages are too small for a readable report")
+    root = output_dir.resolve()
+    if root.exists() and root.is_symlink():
+        raise ValueError("output_dir must not be a symbolic link")
+    root.mkdir(parents=True, exist_ok=True)
+    markdown = report_text_to_markdown(report_text)
+    markdown_path = root / f"{stem}.md"
+    _atomic_write_text(markdown_path, markdown, overwrite=overwrite)
+    images: tuple[Path, ...] = ()
+    try:
+        if render_images:
+            images = _render_markdown_pages(
+                markdown,
+                root,
+                stem,
+                page_width=page_width,
+                page_height=page_height,
+                overwrite=overwrite,
+            )
+    except Exception:
+        if not overwrite:
+            markdown_path.unlink(missing_ok=True)
+        raise
+    return ReportArtifactBundle(markdown_path=markdown_path, image_paths=images)
+
+
+def _render_markdown_pages(
+    markdown: str,
+    output_dir: Path,
+    stem: str,
+    *,
+    page_width: int,
+    page_height: int,
+    overwrite: bool,
+) -> tuple[Path, ...]:
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import (
+        QColor,
+        QGuiApplication,
+        QImage,
+        QPainter,
+    )
+
+    application = QGuiApplication.instance()
+    owns_application = application is None
+    if application is None:
+        application = QGuiApplication([])
+    margin = 64
+    content_width = page_width - 2 * margin
+    content_height = page_height - 2 * margin - 42
+    fragments = _markdown_fragments(markdown)
+    pages: list[list[str]] = []
+    current: list[str] = []
+    for fragment in fragments:
+        candidate = [*current, fragment]
+        if current and _document_height(candidate, content_width) > content_height:
+            pages.append(current)
+            current = [fragment]
+        else:
+            current = candidate
+    if current:
+        pages.append(current)
+    if not pages:
+        raise ValueError("report did not contain renderable content")
+
+    destinations = tuple(
+        output_dir / f"{stem}-page-{index:02d}.png"
+        for index in range(1, len(pages) + 1)
+    )
+    if not overwrite:
+        collisions = [path for path in destinations if path.exists()]
+        if collisions:
+            raise FileExistsError("one or more report image pages already exist")
+
+    written: list[Path] = []
+    try:
+        for index, (fragments_on_page, destination) in enumerate(
+            zip(pages, destinations, strict=True),
+            start=1,
+        ):
+            document = _text_document(fragments_on_page, content_width)
+            image = QImage(page_width, page_height, QImage.Format.Format_RGB32)
+            image.fill(QColor("#f5f7fb"))
+            painter = QPainter(image)
+            try:
+                painter.translate(margin, margin)
+                document.drawContents(
+                    painter,
+                    QRectF(0, 0, content_width, content_height),
+                )
+                painter.resetTransform()
+                painter.setPen(QColor("#64748b"))
+                painter.drawText(
+                    margin,
+                    page_height - 28,
+                    f"Gribuki Trade · {index}/{len(pages)}",
+                )
+            finally:
+                painter.end()
+            temporary = destination.with_name(
+                f".{destination.name}.{uuid.uuid4().hex}.tmp.png"
+            )
+            if not image.save(str(temporary)):
+                raise RuntimeError("Qt failed to encode a report PNG")
+            if not overwrite and destination.exists():
+                temporary.unlink(missing_ok=True)
+                raise FileExistsError("report image page already exists")
+            os.replace(temporary, destination)
+            written.append(destination)
+    except Exception:
+        for path in written:
+            path.unlink(missing_ok=True)
+        raise
+    finally:
+        if owns_application:
+            application.quit()
+    return destinations
+
+
+def _document_height(fragments: list[str], width: int) -> float:
+    return float(_text_document(fragments, width).size().height())
+
+
+def _text_document(fragments: list[str], width: int) -> QTextDocument:
+    from PySide6.QtGui import QTextDocument
+
+    document = QTextDocument()
+    document.setDefaultStyleSheet(
+        "body{font-family:'Microsoft YaHei UI','PingFang SC',sans-serif;"
+        "font-size:17px;line-height:1.55;color:#172033;}"
+        "h1{font-size:30px;color:#0f3d6e;margin:0 0 18px 0;}"
+        "h2{font-size:23px;color:#165d96;margin:18px 0 9px 0;"
+        "border-bottom:1px solid #cbd5e1;padding-bottom:5px;}"
+        "p{margin:5px 0;}ul{margin:4px 0 7px 22px;}"
+        "li{margin:3px 0;}code{font-family:Consolas,monospace;"
+        "background:#e8eef6;color:#0f3d6e;padding:1px 3px;}"
+        ".evidence{color:#475569;font-size:15px;}"
+    )
+    document.setHtml("<html><body>" + "".join(fragments) + "</body></html>")
+    document.setTextWidth(width)
+    return document
+
+
+def _markdown_fragments(markdown: str) -> list[str]:
+    fragments: list[str] = []
+    in_list = False
+    for raw_line in markdown.splitlines():
+        line = raw_line.strip()
+        if not line:
+            if in_list:
+                fragments.append("</ul>")
+                in_list = False
+            fragments.append("<p>&nbsp;</p>")
+            continue
+        if line.startswith("# "):
+            if in_list:
+                fragments.append("</ul>")
+                in_list = False
+            fragments.append(f"<h1>{_inline(line[2:])}</h1>")
+        elif line.startswith("## "):
+            if in_list:
+                fragments.append("</ul>")
+                in_list = False
+            fragments.append(f"<h2>{_inline(line[3:])}</h2>")
+        elif line.startswith("- "):
+            if not in_list:
+                fragments.append("<ul>")
+                in_list = True
+            css_class = " class='evidence'" if "证据" in line else ""
+            fragments.append(f"<li{css_class}>{_inline(line[2:])}</li>")
+        else:
+            if in_list:
+                fragments.append("</ul>")
+                in_list = False
+            css_class = " class='evidence'" if line.startswith("来源：") else ""
+            fragments.append(f"<p{css_class}>{_inline(line)}</p>")
+    if in_list:
+        fragments.append("</ul>")
+    return fragments
+
+
+def _inline(value: str) -> str:
+    escaped = html.escape(value, quote=False)
+    # Backticks are sufficient for deterministic formula/identifier styling;
+    # mathematical meaning remains in the source text rather than a renderer.
+    pieces = escaped.split("`")
+    return "".join(
+        f"<code>{piece}</code>" if index % 2 else piece
+        for index, piece in enumerate(pieces)
+    )
+
+
+def _atomic_write_text(path: Path, text: str, *, overwrite: bool) -> None:
+    if path.exists() and not overwrite:
+        raise FileExistsError(f"report artifact already exists: {path.name}")
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with temporary.open("x", encoding="utf-8", newline="\n") as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if path.exists() and not overwrite:
+            raise FileExistsError(f"report artifact already exists: {path.name}")
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)

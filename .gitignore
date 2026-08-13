@@ -1,0 +1,39 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.reference/
+.ruff_cache/
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Local secrets and broker SDKs
+.env
+.env.*
+!.env.example
+/secrets/
+*.private.pem
+*.key
+*.p12
+*.pfx
+oauth_tokens*.json
+/vendor/
+/userdata_mini/
+
+# Runtime state and market data
+/runtime/
+/data/
+/logs/
+*.db
+*.db-shm
+*.db-wal
+*.duckdb
+*.parquet
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

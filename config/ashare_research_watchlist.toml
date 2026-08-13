@@ -1,0 +1,543 @@
+# Research coverage only. This file is not a portfolio, buy list, or order source.
+
+[watchlist]
+schema_version = 1
+id = "ashare-first-broad-coverage-v1"
+title = "首批多层级、多方向 A 股研究池"
+purpose = "覆盖市场、行业和风格状态，支持技术面与新闻研究；不表达买入建议。"
+verified_on = 2026-08-13
+verification_sources = [
+  "SSE/SZSE public security listings via AKShare stock_info_a_code_name",
+  "Public ETF quotes via AKShare fund_etf_spot_em",
+  "SSE 510300 product overview: https://www.sse.com.cn/disclosure/fund/announcement/c/new/2024-11-22/510300_20241122_7N07.pdf",
+  "CSI 300 methodology: https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/zh_CN/000300_Index_Methodology_cn.pdf",
+]
+default_symbols = [
+  "510300.SH",
+  "510500.SH",
+  "512100.SH",
+  "159915.SZ",
+  "588000.SH",
+  "600036.SH",
+  "600519.SH",
+  "000333.SZ",
+  "002594.SZ",
+  "300750.SZ",
+  "300308.SZ",
+  "688981.SH",
+  "688041.SH",
+  "688116.SH",
+  "002273.SZ",
+  "300037.SZ",
+  "600900.SH",
+  "601899.SH",
+]
+selection_rules = [
+  "以高辨识度和通常较高流动性的行业代表为核心，不按近期涨跌选股",
+  "同时覆盖沪深主板、创业板、科创板，以及大中小规模研究层级",
+  "覆盖金融、消费、制造、科技、医药、能源、资源、公用事业和交通运输",
+  "使用宽基、红利和行业 ETF 作为归因基准，避免将个股波动误判为市场信号",
+  "规模标签仅用于研究分层，不是实时市值排名，需在定期复核时更新",
+  "高波动、政策、商品、汇率、地缘和流动性风险均显式标注",
+]
+
+[[instrument]]
+symbol = "000333.SZ"
+name = "美的集团"
+asset_type = "stock"
+board = "szse_main"
+size_tier = "mega"
+industry = "家用电器与智能制造"
+styles = ["质量", "红利", "出海"]
+role = "耐用消费与全球制造景气基准"
+risk_tags = ["消费需求", "海外经营", "汇率"]
+
+[[instrument]]
+symbol = "000538.SZ"
+name = "云南白药"
+asset_type = "stock"
+board = "szse_main"
+size_tier = "large"
+industry = "中药与消费健康"
+styles = ["防御", "价值"]
+role = "医药防御与品牌消费交叉样本"
+risk_tags = ["医药政策", "品牌增长", "治理"]
+
+[[instrument]]
+symbol = "000725.SZ"
+name = "京东方Ａ"
+asset_type = "stock"
+board = "szse_main"
+size_tier = "large"
+industry = "显示面板"
+styles = ["周期", "科技", "反转"]
+role = "面板价格与电子景气周期观测"
+risk_tags = ["产品价格", "资本开支", "技术迭代"]
+
+[[instrument]]
+symbol = "000858.SZ"
+name = "五粮液"
+asset_type = "stock"
+board = "szse_main"
+size_tier = "mega"
+industry = "高端白酒"
+styles = ["质量", "消费"]
+role = "高端消费和渠道库存对照样本"
+risk_tags = ["消费需求", "渠道库存", "估值"]
+
+[[instrument]]
+symbol = "002230.SZ"
+name = "科大讯飞"
+asset_type = "stock"
+board = "szse_main"
+size_tier = "large"
+industry = "人工智能软件"
+styles = ["成长", "主题"]
+role = "国产大模型应用与政企业务观测"
+risk_tags = ["高估值", "订单兑现", "政策依赖"]
+
+[[instrument]]
+symbol = "002273.SZ"
+name = "水晶光电"
+asset_type = "stock"
+board = "szse_main"
+size_tier = "mid"
+industry = "消费电子光学"
+styles = ["成长", "出海", "中盘"]
+role = "中盘消费电子景气样本"
+risk_tags = ["客户集中", "汇率", "高波动"]
+
+[[instrument]]
+symbol = "002415.SZ"
+name = "海康威视"
+asset_type = "stock"
+board = "szse_main"
+size_tier = "large"
+industry = "智能物联与安防"
+styles = ["质量", "价值", "科技"]
+role = "AI 硬件与海外科技限制观测"
+risk_tags = ["出口限制", "数据合规", "海外经营"]
+
+[[instrument]]
+symbol = "002475.SZ"
+name = "立讯精密"
+asset_type = "stock"
+board = "szse_main"
+size_tier = "mega"
+industry = "消费电子制造"
+styles = ["成长", "出海", "制造"]
+role = "全球消费电子供应链样本"
+risk_tags = ["客户集中", "汇率", "供应链"]
+
+[[instrument]]
+symbol = "002594.SZ"
+name = "比亚迪"
+asset_type = "stock"
+board = "szse_main"
+size_tier = "mega"
+industry = "新能源汽车"
+styles = ["成长", "制造", "周期"]
+role = "整车、电池与出海链核心观测"
+risk_tags = ["价格竞争", "海外政策", "资本开支"]
+
+[[instrument]]
+symbol = "300037.SZ"
+name = "新宙邦"
+asset_type = "stock"
+board = "chinext"
+size_tier = "mid"
+industry = "新能源材料"
+styles = ["成长", "周期", "中盘"]
+role = "电池材料供需与价格周期样本"
+risk_tags = ["产能过剩", "产品价格", "技术替代"]
+
+[[instrument]]
+symbol = "300059.SZ"
+name = "东方财富"
+asset_type = "stock"
+board = "chinext"
+size_tier = "large"
+industry = "互联网券商与金融信息"
+styles = ["成长", "高贝塔", "金融"]
+role = "个人投资者情绪与成交活跃度代理"
+risk_tags = ["市场成交", "金融监管", "高波动"]
+
+[[instrument]]
+symbol = "300124.SZ"
+name = "汇川技术"
+asset_type = "stock"
+board = "chinext"
+size_tier = "large"
+industry = "工业自动化"
+styles = ["成长", "制造"]
+role = "制造业资本开支与自动化渗透观测"
+risk_tags = ["制造业需求", "行业竞争", "估值"]
+
+[[instrument]]
+symbol = "300308.SZ"
+name = "中际旭创"
+asset_type = "stock"
+board = "chinext"
+size_tier = "mega"
+industry = "光通信"
+styles = ["成长", "人工智能", "出海"]
+role = "AI 算力基础设施与海外需求样本"
+risk_tags = ["客户集中", "高估值", "汇率"]
+
+[[instrument]]
+symbol = "300750.SZ"
+name = "宁德时代"
+asset_type = "stock"
+board = "chinext"
+size_tier = "mega"
+industry = "动力与储能电池"
+styles = ["成长", "制造", "新能源"]
+role = "动力电池、储能和全球新能源链基准"
+risk_tags = ["产品价格", "技术迭代", "地缘政策"]
+
+[[instrument]]
+symbol = "300760.SZ"
+name = "迈瑞医疗"
+asset_type = "stock"
+board = "chinext"
+size_tier = "large"
+industry = "医疗器械"
+styles = ["质量", "成长", "防御"]
+role = "医疗设备需求与国产替代观测"
+risk_tags = ["集中采购", "医疗监管", "海外经营"]
+
+[[instrument]]
+symbol = "600009.SH"
+name = "上海机场"
+asset_type = "stock"
+board = "sse_main"
+size_tier = "large"
+industry = "机场与航空服务"
+styles = ["消费复苏", "交通运输"]
+role = "航空客流、商务出行与免税消费观测"
+risk_tags = ["客流波动", "免税业务", "特许经营"]
+
+[[instrument]]
+symbol = "600028.SH"
+name = "中国石化"
+asset_type = "stock"
+board = "sse_main"
+size_tier = "mega"
+industry = "石油石化"
+styles = ["红利", "周期", "价值"]
+role = "原油、炼化价差与能源政策基准"
+risk_tags = ["商品价格", "炼化价差", "政策定价"]
+
+[[instrument]]
+symbol = "600030.SH"
+name = "中信证券"
+asset_type = "stock"
+board = "sse_main"
+size_tier = "mega"
+industry = "证券"
+styles = ["高贝塔", "价值", "金融"]
+role = "资本市场活跃度与风险偏好基准"
+risk_tags = ["市场成交", "金融监管", "自营波动"]
+
+[[instrument]]
+symbol = "600036.SH"
+name = "招商银行"
+asset_type = "stock"
+board = "sse_main"
+size_tier = "mega"
+industry = "银行"
+styles = ["质量", "红利", "价值"]
+role = "银行资产质量、利率与零售金融观测"
+risk_tags = ["净息差", "资产质量", "房地产敞口"]
+
+[[instrument]]
+symbol = "600050.SH"
+name = "中国联通"
+asset_type = "stock"
+board = "sse_main"
+size_tier = "mega"
+industry = "通信运营"
+styles = ["红利", "数字基建", "价值"]
+role = "通信运营、云网和数字基础设施样本"
+risk_tags = ["资本开支", "行业监管", "云业务竞争"]
+
+[[instrument]]
+symbol = "600276.SH"
+name = "恒瑞医药"
+asset_type = "stock"
+board = "sse_main"
+size_tier = "large"
+industry = "创新药"
+styles = ["成长", "防御", "研发"]
+role = "创新药研发、审批与商业化观测"
+risk_tags = ["研发失败", "药品审批", "集中采购"]
+
+[[instrument]]
+symbol = "600309.SH"
+name = "万华化学"
+asset_type = "stock"
+board = "sse_main"
+size_tier = "large"
+industry = "化工新材料"
+styles = ["周期", "成长", "制造"]
+role = "化工品价格、出口和制造成本观测"
+risk_tags = ["商品价格", "资本开支", "海外需求"]
+
+[[instrument]]
+symbol = "600519.SH"
+name = "贵州茅台"
+asset_type = "stock"
+board = "sse_main"
+size_tier = "mega"
+industry = "高端白酒"
+styles = ["质量", "消费"]
+role = "高端消费、渠道和核心资产风险偏好基准"
+risk_tags = ["消费需求", "渠道库存", "估值"]
+
+[[instrument]]
+symbol = "600585.SH"
+name = "海螺水泥"
+asset_type = "stock"
+board = "sse_main"
+size_tier = "large"
+industry = "水泥建材"
+styles = ["价值", "周期", "红利"]
+role = "地产、基建与传统材料需求代理"
+risk_tags = ["房地产周期", "需求收缩", "碳成本"]
+
+[[instrument]]
+symbol = "600690.SH"
+name = "海尔智家"
+asset_type = "stock"
+board = "sse_main"
+size_tier = "large"
+industry = "家用电器"
+styles = ["质量", "出海", "消费"]
+role = "全球耐用消费与品牌出海样本"
+risk_tags = ["海外经营", "汇率", "消费需求"]
+
+[[instrument]]
+symbol = "600900.SH"
+name = "长江电力"
+asset_type = "stock"
+board = "sse_main"
+size_tier = "mega"
+industry = "水力发电"
+styles = ["红利", "防御", "低波动"]
+role = "公用事业、防御风格与利率敏感度基准"
+risk_tags = ["来水波动", "电价监管", "利率"]
+
+[[instrument]]
+symbol = "601088.SH"
+name = "中国神华"
+asset_type = "stock"
+board = "sse_main"
+size_tier = "mega"
+industry = "煤炭与电力"
+styles = ["红利", "周期", "价值"]
+role = "煤价、能源安全与高股息风格观测"
+risk_tags = ["煤炭价格", "能源政策", "碳约束"]
+
+[[instrument]]
+symbol = "601318.SH"
+name = "中国平安"
+asset_type = "stock"
+board = "sse_main"
+size_tier = "mega"
+industry = "保险"
+styles = ["价值", "红利", "金融"]
+role = "保险负债端、长端利率与权益风险观测"
+risk_tags = ["利率", "投资收益", "房地产敞口"]
+
+[[instrument]]
+symbol = "601899.SH"
+name = "紫金矿业"
+asset_type = "stock"
+board = "sse_main"
+size_tier = "mega"
+industry = "有色金属矿业"
+styles = ["周期", "成长", "资源"]
+role = "黄金、铜与全球资源资本开支观测"
+risk_tags = ["商品价格", "海外经营", "地缘政治"]
+
+[[instrument]]
+symbol = "601919.SH"
+name = "中远海控"
+asset_type = "stock"
+board = "sse_main"
+size_tier = "large"
+industry = "集装箱航运"
+styles = ["周期", "红利", "交通运输"]
+role = "外贸、运价与全球供应链压力代理"
+risk_tags = ["运价波动", "地缘政治", "运力供给"]
+
+[[instrument]]
+symbol = "603606.SH"
+name = "东方电缆"
+asset_type = "stock"
+board = "sse_main"
+size_tier = "mid"
+industry = "海缆与电网设备"
+styles = ["成长", "制造", "中盘"]
+role = "海上风电、电网投资与中盘制造样本"
+risk_tags = ["项目交付", "客户集中", "原材料价格"]
+
+[[instrument]]
+symbol = "688012.SH"
+name = "中微公司"
+asset_type = "stock"
+board = "star"
+size_tier = "large"
+industry = "半导体设备"
+styles = ["成长", "科技", "国产替代"]
+role = "晶圆厂资本开支与设备国产化观测"
+risk_tags = ["出口限制", "高估值", "研发执行"]
+
+[[instrument]]
+symbol = "688041.SH"
+name = "海光信息"
+asset_type = "stock"
+board = "star"
+size_tier = "mega"
+industry = "计算芯片"
+styles = ["成长", "人工智能", "国产替代"]
+role = "国产算力供需与自主芯片生态观测"
+risk_tags = ["出口限制", "高估值", "供应链"]
+
+[[instrument]]
+symbol = "688111.SH"
+name = "金山办公"
+asset_type = "stock"
+board = "star"
+size_tier = "large"
+industry = "办公软件"
+styles = ["成长", "软件", "订阅"]
+role = "企业软件、订阅化与 AI 应用样本"
+risk_tags = ["高估值", "行业竞争", "政策采购"]
+
+[[instrument]]
+symbol = "688116.SH"
+name = "天奈科技"
+asset_type = "stock"
+board = "star"
+size_tier = "small"
+industry = "碳纳米管材料"
+styles = ["成长", "小盘", "新能源"]
+role = "小盘科创与新材料风险偏好样本"
+risk_tags = ["流动性", "客户集中", "产能扩张", "高波动"]
+
+[[instrument]]
+symbol = "688981.SH"
+name = "中芯国际"
+asset_type = "stock"
+board = "star"
+size_tier = "mega"
+industry = "晶圆代工"
+styles = ["成长", "周期", "国产替代"]
+role = "半导体景气、制程投资与国产化基准"
+risk_tags = ["出口限制", "资本开支", "技术迭代"]
+
+[[instrument]]
+symbol = "159915.SZ"
+name = "创业板ETF易方达"
+asset_type = "etf"
+board = "szse_etf"
+size_tier = "cross_size"
+industry = "宽基指数"
+styles = ["成长", "高贝塔"]
+role = "创业板个股的市场与风格归因基准"
+risk_tags = ["高波动", "行业集中", "跟踪误差"]
+
+[[instrument]]
+symbol = "510300.SH"
+name = "华泰柏瑞沪深300交易型开放式指数证券投资基金"
+asset_type = "etf"
+board = "sse_etf"
+size_tier = "mega"
+industry = "宽基指数"
+styles = ["大盘", "核心资产", "市值加权", "被动指数"]
+role = "华泰柏瑞基金管理的沪深300指数股票型ETF；基金合同于2012-05-04生效，2012-05-28在上交所上市，主要采用完全复制策略跟踪沪深300指数，作为A股大盘与核心资产系统性风险基准"
+risk_tags = ["市场风险", "跟踪误差", "折溢价", "成分集中"]
+background = [
+  "基金管理人：华泰柏瑞基金管理有限公司；基金托管人：中国工商银行股份有限公司",
+  "基金合同生效日：2012-05-04；上交所上市日：2012-05-28",
+  "标的指数：沪深300指数；普通情况下投资于标的指数成份股及备选成份股的比例不低于基金资产净值的95%",
+  "主要投资方法：完全复制法，目标是紧密跟踪标的指数并尽量降低跟踪偏离度和跟踪误差",
+]
+
+[[instrument]]
+symbol = "510500.SH"
+name = "中证500ETF南方"
+asset_type = "etf"
+board = "sse_etf"
+size_tier = "mid"
+industry = "宽基指数"
+styles = ["中盘", "均衡"]
+role = "中盘股相对大盘的风格基准"
+risk_tags = ["市场风险", "风格切换", "跟踪误差"]
+
+[[instrument]]
+symbol = "510880.SH"
+name = "红利ETF华泰柏瑞"
+asset_type = "etf"
+board = "sse_etf"
+size_tier = "cross_size"
+industry = "红利指数"
+styles = ["红利", "价值", "防御"]
+role = "高股息与低估值风格归因基准"
+risk_tags = ["行业集中", "利率", "跟踪误差"]
+
+[[instrument]]
+symbol = "512100.SH"
+name = "中证1000ETF南方"
+asset_type = "etf"
+board = "sse_etf"
+size_tier = "small"
+industry = "宽基指数"
+styles = ["小盘", "高贝塔"]
+role = "小盘风格与流动性风险基准"
+risk_tags = ["高波动", "流动性", "跟踪误差"]
+
+[[instrument]]
+symbol = "512480.SH"
+name = "半导体ETF国联安"
+asset_type = "etf"
+board = "sse_etf"
+size_tier = "cross_size"
+industry = "半导体"
+styles = ["成长", "科技", "周期"]
+role = "半导体个股的行业归因基准"
+risk_tags = ["行业集中", "出口限制", "高波动", "跟踪误差"]
+
+[[instrument]]
+symbol = "512880.SH"
+name = "证券ETF国泰"
+asset_type = "etf"
+board = "sse_etf"
+size_tier = "cross_size"
+industry = "证券"
+styles = ["高贝塔", "金融"]
+role = "成交活跃度与风险偏好行业基准"
+risk_tags = ["行业集中", "金融监管", "高波动", "跟踪误差"]
+
+[[instrument]]
+symbol = "515030.SH"
+name = "新能源车ETF华夏"
+asset_type = "etf"
+board = "sse_etf"
+size_tier = "cross_size"
+industry = "新能源汽车产业链"
+styles = ["成长", "新能源", "周期"]
+role = "整车、电池和材料个股的行业归因基准"
+risk_tags = ["行业集中", "价格竞争", "高波动", "跟踪误差"]
+
+[[instrument]]
+symbol = "588000.SH"
+name = "科创50ETF华夏"
+asset_type = "etf"
+board = "sse_etf"
+size_tier = "cross_size"
+industry = "宽基指数"
+styles = ["科创", "成长", "高贝塔"]
+role = "科创板个股的市场与风格归因基准"
+risk_tags = ["高波动", "行业集中", "跟踪误差"]

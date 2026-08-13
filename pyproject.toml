@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gribuki-trade"
+version = "0.1.0"
+description = "Cross-platform Python trading workstation with an A-share first implementation"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { text = "Proprietary - personal use" }
+authors = [{ name = "Gribuki Trade" }]
+dependencies = [
+    "akshare>=1.18.84,<1.19",
+    "baostock>=0.9.3,<0.10",
+    "httpx>=0.28.1,<0.29",
+    "keyring>=25.6,<26",
+    "pandas>=3.0.5,<3.1",
+    "pyqtgraph>=0.14,<0.15",
+    "PySide6>=6.11.1,<6.12",
+    "websockets>=15,<16",
+]
+
+[project.scripts]
+gribuki-trade = "gribuki_trade.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.15,<2",
+    "pytest>=9.1.1,<10",
+    "ruff>=0.11,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gribuki_trade"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["baostock", "pyqtgraph"]
+ignore_missing_imports = true
