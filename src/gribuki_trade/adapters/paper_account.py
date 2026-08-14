@@ -1,16 +1,12 @@
-"""Decimal-only balance reservations for local Binance Spot paper trading.
+"""用于本地 Binance 现货模拟交易的纯 Decimal 余额预留。
 
-The paper broker models order state and executions.  This module models the
-other half of a Spot exchange: free/locked asset balances and quote-denominated
-fees.  It is deliberately synchronous because one paper engine owns it and
-serializes mutations; immutable snapshots are safe to hand to strategies and
-the GUI.
+模拟经纪商负责订单状态和成交，本模块则描述现货交易所的另一半：可用/锁定
+资产余额以及以计价资产计收的费用。模块刻意采用同步实现，因为单个模拟引擎
+拥有它并串行化变更；不可变快照可以安全地交给策略和图形界面。
 
-Buy fees are charged in the quote asset.  A buy therefore reserves its limit
-notional plus a configurable fee buffer.  Sell orders reserve base quantity
-and deduct their fee from quote proceeds.  This conservative convention is
-deterministic and does not pretend that a simulated account has a BNB fee-token
-balance.
+买入手续费从计价资产中收取，因此买单会预留限价名义金额及可配置的手续费
+缓冲。卖单预留基础资产数量，并从计价资产收入中扣除费用。这一保守约定具有
+确定性，也不会假装模拟账户持有 BNB 手续费代币余额。
 """
 
 from __future__ import annotations
@@ -24,14 +20,14 @@ from gribuki_trade.domain.orders import OrderIntent, Side
 
 
 class PaperLiquidityRole(StrEnum):
-    """Liquidity role used to select the simulated commission rate."""
+    """用于选择模拟佣金率的流动性角色。"""
 
     MAKER = "MAKER"
     TAKER = "TAKER"
 
 
 class PaperReservationStatus(StrEnum):
-    """Lifecycle of one paper-account asset reservation."""
+    """一笔模拟账户资产预留的生命周期。"""
 
     ACTIVE = "ACTIVE"
     FILLED = "FILLED"
@@ -39,12 +35,12 @@ class PaperReservationStatus(StrEnum):
 
 
 class InsufficientPaperBalance(ValueError):
-    """An order cannot reserve enough free assets without going negative."""
+    """订单无法在不造成负余额的情况下预留足够的可用资产。"""
 
 
 @dataclass(frozen=True, slots=True)
 class SpotSymbolAssets:
-    """Explicit base/quote assets for one Binance-style Spot symbol."""
+    """一个 Binance 风格现货代码所对应的明确基础资产和计价资产。"""
 
     base_asset: str
     quote_asset: str
@@ -60,11 +56,10 @@ class SpotSymbolAssets:
 
 @dataclass(frozen=True, slots=True)
 class PaperFeeSchedule:
-    """Maker/taker fees and the buffer reserved by limit buys.
+    """挂单方/吃单方费率，以及限价买单预留的缓冲。
 
-    ``buy_fee_buffer_rate`` defaults to the larger execution rate.  An
-    explicit buffer may be larger, but may not be smaller, otherwise a valid
-    execution could require more quote asset than the order reserved.
+    ``buy_fee_buffer_rate`` 默认取较大的成交费率。明确指定的缓冲可以更大，
+    但不能更小，否则有效成交可能需要比订单预留更多的计价资产。
     """
 
     maker_rate: Decimal = Decimal("0.001")
@@ -92,7 +87,7 @@ class PaperFeeSchedule:
 
 @dataclass(frozen=True, slots=True)
 class PaperAssetBalance:
-    """One immutable free/locked balance projection."""
+    """一份不可变的可用/锁定余额投影。"""
 
     asset: str
     free: Decimal
@@ -105,7 +100,7 @@ class PaperAssetBalance:
 
 @dataclass(frozen=True, slots=True)
 class PaperOrderReservation:
-    """Latest immutable reservation state for an order."""
+    """订单最新的不可变预留状态。"""
 
     order: OrderIntent
     base_asset: str
@@ -118,7 +113,7 @@ class PaperOrderReservation:
 
 @dataclass(frozen=True, slots=True)
 class PaperAccountFill:
-    """Accounting result of one idempotent simulated execution."""
+    """一笔幂等模拟成交的账务结果。"""
 
     fill_id: str
     client_order_id: str
@@ -135,7 +130,7 @@ class PaperAccountFill:
 
 @dataclass(frozen=True, slots=True)
 class PaperAccountSnapshot:
-    """Immutable point-in-time balances for strategy and UI readers."""
+    """供策略和界面读取的不可变时点余额。"""
 
     sequence: int
     balances: tuple[PaperAssetBalance, ...]
@@ -177,11 +172,10 @@ class _MutableReservation:
 
 
 class PaperSpotAccount:
-    """In-memory Spot account with atomic reservations and fill accounting.
+    """支持原子预留和成交记账的内存现货账户。
 
-    Symbol parsing is intentionally never guessed.  Callers must provide the
-    exchange's base/quote metadata, preventing ambiguous symbols such as
-    ``ETHUSDT`` from being split using a fragile suffix heuristic.
+    系统刻意不猜测代码拆分方式。调用方必须提供交易所的基础/计价资产元数据，
+    从而避免使用脆弱的后缀启发式规则拆分 ``ETHUSDT`` 等有歧义的代码。
     """
 
     def __init__(
@@ -225,7 +219,7 @@ class PaperSpotAccount:
         self._sequence = 0
 
     def balance(self, asset: str) -> PaperAssetBalance:
-        """Return an immutable balance; unknown assets read as zero."""
+        """返回不可变余额；未知资产按零读取。"""
 
         normalized = _asset(asset)
         value = self._balances.get(normalized)
@@ -234,7 +228,7 @@ class PaperSpotAccount:
         return PaperAssetBalance(normalized, value.free, value.locked)
 
     def balances(self) -> tuple[PaperAssetBalance, ...]:
-        """Return all materialized balances in deterministic asset order."""
+        """按确定的资产顺序返回所有已实体化余额。"""
 
         return tuple(self.balance(asset) for asset in sorted(self._balances))
 
@@ -249,10 +243,10 @@ class PaperSpotAccount:
         return tuple(self._fills.values())
 
     def reserve_order(self, order: OrderIntent) -> PaperOrderReservation:
-        """Move required free assets to locked before broker submission.
+        """提交给经纪商前，将所需可用资产转为锁定状态。
 
-        Repeating an identical order is idempotent, including after it became
-        terminal.  Reusing an identifier for different contents is rejected.
+        重复相同订单具有幂等性，即使订单已经终结也是如此。系统会拒绝把同一
+        标识符用于不同内容。
         """
 
         existing = self._reservations.get(order.client_order_id)
@@ -314,7 +308,7 @@ class PaperSpotAccount:
         fill_id: str,
         liquidity_role: PaperLiquidityRole | str = PaperLiquidityRole.TAKER,
     ) -> PaperAccountFill:
-        """Atomically consume a reservation, charge fee, and credit proceeds."""
+        """原子消耗预留、收取手续费并记入成交收入。"""
 
         normalized_fill_id = fill_id.strip()
         if not normalized_fill_id:
@@ -388,8 +382,8 @@ class PaperSpotAccount:
         reservation.locked_amount -= consumed_locked
         reservation.remaining_quantity -= normalized_quantity
         if reservation.remaining_quantity == 0:
-            # All reservation arithmetic uses exact Decimal operations.  Keep
-            # this invariant explicit so a future quantizer cannot leak dust.
+            # 所有预留运算均使用精确的 Decimal 操作。明确保留这一不变量，
+            # 避免未来的量化器泄漏零碎余额。
             if reservation.locked_amount != 0:
                 terminal_release = reservation.locked_amount
                 locked = self._mutable_balance(reservation.locked_asset)
@@ -420,7 +414,7 @@ class PaperSpotAccount:
         return receipt
 
     def cancel_order(self, client_order_id: str) -> PaperOrderReservation:
-        """Release every unfilled asset reservation; repeated cancel is safe."""
+        """释放所有未成交资产预留；重复取消是安全的。"""
 
         reservation = self._reservations.get(client_order_id)
         if reservation is None:

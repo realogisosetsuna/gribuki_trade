@@ -1,9 +1,9 @@
-"""After-close A-share analysis for the next explicitly bounded session."""
+"""面向下一明确有界交易日的 A 股盘后分析。"""
 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
@@ -44,6 +44,12 @@ from gribuki_trade.ports.market_data import (
     MarketDataUnavailableError,
 )
 from gribuki_trade.ports.notifier import OutboundNotification
+from gribuki_trade.reporting.contracts import (
+    ReportKind,
+    humanize_codes,
+    humanize_internal_code,
+    render_stable_text_report,
+)
 from gribuki_trade.services.ashare_breadth_evidence import (
     AShareBreadthEvidenceBundle,
 )
@@ -282,7 +288,7 @@ class AShareCloseAnalysisRequest:
 
 @dataclass(frozen=True, slots=True)
 class AShareCloseMarketDataCollection:
-    """One immutable daily-data result captured before news/model work."""
+    """在新闻/模型工作前捕获的一份不可变日线数据结果。"""
 
     bars: tuple[DailyBar, ...]
     fetched_at: datetime
@@ -305,6 +311,11 @@ class AShareCloseAnalysisRun:
     macro: MacroAnalysis | None
     daily_bar_count: int
     calendar_verified: bool
+    baseline_macro: MacroAnalysis | None = None
+    adversarial_macro: MacroAnalysis | None = None
+    macro_selected_track: str | None = None
+    macro_dual_audit_document: Mapping[str, object] | None = None
+    macro_audit_record_sha256: str | None = None
     market_data_failure_code: str | None = None
     macro_failure_code: str | None = None
     ashare_context_failure_codes: tuple[str, ...] = ()
@@ -327,7 +338,7 @@ class AShareCloseAnalysisRun:
 
 
 class AShareCloseAnalysisService:
-    """Combine completed daily bars and bounded news evidence after the close."""
+    """收盘后组合已完成日线柱与有界新闻证据。"""
 
     def __init__(
         self,
@@ -350,7 +361,7 @@ class AShareCloseAnalysisService:
         self,
         request: AShareCloseAnalysisRequest,
     ) -> AShareCloseMarketDataCollection:
-        """Fetch unadjusted daily bars before any optional model invocation."""
+        """在任何可选模型调用前拉取未复权日线柱。"""
 
         failure_code: str | None = None
         source_name: str | None = None
@@ -410,7 +421,7 @@ class AShareCloseAnalysisService:
         *,
         notification_target: ResearchNotificationTarget | None = None,
     ) -> AShareCloseAnalysisRun:
-        """Evaluate an already captured daily-data result against bounded evidence."""
+        """根据有界证据评估已经捕获的日线数据结果。"""
 
         inferred_as_of = collection.fetched_at
         if request.ashare_breadth_snapshot is not None:
@@ -546,6 +557,11 @@ class AShareCloseAnalysisService:
 
         macro: MacroAnalysis | None = None
         macro_failure: str | None = None
+        baseline_macro: MacroAnalysis | None = None
+        adversarial_macro: MacroAnalysis | None = None
+        macro_selected_track: str | None = None
+        macro_dual_audit_document: Mapping[str, object] | None = None
+        macro_audit_record_sha256: str | None = None
         if assessment.decision is RecommendationDecision.ABSTAIN:
             selection = select_macro_evidence(
                 request.canonical_symbol,
@@ -591,6 +607,11 @@ class AShareCloseAnalysisService:
                 ),
             )
             macro = macro_run.analysis
+            baseline_macro = macro_run.baseline_analysis
+            adversarial_macro = macro_run.adversarial_analysis
+            macro_selected_track = macro_run.selected_track
+            macro_dual_audit_document = macro_run.dual_audit_document
+            macro_audit_record_sha256 = macro_run.dual_audit_record_sha256
             selection = macro_run.selection
             macro_failure = macro_run.failure_code
 
@@ -724,6 +745,11 @@ class AShareCloseAnalysisService:
                 macro=macro,
                 daily_bar_count=len(bars),
                 calendar_verified=request.calendar_verified,
+                baseline_macro=baseline_macro,
+                adversarial_macro=adversarial_macro,
+                macro_selected_track=macro_selected_track,
+                macro_dual_audit_document=macro_dual_audit_document,
+                macro_audit_record_sha256=macro_audit_record_sha256,
                 market_data_failure_code=market_failure,
                 macro_failure_code=macro_failure,
                 ashare_context_failure_codes=request.ashare_context_failure_codes,
@@ -768,6 +794,10 @@ class AShareCloseAnalysisService:
             cross_market_relation_report_lines=relation_report_lines,
             cross_market_history_failure_code=relation_failure,
             evidence_selection=selection,
+            baseline_macro=baseline_macro,
+            adversarial_macro=adversarial_macro,
+            selected_track=macro_selected_track,
+            audit_record_sha256=macro_audit_record_sha256,
         )
         for notification in notifications:
             self._outbox.enqueue(notification)
@@ -778,6 +808,11 @@ class AShareCloseAnalysisService:
             macro=macro,
             daily_bar_count=len(bars),
             calendar_verified=request.calendar_verified,
+            baseline_macro=baseline_macro,
+            adversarial_macro=adversarial_macro,
+            macro_selected_track=macro_selected_track,
+            macro_dual_audit_document=macro_dual_audit_document,
+            macro_audit_record_sha256=macro_audit_record_sha256,
             market_data_failure_code=market_failure,
             macro_failure_code=macro_failure,
             ashare_context_failure_codes=request.ashare_context_failure_codes,
@@ -808,7 +843,7 @@ class AShareCloseAnalysisService:
         *,
         as_of: datetime | None = None,
     ) -> CloseTechnicalAssessment:
-        """Build only the deterministic assessment, without reading an API key."""
+        """只构建确定性评估，不读取 API 密钥。"""
 
         decision_time = as_of or request.as_of or collection.fetched_at
         _require_aware(decision_time, "as_of")
@@ -836,7 +871,7 @@ def _with_breadth_context(
     assessment: CloseTechnicalAssessment,
     snapshot: AShareBreadthSnapshot,
 ) -> CloseTechnicalAssessment:
-    """Attach audited breadth diagnostics without inventing a calibrated weight."""
+    """附加经审计的市场宽度诊断，且不虚构已校准权重。"""
 
     metrics: tuple[tuple[str, Decimal], ...] = (
         ("breadth_eligible_count", Decimal(snapshot.eligible_count)),
@@ -912,6 +947,10 @@ def format_close_analysis_notification(
     cross_market_relation_report_lines: tuple[str, ...] = (),
     cross_market_history_failure_code: str | None = None,
     evidence_selection: EvidenceSelection | None = None,
+    baseline_macro: MacroAnalysis | None = None,
+    adversarial_macro: MacroAnalysis | None = None,
+    selected_track: str | None = None,
+    audit_record_sha256: str | None = None,
 ) -> OutboundNotification:
     metrics = dict(assessment.metrics)
     profile = recommendation.instrument_profile
@@ -1053,6 +1092,16 @@ def format_close_analysis_notification(
         lines.append("本次未采集跨市场历史关系。")
     if macro is not None:
         lines.extend(("", "七、宏观、新闻与市场传导"))
+        if baseline_macro is not None and adversarial_macro is not None:
+            lines.extend(
+                _dual_track_report_lines(
+                    baseline_macro,
+                    adversarial_macro,
+                    selected_track=selected_track,
+                    audit_record_sha256=audit_record_sha256,
+                    evidence_numbers=evidence_numbers,
+                )
+            )
         lines.append(
             f"模型结论：{macro.decision.value}；环境判断："
             f"{_humanize_model_text(macro.regime, evidence_numbers)}；"
@@ -1070,7 +1119,8 @@ def format_close_analysis_notification(
                 f"{evidence_selection.stale_rejected} 条；不相关排除 "
                 f"{evidence_selection.irrelevant_rejected} 条；重复排除 "
                 f"{evidence_selection.duplicate_rejected} 条；疑似提示注入排除 "
-                f"{evidence_selection.injection_rejected} 条。"
+                f"{evidence_selection.injection_rejected} 条；未获独立印证的公共媒体 "
+                f"{evidence_selection.uncorroborated_public_media} 条。"
             )
         for claim in macro.claims[:6]:
             lines.append(
@@ -1124,13 +1174,28 @@ def format_close_analysis_notification(
                 f"{_evidence_display_title(item, recommendation.symbol)}"
             )
             lines.append(f"  来源：{_evidence_destination(item.canonical_url)}")
-    text = "\n".join(lines)
+    detailed_text = "\n".join(lines)
+    text = _contractualize_close_analysis_report(
+        detailed_text=detailed_text,
+        recommendation=recommendation,
+        assessment=assessment,
+        macro=macro,
+        baseline_macro=baseline_macro,
+        adversarial_macro=adversarial_macro,
+        selected_track=selected_track,
+        audit_record_sha256=audit_record_sha256,
+        evidence_selection=evidence_selection,
+        evidence_count=len(report_evidence),
+    )
     if len(text) > target.max_characters:
-        truncated = text[: target.max_characters - 1]
-        last_line_break = truncated.rfind("\n")
-        if last_line_break >= target.max_characters // 2:
-            truncated = truncated[:last_line_break]
-        text = truncated + "…"
+        text = _split_contractual_instrument_report(
+            text,
+            max_characters=target.max_characters,
+            recommendation=recommendation,
+            assessment=assessment,
+            dual_track=(baseline_macro is not None and adversarial_macro is not None),
+            selected_track=selected_track,
+        )[0]
     destination_hash = sha256(
         f"{target.channel}|{target.target_kind.value}|{target.target_id}".encode()
     ).hexdigest()[:16]
@@ -1145,6 +1210,117 @@ def format_close_analysis_notification(
         text=text,
         created_at=recommendation.as_of,
         expires_at=recommendation.expires_at,
+    )
+
+
+def _contractualize_close_analysis_report(
+    *,
+    detailed_text: str,
+    recommendation: ResearchRecommendation,
+    assessment: CloseTechnicalAssessment,
+    macro: MacroAnalysis | None,
+    baseline_macro: MacroAnalysis | None,
+    adversarial_macro: MacroAnalysis | None,
+    selected_track: str | None,
+    audit_record_sha256: str | None,
+    evidence_selection: EvidenceSelection | None,
+    evidence_count: int,
+) -> str:
+    """在保留完整研究明细的同时，给长报告加上稳定的五节用户骨架。"""
+
+    conclusion = "\n".join(
+        (
+            f"标的：{recommendation.symbol}",
+            f"适用交易日：{assessment.next_session.isoformat()}",
+            f"研究结论：{_DECISION_ZH[recommendation.decision]}",
+            f"技术评分：{_display_score(recommendation.technical_score)}；宏观评分："
+            f"{_display_score(recommendation.macro_score)}；综合评分："
+            f"{_display_score(recommendation.combined_score)}（均不是收益概率）。",
+            f"参考收盘价：{_display_decimal(recommendation.reference_price)}",
+        )
+    )
+    technical_lines = [
+        f"数据使用 {assessment.trading_sessions_used} 个交易日；策略版本："
+        f"{assessment.strategy_version}。",
+        *(
+            f"- {_FAMILY_ZH.get(family.family_id, family.family_id)}：{family.summary}；"
+            f"方向贡献 {_display_score(family.contribution)}。"
+            for family in assessment.signal_families
+        ),
+        f"研究原因：{humanize_codes(recommendation.reason_codes)}。",
+    ]
+    if macro is None:
+        macro_lines = [
+            "本次没有可用宏观模型结论，综合结果不得被解释为已经完成宏观复核。",
+            f"可追溯证据数量：{evidence_count}。",
+        ]
+    else:
+        coverage = (
+            "未单独记录选择统计"
+            if evidence_selection is None
+            else (
+                f"采用 {len(evidence_selection.items)} 条；排除未来 "
+                f"{evidence_selection.future_rejected} 条、过期 "
+                f"{evidence_selection.stale_rejected} 条、不相关 "
+                f"{evidence_selection.irrelevant_rejected} 条、重复 "
+                f"{evidence_selection.duplicate_rejected} 条"
+            )
+        )
+        macro_lines = [
+            f"最终宏观结论：{humanize_internal_code(macro.decision.value)}；环境判断："
+            f"{_single_line(macro.regime)}。",
+            f"证据选择：{coverage}；报告证据索引 {evidence_count} 条。",
+            *(_single_line(claim.text) for claim in macro.claims[:4]),
+        ]
+    if baseline_macro is not None and adversarial_macro is not None:
+        available_evidence = {item.evidence_id for item in recommendation.evidence}
+        adversarial_lines = [
+            "两条轨道使用同一份冻结证据，报告同时保留，生产决策优先采用结构化对抗轨道。",
+            f"原单分析器：{humanize_internal_code(baseline_macro.decision.value)}；"
+            f"宏观倾向 {_display_decimal(baseline_macro.macro_impact)}；"
+            f"证据覆盖 {_track_evidence_coverage(baseline_macro, available_evidence)}；"
+            f"{_single_line(baseline_macro.regime)}。",
+            f"结构化对抗分析器：{humanize_internal_code(adversarial_macro.decision.value)}；"
+            f"宏观倾向 {_display_decimal(adversarial_macro.macro_impact)}；"
+            f"证据覆盖 {_track_evidence_coverage(adversarial_macro, available_evidence)}；"
+            f"{_single_line(adversarial_macro.regime)}。",
+            f"生产采用轨道：{humanize_internal_code(selected_track)}；审计摘要："
+            f"{audit_record_sha256 or '未配置独立审计记录'}。",
+        ]
+    else:
+        adversarial_lines = [
+            "本次未同时取得原单分析器与结构化对抗分析器两条完整结果；"
+            "报告如实标记缺口，不把单轨结果伪装成双轨复核。"
+        ]
+    invalidation_lines = [
+        f"结构失效参考：{_display_decimal(recommendation.invalidation_price)}",
+        *(
+            f"- {_single_line(item)}"
+            for item in (
+                () if macro is None else macro.invalidation_conditions
+            )[:6]
+        ),
+        *(
+            f"- 不确定性：{_single_line(item)}"
+            for item in recommendation.uncertainties[:6]
+        ),
+        "任何新公告、停复牌、价格带、流动性或证据时点变化都要求重新分析；"
+        "本报告不直接授权订单。",
+    ]
+    detail_lines = detailed_text.splitlines()
+    if detail_lines and detail_lines[0].startswith("【"):
+        detail_lines = detail_lines[1:]
+    return render_stable_text_report(
+        ReportKind.INSTRUMENT_RESEARCH,
+        title="A股｜收盘研究分析",
+        sections={
+            "结论": conclusion,
+            "技术结构": "\n".join(technical_lines),
+            "基本面与宏观": "\n".join(macro_lines),
+            "对抗观点": "\n".join(adversarial_lines),
+            "失效条件": "\n".join(invalidation_lines),
+            "完整研究明细": "\n".join(detail_lines).strip() or "无额外明细。",
+        },
     )
 
 
@@ -1170,12 +1346,16 @@ def format_close_analysis_notifications(
     cross_market_relation_report_lines: tuple[str, ...] = (),
     cross_market_history_failure_code: str | None = None,
     evidence_selection: EvidenceSelection | None = None,
+    baseline_macro: MacroAnalysis | None = None,
+    adversarial_macro: MacroAnalysis | None = None,
+    selected_track: str | None = None,
+    audit_record_sha256: str | None = None,
 ) -> tuple[OutboundNotification, ...]:
-    """Render every report line, then split it into durable QQ-sized parts."""
+    """渲染每一行报告，再拆分为适合 QQ 且可持久化的分段。"""
 
     unbounded_target = replace(
         target,
-        max_characters=max(target.max_characters, 100_000),
+        max_characters=max(target.max_characters, 1_000_000),
     )
     base = format_close_analysis_notification(
         recommendation,
@@ -1198,8 +1378,19 @@ def format_close_analysis_notifications(
         cross_market_relation_report_lines=cross_market_relation_report_lines,
         cross_market_history_failure_code=cross_market_history_failure_code,
         evidence_selection=evidence_selection,
+        baseline_macro=baseline_macro,
+        adversarial_macro=adversarial_macro,
+        selected_track=selected_track,
+        audit_record_sha256=audit_record_sha256,
     )
-    chunks = _split_notification_text(base.text, target.max_characters)
+    chunks = _split_contractual_instrument_report(
+        base.text,
+        max_characters=target.max_characters,
+        recommendation=recommendation,
+        assessment=assessment,
+        dual_track=(baseline_macro is not None and adversarial_macro is not None),
+        selected_track=selected_track,
+    )
     if len(chunks) == 1:
         return (replace(base, text=chunks[0]),)
     total = len(chunks)
@@ -1212,6 +1403,173 @@ def format_close_analysis_notifications(
             text=chunk,
         )
         for index, chunk in enumerate(chunks, start=1)
+    )
+
+
+def _split_contractual_instrument_report(
+    text: str,
+    *,
+    max_characters: int,
+    recommendation: ResearchRecommendation,
+    assessment: CloseTechnicalAssessment,
+    dual_track: bool,
+    selected_track: str | None,
+) -> tuple[str, ...]:
+    """超长深研拆分后，每一条 QQ 消息仍独立满足五节报告契约。"""
+
+    if len(text) <= max_characters:
+        return (text,)
+
+    def envelope(detail: str, *, index: int, total: int) -> str:
+        return render_stable_text_report(
+            ReportKind.INSTRUMENT_RESEARCH,
+            title="A股｜收盘研究分析",
+            sections={
+                "结论": (
+                    f"第 {index}/{total} 部分；{recommendation.symbol}；"
+                    f"{_DECISION_ZH[recommendation.decision]}。"
+                ),
+                "技术结构": (
+                    f"技术评分 {_display_score(recommendation.technical_score)}；"
+                    f"样本 {assessment.trading_sessions_used} 个交易日。"
+                ),
+                "基本面与宏观": "本部分延续同一报告的冻结证据；不得与其他运行混用。",
+                "对抗观点": (
+                    f"双轨结果{'已完整保留' if dual_track else '未完整取得'}；"
+                    f"生产采用 {selected_track or '未记录'}。"
+                ),
+                "失效条件": (
+                    f"结构失效参考 {_display_decimal(recommendation.invalidation_price)}；"
+                    "本报告不授权订单。"
+                ),
+                "本部分明细": detail,
+            },
+        )
+
+    # 使用四位分片序号估算最坏包络，避免总数位数增长后越过 QQ 上限。
+    overhead = len(envelope("X", index=9999, total=9999)) - 1
+    payload_limit = max_characters - overhead
+    if payload_limit < 80:
+        raise ValueError("notification limit is too small for report contract")
+    payloads = _split_plain_text_payload(text, payload_limit)
+    total = len(payloads)
+    rendered = tuple(
+        envelope(payload, index=index, total=total)
+        for index, payload in enumerate(payloads, start=1)
+    )
+    if any(len(item) > max_characters for item in rendered):
+        raise RuntimeError("contractual report splitter exceeded notification limit")
+    return rendered
+
+
+def _split_plain_text_payload(text: str, limit: int) -> tuple[str, ...]:
+    """按行优先、必要时按字符拆分，且不丢失长报告正文。"""
+
+    pieces: list[str] = []
+    current = ""
+    for line in text.splitlines():
+        candidate = line if not current else f"{current}\n{line}"
+        if len(candidate) <= limit:
+            current = candidate
+            continue
+        if current:
+            pieces.append(current)
+            current = ""
+        remaining = line
+        while len(remaining) > limit:
+            pieces.append(remaining[:limit])
+            remaining = remaining[limit:]
+        current = remaining
+    if current:
+        pieces.append(current)
+    return tuple(item for item in pieces if item.strip())
+
+
+def _dual_track_report_lines(
+    baseline: MacroAnalysis,
+    adversarial: MacroAnalysis,
+    *,
+    selected_track: str | None,
+    audit_record_sha256: str | None,
+    evidence_numbers: dict[str, int],
+) -> tuple[str, ...]:
+    """同时展示两条模型轨道，避免只报告最终采用分支。"""
+
+    lines = [
+        "",
+        "LLM 双轨对照（两者使用同一份冻结证据）：",
+        f"生产采用轨道：{humanize_internal_code(selected_track)}；"
+        f"审计记录摘要：{audit_record_sha256 or '未配置独立审计存储'}。",
+    ]
+    for label, analysis in (
+        ("原单分析器", baseline),
+        ("结构化对抗分析器", adversarial),
+    ):
+        lines.append(
+            f"- {label}：结论 {humanize_internal_code(analysis.decision.value)}；宏观倾向 "
+            f"{_display_decimal(analysis.macro_impact)}；技术一致性 "
+            f"{_display_decimal(analysis.technical_alignment)}；证据覆盖 "
+            f"{_track_evidence_coverage(analysis, set(evidence_numbers))}；环境判断："
+            f"{_humanize_model_text(analysis.regime, evidence_numbers)}；模型："
+            f"{analysis.model_version}。"
+        )
+        for claim in analysis.claims[:4]:
+            lines.append(
+                f"  - 论据：{_humanize_model_text(claim.text, evidence_numbers)} "
+                f"{_format_evidence_citations(claim.evidence_ids, evidence_numbers)}"
+            )
+        if analysis.scenarios:
+            lines.append(
+                "  - 情景："
+                + "；".join(
+                    f"{_humanize_model_text(item.name, evidence_numbers)} "
+                    f"{_display_percent(item.probability)}"
+                    for item in analysis.scenarios[:3]
+                )
+            )
+        if analysis.invalidation_conditions:
+            lines.append(
+                "  - 失效条件："
+                + "；".join(
+                    _humanize_model_text(item, evidence_numbers)
+                    for item in analysis.invalidation_conditions[:4]
+                )
+            )
+        gaps = tuple(dict.fromkeys((*analysis.uncertainties, *analysis.data_gaps)))
+        if gaps:
+            lines.append(
+                "  - 不确定性/缺口："
+                + "；".join(
+                    _humanize_model_text(item, evidence_numbers)
+                    for item in gaps[:4]
+                )
+            )
+    return tuple(lines)
+
+
+def _track_evidence_coverage(
+    analysis: MacroAnalysis,
+    available_evidence_ids: set[str],
+) -> str:
+    """显示单条轨道实际引用的冻结证据数；两轨不得共用最终融合覆盖率。"""
+
+    referenced = {
+        evidence_id
+        for claim in analysis.claims
+        for evidence_id in claim.evidence_ids
+    }
+    referenced.update(
+        evidence_id
+        for scenario in analysis.scenarios
+        for evidence_id in scenario.evidence_ids
+    )
+    retained = referenced & available_evidence_ids
+    if not available_evidence_ids:
+        return f"0/0（{_display_percent(Decimal('0'))}）"
+    coverage = Decimal(len(retained)) / Decimal(len(available_evidence_ids))
+    return (
+        f"{len(retained)}/{len(available_evidence_ids)}"
+        f"（{_display_percent(coverage)}）"
     )
 
 
@@ -1257,8 +1615,7 @@ def _split_notification_text(text: str, max_characters: int) -> tuple[str, ...]:
             chunks.append(current)
             current = continuation_prefix + line
         else:
-            # No report line is expected to be this long, but preserve content
-            # deterministically if an upstream title or URL exceeds the bound.
+            # 正常情况下报告行不会如此长；若上游标题或 URL 超出边界，仍以确定性方式保留内容。
             available = max_characters - len(continuation_prefix)
             for start in range(0, len(line), available):
                 part = line[start : start + available]
@@ -1457,7 +1814,7 @@ def _single_line(value: str) -> str:
 
 
 def _display_decimal(value: Decimal | None, *, places: int = 3) -> str:
-    """Render bounded display precision without changing stored values."""
+    """渲染有界显示精度且不改变存储值。"""
 
     if value is None:
         return "—"
@@ -1481,7 +1838,7 @@ def _display_score(value: Decimal | None) -> str:
 def _fusion_summary_lines(
     recommendation: ResearchRecommendation,
 ) -> tuple[str, ...]:
-    """Explain score fusion in readable terms without presenting a probability."""
+    """以可读方式解释评分融合，但不将其呈现为概率。"""
 
     if recommendation.fusion_version is None:
         return ("评分融合：旧版记录未保存融合元数据。",)
@@ -1512,7 +1869,7 @@ def _horizon_view_line(view: CloseHorizonView) -> str:
 
 
 def _technical_metric_lines(metrics: dict[str, Decimal]) -> tuple[str, ...]:
-    """Render deterministic indicator families without exposing raw reason codes."""
+    """渲染确定性指标族且不暴露原始原因码。"""
 
     value = metrics.get
     return (
@@ -1619,7 +1976,7 @@ def _report_evidence(
     references: tuple[EvidenceReference, ...],
     macro: MacroAnalysis | None,
 ) -> tuple[EvidenceReference, ...]:
-    """Return a complete human-readable index for every retained report source."""
+    """为每个已保留报告来源返回完整的人类可读索引。"""
 
     if macro is None:
         return references
@@ -1658,7 +2015,7 @@ _EVIDENCE_ID_PATTERN = re.compile(r"(?<![A-Za-z0-9])[0-9a-fA-F]{64}(?![A-Za-z0-9
 
 
 def _humanize_model_text(value: str, evidence_numbers: dict[str, int]) -> str:
-    """Replace provider-facing evidence hashes if a model echoes them in prose."""
+    """若模型在文本中复述面向供应商的证据哈希，则将其替换。"""
 
     text = _single_line(value)
     for evidence_id, number in evidence_numbers.items():
@@ -1674,7 +2031,7 @@ def _evidence_destination(canonical_url: str) -> str:
 
 
 def _evidence_display_title(item: EvidenceReference, symbol: str) -> str:
-    """Hide provider-route diagnostics while retaining a useful local label."""
+    """隐藏供应商路由诊断，同时保留有用的本地标签。"""
 
     if item.canonical_url.startswith("local://"):
         return (

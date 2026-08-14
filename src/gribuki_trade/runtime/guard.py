@@ -1,4 +1,4 @@
-"""Default-deny controls around operations on a real broker adapter."""
+"""真实券商适配器操作外围的默认拒绝控制。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ LIVE_CONFIRMATION_PHRASE = "ENABLE LIVE TRADING"
 
 
 class BrokerOperation(StrEnum):
-    """Known operations exposed by a real broker boundary."""
+    """真实券商边界暴露的已知操作。"""
 
     CONNECT = "connect"
     DISCONNECT = "disconnect"
@@ -36,23 +36,23 @@ class BrokerOperation(StrEnum):
 
 
 class TradingModeViolation(PermissionError):
-    """A real broker operation was denied by the runtime mode boundary."""
+    """运行时模式边界拒绝了一项真实券商操作。"""
 
 
 class LiveTradingNotConfirmed(TradingModeViolation):
-    """LIVE was selected but has not been explicitly unlocked locally."""
+    """已选择 LIVE，但尚未在本地显式解锁。"""
 
 
 class AccountNotAllowed(TradingModeViolation):
-    """The requested live account is not in the immutable allowlist."""
+    """请求的实盘账户不在不可变允许列表中。"""
 
 
 class ExchangeNotAllowed(TradingModeViolation):
-    """The requested live exchange is not in the immutable allowlist."""
+    """请求的实盘交易所不在不可变允许列表中。"""
 
 
 class OperationNotAllowed(TradingModeViolation):
-    """The selected mode cannot perform the requested broker operation."""
+    """所选模式不能执行请求的券商操作。"""
 
 
 def _normalized_entries(values: Iterable[str], *, kind: str, uppercase: bool) -> frozenset[str]:
@@ -68,13 +68,11 @@ def _normalized_entries(values: Iterable[str], *, kind: str, uppercase: bool) ->
 
 
 class LiveTradingGuard:
-    """Authorize access to a real broker according to one runtime mode.
+    """按照一种运行时模式授权访问真实券商。
 
-    The default instance is PAPER and denies every operation on a real broker.
-    SHADOW permits only connection/read/subscription operations.  LIVE requires
-    all three independent conditions: an exact local confirmation phrase, an
-    allowlisted account, and an allowlisted exchange.  Confirmation lives only
-    in this process and cannot be loaded from environment or configuration.
+    默认实例为 PAPER，会拒绝对真实券商的所有操作。SHADOW 仅允许连接、读取和
+    订阅操作。LIVE 要求同时满足三个独立条件：精确的本地确认短语、允许列表中的
+    账户，以及允许列表中的交易所。确认状态仅存在于本进程中，不能从环境或配置加载。
     """
 
     def __init__(
@@ -121,7 +119,7 @@ class LiveTradingGuard:
     def allowed_exchanges(self) -> frozenset[str]:
         return self._allowed_exchanges
 
-    # Whitelist spellings remain available for policy/configuration callers.
+    # 为策略和配置调用方保留 whitelist 拼写的属性。
     @property
     def account_whitelist(self) -> frozenset[str]:
         return self._allowed_accounts
@@ -136,11 +134,10 @@ class LiveTradingGuard:
             return self._live_confirmed
 
     def confirm_live_trading(self, phrase: str) -> None:
-        """Unlock this in-memory LIVE guard after an exact local phrase.
+        """在本地短语精确匹配后，解锁此内存中的 LIVE 守卫。
 
-        Use :func:`prompt_for_live_confirmation` at an interactive local
-        boundary.  A failed attempt always returns the guard to its locked
-        state and the supplied phrase is never included in an exception.
+        请在交互式本地边界调用 :func:`prompt_for_live_confirmation`。确认失败时，
+        守卫始终恢复为锁定状态，提供的短语绝不会写入异常。
         """
 
         with self._lock:
@@ -154,11 +151,11 @@ class LiveTradingGuard:
                 raise LiveTradingNotConfirmed("the local live-trading confirmation failed")
             self._live_confirmed = True
 
-    # Concise alias for integrations that already name the guard in context.
+    # 为上下文中已明确指代该守卫的集成保留简短别名。
     confirm_live = confirm_live_trading
 
     def lock(self) -> None:
-        """Immediately revoke the process-local LIVE confirmation."""
+        """立即撤销进程本地的 LIVE 确认。"""
 
         with self._lock:
             self._live_confirmed = False
@@ -169,7 +166,7 @@ class LiveTradingGuard:
         account_id: str,
         operation: BrokerOperation | str,
     ) -> None:
-        """Raise unless the requested real-broker operation is authorized."""
+        """若请求的真实券商操作未获授权，则抛出异常。"""
 
         checked_operation = _coerce_operation(operation)
         checked_exchange = _normalize_request(exchange, kind="exchange", uppercase=True)
@@ -178,7 +175,7 @@ class LiveTradingGuard:
         if self._mode is TradingMode.PAPER:
             raise OperationNotAllowed("PAPER mode cannot access a real broker")
         if checked_operation is BrokerOperation.DISCONNECT:
-            # An already-real session must always be able to fail closed.
+            # 已建立的真实会话必须始终能够以安全关闭方式断开。
             return
         if self._mode is TradingMode.SHADOW:
             if checked_operation.changes_orders:
@@ -225,7 +222,7 @@ def prompt_for_live_confirmation(
     *,
     getpass_fn: GetpassFunction | None = None,
 ) -> bool:
-    """Collect the LIVE phrase without echo on the machine running the guard."""
+    """在运行守卫的机器上无回显地收集 LIVE 短语。"""
 
     read_hidden = getpass_fn or getpass.getpass
     phrase = read_hidden(f'Type "{LIVE_CONFIRMATION_PHRASE}" to unlock LIVE trading: ')
@@ -237,10 +234,9 @@ def prompt_for_live_confirmation(
 
 
 class GuardedBrokerAdapter:
-    """Broker facade that makes bypassing the mode guard difficult by default.
+    """默认难以绕过模式守卫的券商外观层。
 
-    In particular, SHADOW submissions and cancellations are rejected before
-    the wrapped real adapter method can be invoked.
+    特别是，SHADOW 模式下的提交和撤单会在调用被包装的真实适配器方法前被拒绝。
     """
 
     def __init__(

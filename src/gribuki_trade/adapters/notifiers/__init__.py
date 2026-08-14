@@ -1,4 +1,4 @@
-"""Outbound notification adapters."""
+"""出站通知适配器。"""
 
 from .onebot import (
     NAPCAT_ACCESS_TOKEN_SECRET,

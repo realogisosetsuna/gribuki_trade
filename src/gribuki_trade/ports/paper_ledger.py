@@ -1,4 +1,4 @@
-"""Persistence boundary for A-share paper-account event streams."""
+"""A 股模拟账户事件流的持久化边界。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from gribuki_trade.domain.paper_trading import NewPaperLedgerEvent, PaperLedgerE
 
 
 class PaperLedger(Protocol):
-    """Minimal append/read contract required by the paper trading service."""
+    """模拟交易服务所需的最小追加与读取契约。"""
 
     def append(
         self,

@@ -1,4 +1,4 @@
-"""Environment-separated Binance credentials resolved from a secret provider."""
+"""从秘密提供者解析并按环境隔离的 Binance 凭据。"""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ class BinanceSecretNames:
 def binance_secret_names(
     environment: BinanceEnvironment | str,
 ) -> BinanceSecretNames:
-    """Return the exact secret names for one environment without fallback."""
+    """返回某一环境精确对应的秘密名称，且不做回退。"""
 
     try:
         selected = (
@@ -59,7 +59,7 @@ def binance_secret_names(
 def binance_futures_demo_secret_names(
     product: BinanceProduct | str,
 ) -> BinanceSecretNames:
-    """Return one Futures product's Demo credentials without cross-product fallback."""
+    """返回某一期货产品的 Demo 凭据名称，且不跨产品回退。"""
 
     try:
         selected = (
@@ -109,11 +109,10 @@ def load_binance_credentials(
     provider: SecretProvider,
     environment: BinanceEnvironment | str = BinanceEnvironment.TESTNET,
 ) -> BinanceCredentials:
-    """Resolve one environment's key pair from the configured secret provider.
+    """从已配置的秘密提供者中解析某一环境对应的密钥对。
 
-    Testnet credentials never fall through to LIVE names and vice versa.  This
-    prevents a configuration typo from sending a signed request to the wrong
-    environment.
+    Testnet 凭据绝不会回退到 LIVE 名称，反之亦然，从而避免因为配置笔误把
+    签名请求发往错误环境。
     """
 
     return _load_credentials(provider, binance_secret_names(environment))
@@ -123,6 +122,6 @@ def load_binance_futures_demo_credentials(
     provider: SecretProvider,
     product: BinanceProduct | str,
 ) -> BinanceCredentials:
-    """Load exactly one Futures Demo key pair, never Spot, LIVE, or another product."""
+    """精确加载某一期货 Demo 密钥对，绝不回退到现货、LIVE 或其他产品。"""
 
     return _load_credentials(provider, binance_futures_demo_secret_names(product))

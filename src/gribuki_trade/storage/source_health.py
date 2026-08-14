@@ -1,9 +1,7 @@
-"""Append-only provider health observations for long-running soak tests.
+"""面向长时间浸泡测试的仅追加提供方健康观测。
 
-The store deliberately accepts only bounded, structured fields.  In particular,
-there is no field for exception text, request URLs, headers, or response bodies.
-Provider adapters should map failures to stable ``error_code`` values before
-recording an observation.
+存储刻意只接受有界、结构化字段。特别是，没有用于异常文本、请求 URL、标头或响应
+正文的字段。提供方适配器应先将失败映射为稳定 ``error_code``，再记录观测。
 """
 
 from __future__ import annotations
@@ -23,7 +21,7 @@ from os import PathLike
 
 
 class ProviderRunStatus(StrEnum):
-    """Terminal status for one provider operation."""
+    """一次提供方操作的终态。"""
 
     SUCCESS = "success"
     FAILURE = "failure"
@@ -31,10 +29,9 @@ class ProviderRunStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class ProviderRun:
-    """One immutable provider-operation observation.
+    """一条不可变的提供方操作观测。
 
-    ``latency_ms`` should be measured with a monotonic clock when possible;
-    wall-clock timestamps remain useful for windowing and incident review.
+    ``latency_ms`` 应尽量使用单调时钟测量；墙上时钟时间戳仍适用于窗口统计和事故复盘。
     """
 
     run_id: str
@@ -99,7 +96,7 @@ class ProviderRun:
 
 @dataclass(frozen=True, slots=True)
 class SourceHealthSummary:
-    """Aggregate health metrics for one source and optional operation."""
+    """一项来源及可选操作的聚合健康指标。"""
 
     source_id: str
     operation: str | None
@@ -118,11 +115,11 @@ class SourceHealthSummary:
 
 
 class SourceHealthCollisionError(ValueError):
-    """A run ID was replayed with different immutable content."""
+    """同一运行 ID 被以不同不可变内容重放。"""
 
 
 class SQLiteSourceHealthStore:
-    """SQLite WAL store for append-only provider health observations."""
+    """用于仅追加提供方健康观测的 SQLite WAL 存储。"""
 
     def __init__(
         self,
@@ -208,7 +205,7 @@ class SQLiteSourceHealthStore:
             )
 
     def append(self, run: ProviderRun) -> bool:
-        """Append a run, returning ``False`` for an exact idempotent replay."""
+        """追加一次运行；精确幂等重放返回 ``False``。"""
 
         payload = _canonical_payload(run)
         digest = hashlib.sha256(payload).hexdigest()
@@ -267,7 +264,7 @@ class SQLiteSourceHealthStore:
         operation: str | None = None,
         limit: int = 200,
     ) -> Sequence[ProviderRun]:
-        """Return recent observations, newest completion first."""
+        """返回近期观测，最新完成的记录在前。"""
 
         if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
             raise ValueError("limit must be a positive integer")
@@ -304,10 +301,10 @@ class SQLiteSourceHealthStore:
         window_end: datetime,
         operation: str | None = None,
     ) -> SourceHealthSummary:
-        """Aggregate runs completed in the half-open time window.
+        """聚合在半开时间窗口内完成的运行。
 
-        Latency percentiles use linear interpolation at ranks ``(n - 1) * q``.
-        Rates and percentiles are ``None`` when the window has no observations.
+        延迟分位数在秩 ``(n - 1) * q`` 处使用线性插值。窗口没有观测时，
+        比率和分位数均为 ``None``。
         """
 
         _require_identifier(source_id, "source_id", max_length=96)

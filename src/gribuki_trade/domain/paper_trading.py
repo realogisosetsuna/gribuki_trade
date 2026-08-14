@@ -1,9 +1,7 @@
-"""Broker-free A-share paper-account value objects.
+"""不依赖券商的 A 股模拟账户值对象。
 
-The paper account is intentionally execution-led rather than order-led.  A fill
-represents one complete broker confirmation (manual or simulated); market-data
-matching, suspension checks and price-limit checks belong to a future execution
-simulator and are not guessed by this module.
+模拟账户刻意由成交而非订单驱动。一笔成交代表一次完整的券商确认（手工或模拟）；
+市场数据匹配、停牌检查与涨跌停检查属于执行模拟器的职责，本模块不会猜测这些结果。
 """
 
 from __future__ import annotations
@@ -24,21 +22,21 @@ _MAX_NOTE_LENGTH = 1_000
 
 
 class PaperFillSource(StrEnum):
-    """How an already-determined execution entered the local ledger."""
+    """一笔已经确定的成交以何种方式进入本地账本。"""
 
     MANUAL = "MANUAL"
     SIMULATED = "SIMULATED"
 
 
 class PaperInstrumentType(StrEnum):
-    """Instrument classes whose cash charges differ."""
+    """现金费用规则不同的标的类别。"""
 
     STOCK = "STOCK"
     ETF = "ETF"
 
 
 class PaperLedgerEventType(StrEnum):
-    """Events understood by the deterministic account projector."""
+    """确定性账户投影器能够识别的事件。"""
 
     ACCOUNT_OPENED = "ACCOUNT_OPENED"
     SESSION_ROLLED_OVER = "SESSION_ROLLED_OVER"
@@ -47,12 +45,11 @@ class PaperLedgerEventType(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class PaperFeeSchedule:
-    """Configurable cash charges for one transaction-level fill.
+    """单笔成交可配置的现金费用。
 
-    Defaults are assumptions, not a claim about a particular broker contract.
-    The transfer-fee default models the 0.01 per-mille stock rate introduced in
-    2022; commission remains user/broker specific.  ETF defaults are tax and
-    transfer-fee free.  Every rate can be overridden by configuration.
+    默认值只是建模假设，并非对特定券商合同的声明。默认过户费按 2022 年起实施的
+    股票万分之 0.1 费率建模；佣金仍取决于用户与券商。ETF 默认不收印花税和过户费。
+    所有费率均可由配置覆盖。
     """
 
     commission_rate: Decimal = Decimal("0.0003")
@@ -84,7 +81,7 @@ class PaperFeeSchedule:
 
 @dataclass(frozen=True, slots=True)
 class PaperFillFees:
-    """Explicit, replay-stable fees retained with one execution."""
+    """随一笔成交保留、显式且回放稳定的费用。"""
 
     commission: Decimal
     transfer_fee: Decimal
@@ -104,11 +101,10 @@ class PaperFillFees:
 
 @dataclass(frozen=True, slots=True)
 class ASharePaperFill:
-    """One immutable manual or simulated A-share execution command.
+    """一条不可变的手工或模拟 A 股成交命令。
 
-    Manual and simulated fills use this exact contract.  A manual broker bill
-    may provide ``fee_override``; simulated fills cannot, so their charges are
-    always derived from the configured fee schedule.
+    手工与模拟成交使用完全相同的契约。手工券商账单可以提供 ``fee_override``；
+    模拟成交不能提供，因此其费用始终由已配置费率表计算。
     """
 
     account_id: str
@@ -172,7 +168,7 @@ class ASharePaperFill:
 
 @dataclass(frozen=True, slots=True)
 class AppliedPaperFill:
-    """A fill plus the immutable cash effects committed to the ledger."""
+    """一笔成交及已提交到账本的不可变现金影响。"""
 
     fill: ASharePaperFill
     trade_value: Decimal
@@ -194,7 +190,7 @@ class AppliedPaperFill:
 
 @dataclass(frozen=True, slots=True)
 class PaperPosition:
-    """One T+1-aware position projection."""
+    """一份感知 T+1 规则的持仓投影。"""
 
     symbol: str
     instrument_type: PaperInstrumentType
@@ -222,7 +218,7 @@ class PaperPosition:
 
 @dataclass(frozen=True, slots=True)
 class PaperAccountSnapshot:
-    """A deterministic projection rebuilt from immutable ledger events."""
+    """由不可变账本事件重建的确定性投影。"""
 
     account_id: str
     session_date: date
@@ -256,7 +252,7 @@ class PaperAccountSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class NewPaperLedgerEvent:
-    """An event awaiting its SQLite sequence number."""
+    """等待分配 SQLite 序列号的事件。"""
 
     event_id: str
     account_id: str
@@ -280,7 +276,7 @@ class NewPaperLedgerEvent:
 
 @dataclass(frozen=True, slots=True)
 class PaperLedgerEvent:
-    """One immutable, hash-chained row read from the local ledger."""
+    """从本地账本读取的一条不可变哈希链记录。"""
 
     sequence: int
     event_id: str
@@ -306,7 +302,7 @@ class PaperLedgerEvent:
 
 @dataclass(frozen=True, slots=True)
 class PaperFillReceipt:
-    """Result of an idempotent fill command."""
+    """一条幂等成交命令的结果。"""
 
     applied_new: bool
     event_sequence: int

@@ -29,8 +29,8 @@ from gribuki_trade.ports.ashare_derivatives import (
 FETCHED_AT = datetime(2026, 8, 14, 0, 0, tzinfo=UTC)
 AS_OF = datetime(2026, 8, 14, 0, 1, tzinfo=UTC)
 
-# Frozen, narrowed copies of the public response fields used by the official
-# SSE pages.  All numeric values remain strings so tests detect precision loss.
+# 冻结并裁剪上交所官网页面使用的公开响应字段；所有数值均保留为字符串，
+# 以便测试能够发现精度损失。
 UNDERLYINGS = {
     "actionErrors": [],
     "result": [
@@ -143,7 +143,7 @@ def _run_etf(
 
 
 def _payload_handler(function):
-    """Turn a payload selector into an httpx frozen-fixture handler."""
+    """把载荷选择函数转换为 httpx 冻结夹具处理器。"""
 
     def handler(request: httpx.Request) -> httpx.Response:
         risk_request = "BASIC_INFO" not in request.url.params["sqlId"]

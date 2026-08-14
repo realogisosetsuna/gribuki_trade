@@ -1,4 +1,4 @@
-"""Normalisation and point-in-time event pipeline."""
+"""规范化与时点约束事件流水线。"""
 
 from gribuki_trade.pipeline.dedupe import (
     DedupeDecision,

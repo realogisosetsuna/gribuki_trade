@@ -1,9 +1,7 @@
-"""Point-in-time domain types for public information sources.
+"""公共信息源的时点领域类型。
 
-The ingestion layer keeps the time at which information became observable
-separate from the timestamp asserted by its publisher.  That distinction is
-required to replay a strategy without accidentally using information that was
-not available at the decision time.
+采集层将信息变得可观测的时间与发布者声称的时间戳分开保存。只有明确区分二者，
+策略回放时才能避免意外使用在决策时点尚不可用的信息。
 """
 
 from __future__ import annotations
@@ -19,16 +17,14 @@ from urllib.parse import urlsplit
 _SOURCE_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
-# Search discovery has an explicit two-stage lineage.  A hint is displayable
-# but never actionable evidence.  "Confirmed" means the discovery lead met a
-# promotion rule (official host or independent-provider agreement), not that
-# the underlying claim has been proven true.
+# 搜索发现具有明确的两阶段血缘。提示可以展示，但绝不是可行动证据。“已确认”表示发现线索
+# 满足提升规则（官方主机或独立供应商达成一致），并不表示其底层主张已被证实为真。
 DISCOVERY_HINT_EVENT_TYPE = "discovery_hint"
 DISCOVERY_CONFIRMED_EVENT_TYPE = "discovery_confirmed"
 
 
 class SourceTier(StrEnum):
-    """Trust tier used by recommendation policy; it is not a truth score."""
+    """推荐策略采用的信任层级；并非真实性评分。"""
 
     OFFICIAL = "OFFICIAL"
     LICENSED = "LICENSED"
@@ -37,7 +33,7 @@ class SourceTier(StrEnum):
 
 
 class ContentRetention(StrEnum):
-    """Whether a fetched response body may be retained in the raw archive."""
+    """是否允许在原始归档中保留已拉取的响应正文。"""
 
     FULL_DOCUMENT = "FULL_DOCUMENT"
     METADATA_ONLY = "METADATA_ONLY"
@@ -71,11 +67,10 @@ def _is_public_host(host: str) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class SourcePolicy:
-    """Fail-closed network and storage policy for one source.
+    """单个来源失败关闭的网络与存储策略。
 
-    A source must have an explicit host allowlist.  Redirects are checked
-    against the same policy, which prevents an upstream page from redirecting
-    the collector to localhost or an unrelated host.
+    来源必须具有明确的主机允许列表。重定向也按同一策略检查，从而防止上游页面
+    将采集器重定向至本机或无关主机。
     """
 
     source_id: str
@@ -137,7 +132,7 @@ class SourcePolicy:
         object.__setattr__(self, "allowed_content_types", content_types)
 
     def validate_url(self, url: str) -> None:
-        """Raise before I/O when a URL is outside this source's boundary."""
+        """当 URL 超出该来源边界时，在执行 I/O 前抛出异常。"""
 
         parts = urlsplit(url)
         scheme = parts.scheme.lower()
@@ -168,7 +163,7 @@ class SourcePolicy:
 
 @dataclass(frozen=True, slots=True)
 class RawDocument:
-    """One immutable HTTP representation and its observation timestamps."""
+    """一份不可变 HTTP 表示及其观测时间戳。"""
 
     source_id: str
     canonical_url: str
@@ -224,7 +219,7 @@ class RawDocument:
 
 @dataclass(frozen=True, slots=True)
 class NormalizedEvent:
-    """A small, source-linked event suitable for strategy evidence packs."""
+    """适用于策略证据包且关联来源的小型事件。"""
 
     source_id: str
     canonical_url: str

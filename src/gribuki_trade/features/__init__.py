@@ -1,4 +1,4 @@
-"""Deterministic feature and technical-signal engines."""
+"""确定性的特征与技术信号引擎。"""
 
 from .ashare_screening import (
     AShareFactorRanking,
@@ -43,6 +43,11 @@ from .cross_market_relations import (
     TargetCloseObservation,
     build_cross_market_relations,
 )
+from .exit_planning import (
+    QuickExitPlanConfig,
+    QuickExitPlanResult,
+    build_quick_exit_plan,
+)
 from .technical import (
     TechnicalBar,
     TechnicalSignal,
@@ -57,6 +62,8 @@ __all__ = [
     "AShareScreeningConfig",
     "MINIMUM_COMMON_SAMPLES",
     "NON_CAUSALITY_NOTICE",
+    "QuickExitPlanConfig",
+    "QuickExitPlanResult",
     "AlignedFactorReturn",
     "CloseAnalysisConfig",
     "CloseInstrumentType",
@@ -86,6 +93,7 @@ __all__ = [
     "TechnicalSignalConfig",
     "build_close_technical_assessment",
     "build_cross_market_relations",
+    "build_quick_exit_plan",
     "build_technical_signal",
     "hard_filter_ashare_universe",
     "rank_ashare_factor_cross_section",

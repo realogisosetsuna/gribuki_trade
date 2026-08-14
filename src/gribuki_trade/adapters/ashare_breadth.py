@@ -1,9 +1,8 @@
-"""Fail-soft AKShare adapter for current-session A-share close breadth.
+"""当前交易日 A 股收盘市场宽度的软失败 AKShare 适配器。
 
-Eastmoney is attempted first and Tencent is an independently bounded fallback.
-Both are secondary public-web snapshots.  The adapter deliberately rejects an
-undersized or exchange-incomplete universe instead of publishing precise-looking
-breadth from a partial page.
+先尝试东方财富，腾讯作为独立限时的回退。二者都是次级公开网页快照。适配器
+刻意拒绝规模过小或交易所覆盖不完整的股票池，而不会从残缺页面发布看似精确
+的市场宽度。
 """
 
 from __future__ import annotations
@@ -227,7 +226,7 @@ def _call_with_timeout(
     def run() -> None:
         try:
             output.put((True, call()))
-        except BaseException as exc:  # transfer provider failures to the caller thread
+        except BaseException as exc:  # 将数据提供者失败传递回调用方线程。
             output.put((False, exc))
 
     worker = threading.Thread(target=run, daemon=True, name="ashare-breadth-provider")

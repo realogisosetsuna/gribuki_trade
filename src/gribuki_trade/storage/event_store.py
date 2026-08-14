@@ -1,4 +1,4 @@
-"""SQLite point-in-time event revisions and durable news cursors."""
+"""SQLite 时点一致事件修订与持久化新闻游标。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import sqlite3
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from os import PathLike
 
@@ -16,8 +16,18 @@ from gribuki_trade.pipeline.dedupe import DedupeDecision, EventDisposition
 from gribuki_trade.ports.news import FetchCursor
 
 
+@dataclass(frozen=True, slots=True)
+class NewsSourceProbeClaim:
+    """新闻来源探针租约的原子领取结果。"""
+
+    acquired: bool
+    cursor: FetchCursor | None
+    blocked_until: datetime | None = None
+    blocking_reason: str | None = None
+
+
 class SQLiteEventStore:
-    """Append-only normalized events plus per-source collection cursors."""
+    """仅追加的规范化事件，以及按来源保存的采集游标。"""
 
     def __init__(self, path: str | PathLike[str]) -> None:
         self._lock = threading.RLock()
@@ -83,9 +93,19 @@ class SQLiteEventStore:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS news_source_probe_leases (
+                    source_id TEXT PRIMARY KEY,
+                    owner_token TEXT NOT NULL,
+                    claimed_at TEXT NOT NULL,
+                    lease_until TEXT NOT NULL
+                )
+                """
+            )
 
     def append(self, event: NormalizedEvent) -> DedupeDecision:
-        """Append one content revision; exact duplicates are idempotent."""
+        """追加一条内容修订；精确重复记录具有幂等性。"""
 
         with self._transaction() as connection:
             duplicate = connection.execute(
@@ -162,12 +182,11 @@ class SQLiteEventStore:
         *,
         limit: int = 200,
     ) -> tuple[NormalizedEvent, ...]:
-        """Return each event's latest revision visible at ``as_of``.
+        """返回每个事件在 ``as_of`` 可见的最新修订。
 
-        Unlike :meth:`latest`, this query does not let a correction observed
-        after the decision time hide the earlier revision that was actually
-        available then.  Stored timestamps are UTC, so normalize the caller's
-        aware timestamp before comparing their ISO-8601 representations.
+        与 :meth:`latest` 不同，此查询不让决策时间之后观察到的更正，隐藏当时实际
+        可用的早期修订。存储时间戳均为 UTC，因此比较 ISO-8601 表示前，应规范化
+        调用方提供的带时区时间戳。
         """
 
         _aware(as_of, "as_of")
@@ -235,6 +254,129 @@ class SQLiteEventStore:
                 """,
                 (source_id, payload, updated_at.isoformat()),
             )
+
+    def claim_source_probe(
+        self,
+        source_id: str,
+        *,
+        owner_token: str,
+        now: datetime,
+        lease_until: datetime,
+    ) -> NewsSourceProbeClaim:
+        """原子领取一次来源探针，跨进程只允许一个活跃领取者。"""
+
+        if not source_id.strip():
+            raise ValueError("source_id must not be empty")
+        if not owner_token.strip():
+            raise ValueError("owner_token must not be empty")
+        _aware(now, "now")
+        _aware(lease_until, "lease_until")
+        now_utc = now.astimezone(UTC)
+        lease_until_utc = lease_until.astimezone(UTC)
+        if lease_until_utc <= now_utc:
+            raise ValueError("lease_until must be after now")
+
+        with self._transaction() as connection:
+            cursor_row = connection.execute(
+                "SELECT cursor_json FROM news_source_cursors WHERE source_id = ?",
+                (source_id,),
+            ).fetchone()
+            cursor = _cursor_from_row(cursor_row)
+            if cursor is not None and cursor.next_allowed_at is not None:
+                next_allowed = cursor.next_allowed_at.astimezone(UTC)
+                if now_utc < next_allowed:
+                    return NewsSourceProbeClaim(
+                        acquired=False,
+                        cursor=cursor,
+                        blocked_until=next_allowed,
+                        blocking_reason="source_circuit_open",
+                    )
+
+            lease_row = connection.execute(
+                """
+                SELECT owner_token, lease_until
+                FROM news_source_probe_leases
+                WHERE source_id = ?
+                """,
+                (source_id,),
+            ).fetchone()
+            if lease_row is not None:
+                active_until = datetime.fromisoformat(str(lease_row["lease_until"]))
+                if now_utc < active_until.astimezone(UTC):
+                    return NewsSourceProbeClaim(
+                        acquired=False,
+                        cursor=cursor,
+                        blocked_until=active_until.astimezone(UTC),
+                        blocking_reason="source_probe_in_progress",
+                    )
+
+            connection.execute(
+                """
+                INSERT INTO news_source_probe_leases(
+                    source_id, owner_token, claimed_at, lease_until
+                ) VALUES (?, ?, ?, ?)
+                ON CONFLICT(source_id) DO UPDATE SET
+                    owner_token = excluded.owner_token,
+                    claimed_at = excluded.claimed_at,
+                    lease_until = excluded.lease_until
+                """,
+                (
+                    source_id,
+                    owner_token,
+                    now_utc.isoformat(),
+                    lease_until_utc.isoformat(),
+                ),
+            )
+        return NewsSourceProbeClaim(acquired=True, cursor=cursor)
+
+    def complete_source_probe(
+        self,
+        source_id: str,
+        *,
+        owner_token: str,
+        cursor: FetchCursor,
+        updated_at: datetime,
+    ) -> bool:
+        """仅由当前租约持有者提交游标；过期持有者不得覆盖新结果。"""
+
+        if not source_id.strip():
+            raise ValueError("source_id must not be empty")
+        if not owner_token.strip():
+            raise ValueError("owner_token must not be empty")
+        _aware(updated_at, "updated_at")
+        payload = json.dumps(
+            _cursor_to_json(cursor),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        with self._transaction() as connection:
+            lease = connection.execute(
+                """
+                SELECT owner_token FROM news_source_probe_leases
+                WHERE source_id = ?
+                """,
+                (source_id,),
+            ).fetchone()
+            if lease is None or str(lease["owner_token"]) != owner_token:
+                return False
+            connection.execute(
+                """
+                INSERT INTO news_source_cursors(source_id, cursor_json, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(source_id) DO UPDATE SET
+                    cursor_json = excluded.cursor_json,
+                    updated_at = excluded.updated_at
+                """,
+                (source_id, payload, updated_at.astimezone(UTC).isoformat()),
+            )
+            connection.execute(
+                """
+                DELETE FROM news_source_probe_leases
+                WHERE source_id = ? AND owner_token = ?
+                """,
+                (source_id, owner_token),
+            )
+        return True
 
     def close(self) -> None:
         with self._lock:
@@ -340,6 +482,15 @@ def _cursor_from_json(document: dict[str, object]) -> FetchCursor:
         consecutive_failures=_stored_int(document.get("consecutive_failures", 0)),
         next_allowed_at=_parse_time_or_none(document.get("next_allowed_at")),
     )
+
+
+def _cursor_from_row(row: sqlite3.Row | None) -> FetchCursor | None:
+    if row is None:
+        return None
+    document = json.loads(str(row["cursor_json"]))
+    if not isinstance(document, dict):
+        raise ValueError("stored source cursor is corrupt")
+    return _cursor_from_json(document)
 
 
 def _time_or_none(value: datetime | None) -> str | None:

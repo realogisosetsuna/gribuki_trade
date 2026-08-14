@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import hashlib
 import json
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -15,6 +16,9 @@ from gribuki_trade.cli import (
     _ashare_market_screen_once,
     _ashare_news_watch,
     _ashare_paper,
+    _ashare_paper_day,
+    _ashare_paper_day_report,
+    _ashare_paper_day_status,
     _ashare_research_once,
     _ashare_research_runs,
     _ashare_research_watch,
@@ -29,10 +33,19 @@ from gribuki_trade.cli import (
     _positive_decimal,
     _positive_float,
     _positive_integer,
+    _positive_integer_or_unlimited,
     _sqlite_runtime_status,
+    _strategy_exit_evaluate,
     _strategy_factor_discover,
     _unit_fraction_decimal,
+    _verify_ashare_paper_day_calendar,
     build_parser,
+)
+from gribuki_trade.reporting.contracts import (
+    REPORT_CONTRACTS,
+    ReportKind,
+    render_stable_markdown_report,
+    validate_text_report_contract,
 )
 
 
@@ -47,6 +60,1487 @@ def test_sqlite_runtime_status_parser_helper_and_main(
     assert isinstance(expected["shared_wal_safe"], bool)
     assert cli.main(["sqlite-runtime-status"]) == 0
     assert json.loads(capsys.readouterr().out) == expected
+
+
+def test_temp_root_cli_supports_status_prepare_and_explicit_override(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = tmp_path / "operator-scratch"
+    parsed = build_parser().parse_args(["temp-root", "status", "--temp-dir", str(target)])
+    assert parsed.action == "status"
+    assert parsed.temp_dir == str(target)
+
+    assert cli.main(["temp-root", "status", "--temp-dir", str(target)]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["source"] == "EXPLICIT"
+    assert status["exists"] is False
+    assert not target.exists()
+
+    assert cli.main(["temp-root", "prepare", "--temp-dir", str(target)]) == 0
+    prepared = json.loads(capsys.readouterr().out)
+    assert prepared["source"] == "EXPLICIT"
+    assert prepared["created"] is True
+    assert prepared["exists"] is True
+    assert target.is_dir()
+
+
+def test_read_only_day_and_post_close_status_ignore_gui_runtime_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_loaded() -> object:
+        raise AssertionError("read-only status must not load integration settings")
+
+    monkeypatch.setattr(cli, "load_integration_settings", fail_if_loaded)
+    parser = build_parser()
+    for argv in (
+        ["ashare-paper-day", "status"],
+        ["ashare-post-close", "status"],
+        ["ashare-post-close", "report"],
+    ):
+        parsed = parser.parse_args(argv)
+        cli._apply_integration_runtime_defaults(parsed)
+        assert parsed.base_url is None
+
+
+def test_gui_shared_llm_provider_and_models_drive_production_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = SimpleNamespace(
+        llm_provider="openai",
+        deepseek_model="deepseek-from-gui",
+        openai_model="gpt-from-gui",
+        onebot_url="http://127.0.0.1:3456",
+        napcat_runtime="vendor/NapCat",
+    )
+    monkeypatch.setattr(cli, "load_integration_settings", lambda: settings)
+    parser = build_parser()
+
+    paper = parser.parse_args(["ashare-paper-day", "run"])
+    cli._apply_integration_runtime_defaults(paper)
+    assert paper.intraday_llm_provider == "openai"
+    assert paper.intraday_llm_model == "gpt-from-gui"
+    assert paper.base_url == "http://127.0.0.1:3456"
+
+    live = parser.parse_args(["live-sync", "cycle"])
+    cli._apply_integration_runtime_defaults(live)
+    assert live.llm_provider == "openai"
+    assert live.llm_model == "gpt-from-gui"
+    assert live.base_url == "http://127.0.0.1:3456"
+
+    live_ingest = parser.parse_args(["live-sync", "ingest"])
+    cli._apply_integration_runtime_defaults(live_ingest)
+    assert live_ingest.base_url == "http://127.0.0.1:3456"
+    assert live_ingest.llm_provider is None
+    assert live_ingest.llm_model is None
+
+    close = parser.parse_args(["ashare-close-research-once"])
+    cli._apply_integration_runtime_defaults(close)
+    assert close.macro_provider == "openai"
+    assert close.model == "gpt-from-gui"
+
+    explicit = parser.parse_args(["ashare-close-research-once", "--macro-provider", "deepseek"])
+    cli._apply_integration_runtime_defaults(explicit)
+    assert explicit.macro_provider == "deepseek"
+    assert explicit.model == "deepseek-from-gui"
+
+
+def test_ashare_paper_day_parser_defaults_and_main_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    parser = build_parser()
+    defaults = parser.parse_args(["ashare-paper-day", "status"])
+    assert defaults.runtime_dir == "runtime/paper/day"
+    assert defaults.session_date is None
+    assert defaults.account == "ashare-paper-day"
+    assert defaults.initial_cash == Decimal("200000")
+    assert defaults.base_url is None
+    cli._apply_integration_runtime_defaults(defaults)
+    # 只读 status 不依赖 GUI 配置文件，即使该文件损坏也应可诊断运行状态。
+    assert defaults.base_url is None
+    assert defaults.intraday_llm_model is None
+    assert defaults.confirm is None
+    assert defaults.recover_after_abort is False
+    assert defaults.maximum_positions is None
+    assert defaults.confirm_risk_policy_change is None
+    assert defaults.report_artifact_recovery_action is None
+    assert defaults.report_artifact_provider_id is None
+    assert defaults.confirm_report_artifact_recovery is None
+    assert defaults.intraday_llm is True
+    assert defaults.intraday_llm_review_top_n == 6
+    assert defaults.intraday_llm_review_ttl_minutes == 20
+    assert defaults.intraday_llm_max_calls is None
+    assert defaults.intraday_llm_events_db == "runtime/news/events.sqlite3"
+
+    captured: list[tuple[object, ...]] = []
+
+    async def fake_paper_day(*args: object) -> dict[str, object]:
+        captured.append(args)
+        return {"ok": True, "action": "run"}
+
+    monkeypatch.setattr(cli, "_ashare_paper_day", fake_paper_day)
+    assert (
+        cli.main(
+            [
+                "ashare-paper-day",
+                "run",
+                "--runtime-dir",
+                "paper-runtime",
+                "--session-date",
+                "2026-08-14",
+                "--account",
+                "day-account",
+                "--initial-cash",
+                "200000",
+                "--target-kind",
+                "private",
+                "--target-id",
+                "12345",
+                "--confirm",
+                "PAPER_DAY",
+                "--recover-after-abort",
+                "--maximum-positions",
+                "7",
+                "--confirm-risk-policy-change",
+                "PAPER_RISK_POLICY_CHANGE",
+                "--no-intraday-llm",
+                "--intraday-llm-review-top-n",
+                "4",
+                "--intraday-llm-review-ttl-minutes",
+                "15",
+                "--intraday-llm-max-calls",
+                "40",
+                "--intraday-llm-events-db",
+                "frozen-events.sqlite3",
+            ]
+        )
+        == 0
+    )
+    assert captured == [
+        (
+            "run",
+            "paper-runtime",
+            date(2026, 8, 14),
+            "day-account",
+            Decimal("200000"),
+            "private",
+            "12345",
+            "http://127.0.0.1:3000",
+            "PAPER_DAY",
+            True,
+            7,
+            "PAPER_RISK_POLICY_CHANGE",
+            False,
+            4,
+            15,
+            40,
+            "frozen-events.sqlite3",
+                "deepseek",
+                "deepseek-v4-flash",
+                None,
+                None,
+                None,
+            )
+    ]
+    assert json.loads(capsys.readouterr().out) == {"action": "run", "ok": True}
+
+
+@pytest.mark.parametrize("status", ("PENDING", "AMBIGUOUS", "NOT_CONFIGURED"))
+def test_paper_day_cli_never_reports_ok_when_daily_review_artifact_is_incomplete(
+    status: str,
+) -> None:
+    projected = cli._paper_day_delivery_projection(
+        SimpleNamespace(
+            completed=True,
+            notification_required=2,
+            notification_sent=1,
+            notification_gaps=1,
+            text_notification_required=1,
+            text_notification_sent=1,
+            text_notification_gaps=0,
+            artifact_delivery_status=status,
+            artifact_delivery_complete=False,
+            daily_review_delivery_complete=False,
+        )
+    )
+
+    assert projected["ok"] is False
+    assert projected["artifact_delivery_status"] == status
+    assert projected["artifact_delivery_complete"] is False
+    assert projected["notification_gaps"] == 1
+
+
+def test_paper_day_cli_missing_artifact_projection_fails_closed() -> None:
+    projected = cli._paper_day_delivery_projection(
+        SimpleNamespace(
+            completed=True,
+            notification_required=0,
+            notification_sent=0,
+            notification_gaps=0,
+        )
+    )
+
+    assert projected["ok"] is False
+    assert projected["artifact_delivery_status"] == "LEGACY_UNREPORTED"
+    assert projected["artifact_delivery_complete"] is False
+    assert projected["daily_review_delivery_complete"] is False
+
+
+def test_paper_day_artifact_recovery_requires_explicit_consistent_confirmation() -> None:
+    parsed = build_parser().parse_args(
+        [
+            "ashare-paper-day",
+            "run",
+            "--report-artifact-recovery-action",
+            "MARK_SENT_AFTER_PROVIDER_VERIFICATION",
+            "--report-artifact-provider-id",
+            "provider-file-1",
+            "--confirm-report-artifact-recovery",
+            "PAPER_REPORT_ARTIFACT_RECOVERY",
+        ]
+    )
+    assert parsed.report_artifact_recovery_action == (
+        "MARK_SENT_AFTER_PROVIDER_VERIFICATION"
+    )
+    assert parsed.report_artifact_provider_id == "provider-file-1"
+    assert parsed.confirm_report_artifact_recovery == "PAPER_REPORT_ARTIFACT_RECOVERY"
+
+    with pytest.raises(ValueError, match="only available for run"):
+        asyncio.run(
+            cli._ashare_paper_day(
+                "status",
+                "runtime/paper/day",
+                date(2026, 8, 14),
+                "account",
+                Decimal("200000"),
+                None,
+                None,
+                "http://127.0.0.1:3000",
+                None,
+                report_artifact_recovery_action=(
+                    "RESEND_AFTER_PROVIDER_NON_RECEIPT_VERIFICATION"
+                ),
+                report_artifact_recovery_confirmation=(
+                    "PAPER_REPORT_ARTIFACT_RECOVERY"
+                ),
+            )
+        )
+    with pytest.raises(ValueError, match="requires explicit confirmation"):
+        asyncio.run(
+            cli._ashare_paper_day(
+                "run",
+                "runtime/paper/day",
+                date(2026, 8, 14),
+                "account",
+                Decimal("200000"),
+                "private",
+                "10001",
+                "http://127.0.0.1:3000",
+                "PAPER_DAY",
+                report_artifact_recovery_action=(
+                    "RESEND_AFTER_PROVIDER_NON_RECEIPT_VERIFICATION"
+                ),
+            )
+        )
+
+
+def test_ashare_paper_day_main_returns_nonzero_for_operational_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def fake_paper_day(*_args: object) -> dict[str, object]:
+        return {"ok": False, "error_code": "PREFLIGHT_FAILED"}
+
+    monkeypatch.setattr(cli, "_ashare_paper_day", fake_paper_day)
+    assert cli.main(["ashare-paper-day", "status"]) == 1
+    assert json.loads(capsys.readouterr().out) == {
+        "error_code": "PREFLIGHT_FAILED",
+        "ok": False,
+    }
+
+
+def test_post_close_research_adapter_serializes_the_complete_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    active = 0
+    maximum_active = 0
+
+    async def fake_serial(
+        _self: object,
+        position: object,
+        *,
+        sessions: object,
+    ) -> object:
+        nonlocal active, maximum_active
+        del sessions
+        active += 1
+        maximum_active = max(maximum_active, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return position
+
+    monkeypatch.setattr(
+        cli._CLIExistingCloseResearch,
+        "_research_serial",
+        fake_serial,
+    )
+    adapter = cli._CLIExistingCloseResearch(
+        profiles={},
+        history_days=540,
+        news_runtime_dir="runtime/news",
+        research_db="runtime/research/research.sqlite3",
+        market_evidence_dir="runtime/research/market_evidence",
+        analysis_outbox_db="runtime/research/analysis-outbox.sqlite3",
+        news_feeds=None,
+        refresh_news=True,
+        search_discovery=True,
+        searxng_url=None,
+        macro_enabled=True,
+        macro_provider="deepseek",
+        model="deepseek-v4-flash",
+        macro_weight=Decimal("0.25"),
+    )
+    positions = tuple(SimpleNamespace(symbol=f"{index:06d}.SZ") for index in range(5))
+
+    async def run_all() -> tuple[object, ...]:
+        return tuple(
+            await asyncio.gather(
+                *(adapter.research(position, sessions=object()) for position in positions)
+            )
+        )
+
+    assert asyncio.run(run_all()) == positions
+    assert maximum_active == 1
+
+
+def test_post_close_cli_adapter_projects_dual_track_audit_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_close(*_args: object) -> dict[str, object]:
+        return {
+            "ok": True,
+            "decision": "WATCH",
+            "technical_score": "0.250",
+            "reference_price": "10.500",
+            "invalidation_price": "9.800",
+            "reason_codes": ["HELD_POSITION_REVIEW"],
+            "uncertainties": [],
+            "daily_bar_count": 180,
+            "macro_dual_track": {
+                "analysis_id": "analysis-dual-track-1",
+                "selected_track": "ADVERSARIAL",
+                "audit_record_sha256": "c" * 64,
+                "baseline": {
+                    "decision": "PUBLISH",
+                    "regime": "温和",
+                    "macro_impact": "0.300",
+                    "evidence_coverage": "0.500",
+                    "model_version": "baseline-model",
+                },
+                "adversarial": {
+                    "decision": "WATCH",
+                    "regime": "谨慎",
+                    "macro_impact": "-0.100",
+                    "evidence_coverage": "0.750",
+                    "model_version": "adversarial-model",
+                },
+            },
+        }
+
+    monkeypatch.setattr(cli, "_ashare_close_research_once", fake_close)
+    adapter = cli._CLIExistingCloseResearch(
+        profiles={"600000.SH": SimpleNamespace(symbol="600000.SH")},
+        history_days=540,
+        news_runtime_dir="runtime/news",
+        research_db="runtime/research/research.sqlite3",
+        market_evidence_dir="runtime/research/market_evidence",
+        analysis_outbox_db="runtime/research/analysis-outbox.sqlite3",
+        news_feeds=None,
+        refresh_news=True,
+        search_discovery=True,
+        searxng_url=None,
+        macro_enabled=True,
+        macro_provider="deepseek",
+        model="deepseek-v4-flash",
+        macro_weight=Decimal("0.25"),
+    )
+    sessions = SimpleNamespace(
+        latest_completed_session=date(2026, 8, 14),
+        next_session=date(2026, 8, 17),
+    )
+
+    result = asyncio.run(
+        adapter._research_serial(
+            SimpleNamespace(symbol="600000.SH"),
+            sessions=sessions,
+        )
+    )
+
+    assert result.baseline_macro_decision == "PUBLISH"
+    assert result.baseline_macro_score == Decimal("0.300")
+    assert result.baseline_macro_evidence_coverage == Decimal("0.500")
+    assert result.adversarial_macro_decision == "WATCH"
+    assert result.adversarial_macro_score == Decimal("-0.100")
+    assert result.adversarial_macro_evidence_coverage == Decimal("0.750")
+    assert result.macro_analysis_id == "analysis-dual-track-1"
+    assert result.macro_selected_track == "ADVERSARIAL"
+    assert result.macro_audit_record_sha256 == "c" * 64
+
+
+def test_macro_track_document_calculates_its_own_evidence_coverage() -> None:
+    from gribuki_trade.analysis.schemas import (
+        MacroAnalysis,
+        MacroAnalysisDecision,
+        MacroClaim,
+    )
+
+    analysis = MacroAnalysis(
+        analysis_id="analysis-track-1",
+        as_of=datetime(2026, 8, 14, tzinfo=UTC),
+        decision=MacroAnalysisDecision.PUBLISH,
+        regime="中性",
+        technical_alignment=Decimal("0.2"),
+        macro_impact=Decimal("0.3"),
+        scenarios=(),
+        claims=(MacroClaim("证据支持", ("evidence-1",), ()),),
+        uncertainties=(),
+        data_gaps=(),
+        invalidation_conditions=("证据修订",),
+        reported_confidence="UNCALIBRATED",
+        refusal_reason="",
+        model_version="model-1",
+    )
+
+    document = cli._macro_track_document(
+        analysis,
+        (
+            SimpleNamespace(evidence_id="evidence-1"),
+            SimpleNamespace(evidence_id="evidence-2"),
+        ),
+    )
+
+    assert document is not None
+    assert document["analysis_id"] == "analysis-track-1"
+    assert document["evidence_coverage"] == "0.500"
+    assert document["macro_impact"] == "0.300"
+    assert document["model_version"] == "model-1"
+
+
+def test_post_close_parser_defaults_and_main_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    defaults = build_parser().parse_args(["ashare-post-close", "status"])
+    assert defaults.runtime_dir == "runtime/paper/day"
+    assert defaults.account == "ashare-paper-day"
+    assert defaults.history_days == 540
+    assert defaults.refresh_news is True
+    assert defaults.search_discovery is True
+    assert defaults.macro is True
+    assert defaults.macro_provider is None
+    assert defaults.recover_analysis is False
+    assert defaults.recover_delivery is False
+
+    captured: list[tuple[object, ...]] = []
+
+    async def fake_post_close(*args: object) -> dict[str, object]:
+        captured.append(args)
+        return {"action": "run", "ok": True}
+
+    monkeypatch.setattr(cli, "_ashare_post_close", fake_post_close)
+    assert (
+        cli.main(
+            [
+                "ashare-post-close",
+                "run",
+                "--target-kind",
+                "private",
+                "--target-id",
+                "123456789",
+                "--recover-analysis",
+                "--recover-delivery",
+                "--confirm",
+                "POST_CLOSE",
+            ]
+        )
+        == 0
+    )
+    assert captured[0][0] == "run"
+    assert captured[0][-3:] == (
+        "POST_CLOSE",
+        True,
+        True,
+    )
+    assert json.loads(capsys.readouterr().out) == {"action": "run", "ok": True}
+
+
+def test_post_close_main_returns_nonzero_for_operational_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def fake_post_close(*_args: object) -> dict[str, object]:
+        return {"error_code": "ALL_HELD_RESEARCH_FAILED", "ok": False}
+
+    monkeypatch.setattr(cli, "_ashare_post_close", fake_post_close)
+    assert cli.main(["ashare-post-close", "status"]) == 1
+    assert json.loads(capsys.readouterr().out) == {
+        "error_code": "ALL_HELD_RESEARCH_FAILED",
+        "ok": False,
+    }
+
+
+def test_post_close_os_scheduler_actions_are_not_user_facing_cli_actions() -> None:
+    parser = cli.build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["ashare-post-close", "schedule-install"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["ashare-post-close", "schedule-status"])
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "ftp://search.example.invalid/private-prefix",
+        "https:///private-prefix",
+        "https://user:password@search.example.invalid/private-prefix",
+        "https://search.example.invalid/private-prefix?token=not-for-manifest",
+        "https://search.example.invalid/private-prefix#not-for-manifest",
+    ),
+)
+def test_post_close_searxng_url_is_rejected_before_post_root_write(
+    tmp_path: Path,
+    value: str,
+) -> None:
+    session_root = tmp_path / "2026-08-14"
+
+    with pytest.raises(cli._PostCloseCLIError) as captured:
+        asyncio.run(
+            cli._ashare_post_close_run(
+                session_root=session_root,
+                session_date=date(2026, 8, 14),
+                account_id="ashare-paper-day",
+                target_kind_value="private",
+                target_id="123456789",
+                base_url="http://127.0.0.1:3000",
+                candidate_db="runtime/research/candidates.sqlite3",
+                history_days=540,
+                news_runtime_dir="runtime/news",
+                research_db="runtime/research/research.sqlite3",
+                market_evidence_dir="runtime/research/market_evidence",
+                news_feeds=None,
+                refresh_news=True,
+                search_discovery=True,
+                searxng_url=value,
+                macro_enabled=True,
+                macro_provider="deepseek",
+                model="deepseek-v4-flash",
+                macro_weight=Decimal("0.25"),
+                dispatch_cycles=3,
+                dispatch_poll_interval=2.0,
+                recover_analysis=False,
+                recover_delivery=False,
+                now=datetime(2026, 8, 14, 16, 0, tzinfo=UTC),
+            )
+        )
+
+    assert captured.value.code == "SEARXNG_URL_INVALID"
+    assert not (session_root / "post-close").exists()
+
+
+def test_post_close_searxng_manifest_record_redacts_path_and_keeps_runtime_url() -> None:
+    sensitive_path = "/private-tenants/one-7f5f80f8/search"
+    original = f"HTTPS://Searx.Example.Invalid{sensitive_path}"
+    validated = cli.validate_post_close_searxng_url(original)
+    canonical = cli.validate_post_close_searxng_url(
+        f"https://searx.example.invalid{sensitive_path}"
+    )
+
+    assert validated is not None
+    assert canonical is not None
+    assert cli.validate_post_close_searxng_url(None) is None
+    assert validated.runtime_url == original
+    assert validated.manifest_document == canonical.manifest_document
+    assert validated.manifest_document["origin"] == "https://searx.example.invalid"
+    assert (
+        validated.manifest_document["path_sha256"]
+        == hashlib.sha256(sensitive_path.encode("utf-8")).hexdigest()
+    )
+
+    manifest_stdout = json.dumps(
+        {
+            "config": {"searxng_url": validated.manifest_document},
+            "ok": True,
+        },
+        sort_keys=True,
+    )
+    assert sensitive_path not in manifest_stdout
+    assert original not in manifest_stdout
+
+
+@pytest.mark.parametrize(
+    ("held", "completed", "failed", "expected"),
+    [
+        (0, 0, 0, "NOT_APPLICABLE"),
+        (2, 2, 0, "COMPLETE"),
+        (2, 1, 1, "PARTIAL"),
+        (2, 0, 2, "FAILED"),
+    ],
+)
+def test_post_close_analysis_outcome_is_explicit(
+    held: int,
+    completed: int,
+    failed: int,
+    expected: str,
+) -> None:
+    assert (
+        cli._post_close_analysis_outcome(
+            held_count=held,
+            research_completed=completed,
+            research_failed=failed,
+        )
+        == expected
+    )
+
+
+def test_post_close_analysis_outcome_rejects_missing_results() -> None:
+    with pytest.raises(cli._PostCloseCLIError) as captured:
+        cli._post_close_analysis_outcome(
+            held_count=2,
+            research_completed=1,
+            research_failed=0,
+        )
+    assert captured.value.code == "POST_CLOSE_RESEARCH_RESULT_INVALID"
+
+
+def test_post_close_delivery_uses_one_contract_summary_and_keeps_markdown_long_form() -> None:
+    contract = REPORT_CONTRACTS[ReportKind.DAILY_REVIEW]
+    original = render_stable_markdown_report(
+        ReportKind.DAILY_REVIEW,
+        title="盘后长报告",
+        sections={name: f"{name}：" + "研究正文" * 500 for name in contract.required_sections},
+    )
+
+    summary = cli._post_close_delivery_summary(
+        original,
+        artifact_name="盘后长报告.md",
+        artifact_sha256="a" * 64,
+        run_id="post-close-run-0123456789",
+    )
+
+    validate_text_report_contract(ReportKind.DAILY_REVIEW, summary)
+    assert len(summary) <= 7_000
+    assert len(summary) < len(original)
+    assert "完整报告文件：盘后长报告.md" in summary
+    assert "内容摘要：aaaaaaaaaaaa" in summary
+    assert "Post-close report" not in summary
+
+
+def test_post_close_profile_uses_only_exact_paper_archive_fields() -> None:
+    projection = SimpleNamespace(
+        session_date=date(2026, 8, 14),
+        events=(
+            SimpleNamespace(
+                event_type="SURVEILLANCE_SCAN_COMPLETED",
+                payload={
+                    "candidates": [
+                        {"symbol": "600000.SH", "name": "浦发银行"},
+                    ]
+                },
+            ),
+            SimpleNamespace(
+                event_type="WATCHLIST_UPDATED",
+                payload={
+                    "watchlist": [
+                        {
+                            "symbol": "600000.SH",
+                            "name": "浦发银行",
+                            "board": "SSE_MAIN",
+                        }
+                    ]
+                },
+            ),
+            SimpleNamespace(
+                event_type="FILL_STARTED",
+                payload={
+                    "fill": {
+                        "symbol": "600000.SH",
+                        "instrument_type": "stock",
+                    }
+                },
+            ),
+        ),
+    )
+
+    profiles = cli._paper_session_instrument_profiles(
+        projection,
+        {"600000.SH": "stock"},
+    )
+
+    assert tuple(profiles) == ("600000.SH",)
+    profile = profiles["600000.SH"]
+    assert profile.name == "浦发银行"
+    assert profile.exchange == "sse"
+    assert profile.board == "sse_main"
+    assert profile.asset_type == "stock"
+    assert profile.industry == "unknown-not-provided"
+    assert profile.size_tier == "unknown-not-provided"
+    assert profile.source_id == "PAPER_SESSION_ARCHIVE"
+    assert "DEGRADED_PROFILE" in profile.risk_tags
+
+
+def test_post_close_profile_fails_closed_on_archive_type_conflict() -> None:
+    projection = SimpleNamespace(
+        session_date=date(2026, 8, 14),
+        events=(
+            SimpleNamespace(
+                event_type="WATCHLIST_UPDATED",
+                payload={
+                    "watchlist": [
+                        {
+                            "symbol": "600000.SH",
+                            "name": "浦发银行",
+                            "board": "SSE_MAIN",
+                        }
+                    ]
+                },
+            ),
+            SimpleNamespace(
+                event_type="FILL_STARTED",
+                payload={
+                    "fill": {
+                        "symbol": "600000.SH",
+                        "instrument_type": "etf",
+                    }
+                },
+            ),
+        ),
+    )
+
+    assert (
+        cli._paper_session_instrument_profiles(
+            projection,
+            {"600000.SH": "stock"},
+        )
+        == {}
+    )
+
+
+def test_ashare_paper_day_run_requires_confirmation_and_target_without_io(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "_required_local_secret",
+        lambda _name: pytest.fail("secret lookup must not run before validation"),
+    )
+    now = datetime.fromisoformat("2026-08-14T08:00:00+08:00")
+    unconfirmed = asyncio.run(
+        _ashare_paper_day(
+            "run",
+            str(tmp_path),
+            None,
+            "account",
+            Decimal("200000"),
+            "private",
+            "12345",
+            "http://127.0.0.1:3000",
+            None,
+            now=now,
+        )
+    )
+    assert unconfirmed["error_code"] == "PAPER_DAY_CONFIRMATION_REQUIRED"
+    missing_target = asyncio.run(
+        _ashare_paper_day(
+            "run",
+            str(tmp_path),
+            None,
+            "account",
+            Decimal("200000"),
+            None,
+            None,
+            "http://127.0.0.1:3000",
+            "PAPER_DAY",
+            now=now,
+        )
+    )
+    assert missing_target["error_code"] == "NOTIFICATION_TARGET_REQUIRED"
+    assert not tmp_path.joinpath("2026-08-14").exists()
+
+
+def test_ashare_paper_day_required_llm_missing_key_fails_before_session_db(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from gribuki_trade.ports.market_data import TradeCalendarDay
+
+    class Calendar:
+        async def fetch_trade_calendar_async(
+            self, start: date, end: date
+        ) -> tuple[TradeCalendarDay, ...]:
+            return tuple(
+                TradeCalendarDay(day, day.weekday() < 5)
+                for day in (
+                    start + timedelta(days=offset) for offset in range((end - start).days + 1)
+                )
+            )
+
+    def secret(name: str) -> str:
+        if name == cli.NAPCAT_ACCESS_TOKEN_SECRET:
+            return "napcat-token"
+        raise RuntimeError("missing")
+
+    async def forbidden_run(**_kwargs: object) -> dict[str, object]:
+        pytest.fail("runtime must not start without the required LLM key")
+
+    monkeypatch.setattr(cli, "_required_local_secret", secret)
+    monkeypatch.setattr(cli, "_run_ashare_paper_day", forbidden_run)
+    result = asyncio.run(
+        _ashare_paper_day(
+            "run",
+            str(tmp_path),
+            None,
+            "account",
+            Decimal("200000"),
+            "private",
+            "12345",
+            "http://127.0.0.1:3000",
+            "PAPER_DAY",
+            now=datetime.fromisoformat("2026-08-14T08:00:00+08:00"),
+            calendar_provider=Calendar(),
+        )
+    )
+
+    assert result["error_code"] == "INTRADAY_LLM_API_KEY_NOT_CONFIGURED"
+    assert not tmp_path.joinpath("2026-08-14").exists()
+
+
+def test_ashare_paper_day_status_and_report_are_sidecar_only(tmp_path: Path) -> None:
+    session = date(2026, 8, 14)
+    root = tmp_path / session.isoformat()
+    root.mkdir()
+    status = {"phase": "MORNING", "event_count": 8}
+    (root / "status.json").write_text(json.dumps(status), encoding="utf-8")
+    report_dir = root / "reports"
+    report_dir.mkdir()
+    report = report_dir / "ashare-paper-day-2026-08-14-abc.md"
+    report.write_text("# A-share PAPER\n\ncomplete\n", encoding="utf-8")
+
+    status_result = _ashare_paper_day_status(root, session)
+    report_result = _ashare_paper_day_report(root, session)
+
+    assert status_result["ok"] is True
+    assert status_result["read_only_sidecar"] is True
+    assert status_result["status"] == status
+    assert status_result["artifact_delivery_status"] == "NOT_REPORTED"
+    assert status_result["daily_review_delivery_complete"] is False
+    assert status_result["operationally_complete"] is False
+    assert report_result["ok"] is True
+    assert report_result["read_only_sidecar"] is True
+    metadata = report_result["report"]
+    assert isinstance(metadata, dict)
+    assert metadata["path"] == str(report.resolve())
+    assert metadata["bytes"] == len(report.read_bytes())
+    assert metadata["line_count"] == 3
+    assert len(str(metadata["sha256"])) == 64
+    assert not tuple(root.glob("*.sqlite3"))
+
+
+@pytest.mark.parametrize(
+    ("artifact_status", "complete"),
+    (("SENT", True), ("PENDING", False), ("AMBIGUOUS", False), ("NOT_CONFIGURED", False)),
+)
+def test_ashare_paper_day_status_projects_exact_daily_review_delivery(
+    tmp_path: Path,
+    artifact_status: str,
+    complete: bool,
+) -> None:
+    session = date(2026, 8, 14)
+    root = tmp_path / session.isoformat()
+    root.mkdir()
+    status = {
+        "artifact_delivery_complete": artifact_status == "SENT",
+        "artifact_delivery_status": artifact_status,
+        "daily_review_delivery_complete": complete,
+        "event_count": 12,
+        "notification_gaps": 0 if complete else 1,
+        "notification_required": 8,
+        "notification_sent": 8 if complete else 7,
+        "phase": "POST_CLOSE",
+        "text_notification_gaps": 0,
+        "text_notification_required": 7,
+        "text_notification_sent": 7,
+    }
+    (root / "status.json").write_text(json.dumps(status), encoding="utf-8")
+
+    result = _ashare_paper_day_status(root, session)
+
+    assert result["ok"] is True  # 表示只读查询成功，不代表双交付完成。
+    assert result["artifact_delivery_status"] == artifact_status
+    assert result["daily_review_delivery_complete"] is complete
+    assert result["operationally_complete"] is complete
+    delivery = result["delivery"]
+    assert isinstance(delivery, dict)
+    assert delivery["projection_exact"] is True
+    assert delivery["projection_source"] == "status.json"
+
+
+def test_ashare_paper_day_status_falls_back_to_latest_artifact_sidecar_event(
+    tmp_path: Path,
+) -> None:
+    session = date(2026, 8, 14)
+    root = tmp_path / session.isoformat()
+    root.mkdir()
+    (root / "status.json").write_text(
+        json.dumps({"phase": "POST_CLOSE", "event_count": 3}),
+        encoding="utf-8",
+    )
+    events = (
+        {"event_type": "REPORT_ARTIFACT_DELIVERY_PENDING", "payload": {}},
+        {"event_type": "REPORT_ARTIFACT_DELIVERY_AMBIGUOUS", "payload": {}},
+        {"event_type": "RUNNER_RESUMED", "payload": {}},
+    )
+    (root / "session.log.jsonl").write_text(
+        "".join(json.dumps(item) + "\n" for item in events),
+        encoding="utf-8",
+    )
+
+    result = _ashare_paper_day_status(root, session)
+
+    assert result["artifact_delivery_status"] == "AMBIGUOUS"
+    assert result["daily_review_delivery_complete"] is False
+    assert result["operationally_complete"] is False
+    delivery = result["delivery"]
+    assert isinstance(delivery, dict)
+    assert delivery["projection_exact"] is False
+    assert delivery["projection_source"] == "session.log.jsonl"
+
+
+def test_verify_ashare_paper_day_calendar_is_complete_and_adjacent() -> None:
+    from gribuki_trade.ports.market_data import TradeCalendarDay
+
+    class Calendar:
+        async def fetch_trade_calendar_async(
+            self, start: date, end: date
+        ) -> tuple[TradeCalendarDay, ...]:
+            return tuple(
+                TradeCalendarDay(day, day.weekday() < 5)
+                for day in (
+                    start + timedelta(days=offset) for offset in range((end - start).days + 1)
+                )
+            )
+
+    previous = asyncio.run(
+        _verify_ashare_paper_day_calendar(
+            date(2026, 8, 14),
+            now=datetime.fromisoformat("2026-08-14T08:00:00+08:00"),
+            calendar_provider=Calendar(),
+        )
+    )
+    assert previous == date(2026, 8, 13)
+
+
+def test_ashare_paper_day_run_owns_resources_and_awake_guard(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import gribuki_trade.adapters.notifiers as notifiers
+    import gribuki_trade.runtime as runtime
+    import gribuki_trade.services.ashare_paper_day as paper_day_service
+
+    lifecycle: list[str] = []
+    runner_kwargs: list[dict[str, object]] = []
+
+    class FakeAwakeGuard:
+        def __enter__(self) -> "FakeAwakeGuard":
+            lifecycle.append("awake-enter")
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            lifecycle.append("awake-exit")
+
+    class FakeNotifier:
+        channel = "onebot"
+
+        def __init__(self, config: object) -> None:
+            lifecycle.append("notifier-created")
+            self.config = config
+
+        async def __aenter__(self) -> "FakeNotifier":
+            lifecycle.append("notifier-enter")
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            lifecycle.append("notifier-exit")
+
+        async def get_status(self) -> dict[str, bool]:
+            lifecycle.append("notifier-preflight")
+            return {"good": True, "online": True}
+
+    class FakeRunner:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+            runner_kwargs.append(kwargs)
+            lifecycle.append("runner-created")
+
+        async def run(self) -> SimpleNamespace:
+            manifest = self.kwargs["manifest"]
+            paper = self.kwargs["paper"]
+            snapshot = paper.open_account(  # type: ignore[union-attr]
+                manifest.account_id,  # type: ignore[union-attr]
+                initial_cash=manifest.initial_cash,  # type: ignore[union-attr]
+                session_date=manifest.session_date,  # type: ignore[union-attr]
+                opened_at=manifest.created_at,  # type: ignore[union-attr]
+            )
+            lifecycle.append("runner-ran")
+            return SimpleNamespace(
+                run_id=manifest.run_id,  # type: ignore[union-attr]
+                session_date=manifest.session_date,  # type: ignore[union-attr]
+                completed=True,
+                event_count=0,
+                notification_required=0,
+                notification_sent=0,
+                notification_gaps=0,
+                artifact_delivery_status="SENT",
+                artifact_delivery_complete=True,
+                daily_review_delivery_complete=True,
+                final_snapshot=snapshot,
+                report_path=tmp_path / "report.md",
+            )
+
+    monkeypatch.setattr(runtime, "SystemAwakeGuard", FakeAwakeGuard)
+    monkeypatch.setattr(notifiers, "OneBotNotifier", FakeNotifier)
+    monkeypatch.setattr(paper_day_service, "ASharePaperDayRunner", FakeRunner)
+    result = asyncio.run(
+        cli._run_ashare_paper_day(
+            session_root=tmp_path / "2026-08-14",
+            session_date=date(2026, 8, 14),
+            latest_completed_session=date(2026, 8, 13),
+            account_id="day-account",
+            initial_cash=Decimal("200000"),
+            target_kind_value="private",
+            target_id="12345",
+            base_url="http://127.0.0.1:3000",
+            access_token="dummy-token",
+            started_at=datetime.fromisoformat("2026-08-14T08:00:00+08:00"),
+            intraday_llm_enabled=False,
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["execution_mode"] == "PAPER_ONLY_NO_BROKER"
+    assert result["system_awake"] == "PROCESS_SCOPED_SYSTEM_ONLY"
+    assert result["account"]["cash"] == "200000.00"  # type: ignore[index]
+    assert runner_kwargs[0]["risk_config"].maximum_positions is None  # type: ignore[union-attr]
+    manifest = runner_kwargs[0]["manifest"]
+    assert manifest.config["intraday_risk_policy"]["maximum_positions"] is None  # type: ignore[union-attr,index]
+    assert lifecycle == [
+        "awake-enter",
+        "notifier-created",
+        "notifier-enter",
+        "notifier-preflight",
+        "runner-created",
+        "runner-ran",
+        "notifier-exit",
+        "awake-exit",
+    ]
+    session_root = tmp_path / "2026-08-14"
+    assert (session_root / "journal.sqlite3").is_file()
+    assert (session_root / "outbox.sqlite3").is_file()
+    assert (session_root / "ledger.sqlite3").is_file()
+
+
+def test_ashare_paper_day_llm_wiring_freezes_once_and_replays_manifest_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import httpx
+
+    import gribuki_trade.adapters.notifiers as notifiers
+    import gribuki_trade.runtime as runtime
+    import gribuki_trade.services.ashare_paper_day as paper_day_service
+    from gribuki_trade.adapters.llm import DeepSeekChatMacroAnalyzer
+    from gribuki_trade.analysis.schemas import (
+        MacroAnalysis,
+        MacroAnalysisDecision,
+        MacroAnalysisRequest,
+        MacroClaim,
+    )
+    from gribuki_trade.domain.events import NormalizedEvent, SourceTier
+    from gribuki_trade.ports.llm_analyzer import AnalyzerAuditIdentity
+    from gribuki_trade.storage import SQLiteEventStore
+
+    session = date(2099, 8, 14)
+    first_start = datetime.fromisoformat("2099-08-14T08:00:00+08:00")
+    events_path = tmp_path / "events.sqlite3"
+    visible_at = first_start.astimezone(UTC) - timedelta(minutes=10)
+    with SQLiteEventStore(events_path) as store:
+        store.append(
+            NormalizedEvent(
+                source_id="official.test",
+                canonical_url="https://official.example.test/sensitive",
+                title="sensitive headline must stay out of the manifest",
+                summary="sensitive summary must stay out of the manifest",
+                event_type="macro",
+                source_tier=SourceTier.OFFICIAL,
+                first_seen_at=visible_at,
+                retrieved_at=visible_at,
+                available_at=visible_at,
+                published_at=visible_at - timedelta(minutes=1),
+                external_id="sensitive-event",
+                entities=("510300.SH",),
+            )
+        )
+
+    class Awake:
+        def __enter__(self) -> "Awake":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            pass
+
+    class Notifier:
+        channel = "onebot"
+
+        def __init__(self, _config: object) -> None:
+            pass
+
+        async def __aenter__(self) -> "Notifier":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            pass
+
+        async def get_status(self) -> dict[str, bool]:
+            return {"good": True, "online": True}
+
+    identity = AnalyzerAuditIdentity(
+        provider_id="test.provider",
+        requested_model=cli.DEFAULT_DEEPSEEK_MODEL,
+        adapter_version="test-adapter@1",
+        prompt_version="test-prompt@1",
+        prompt_schema_sha256="a" * 64,
+    )
+
+    class Analyzer:
+        audit_identity = identity
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def analyze(self, request: MacroAnalysisRequest) -> MacroAnalysis:
+            self.calls += 1
+            evidence_id = request.evidence[0].evidence_id
+            return MacroAnalysis(
+                analysis_id=request.analysis_id,
+                as_of=request.as_of,
+                decision=MacroAnalysisDecision.PUBLISH,
+                regime="test",
+                technical_alignment=Decimal("0.2"),
+                macro_impact=Decimal("0.1"),
+                scenarios=(),
+                claims=(MacroClaim("bounded", (evidence_id,), ()),),
+                uncertainties=(),
+                data_gaps=(),
+                invalidation_conditions=("权威证据发生修订时失效",),
+                reported_confidence="UNCALIBRATED",
+                refusal_reason="",
+                model_version=identity.requested_model,
+            )
+
+    analyzer = Analyzer()
+    clients: list[httpx.AsyncClient] = []
+
+    def analyzer_factory(
+        _api_key: object,
+        *,
+        model: str,
+        client: httpx.AsyncClient,
+        **_kwargs: object,
+    ) -> Analyzer:
+        assert model == cli.DEFAULT_DEEPSEEK_MODEL
+        clients.append(client)
+        return analyzer
+
+    runner_kwargs: list[dict[str, object]] = []
+
+    class Runner:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+            runner_kwargs.append(kwargs)
+
+        async def run(self) -> SimpleNamespace:
+            manifest = self.kwargs["manifest"]
+            paper = self.kwargs["paper"]
+            try:
+                snapshot = paper.snapshot(manifest.account_id)  # type: ignore[union-attr]
+            except Exception:
+                snapshot = paper.open_account(  # type: ignore[union-attr]
+                    manifest.account_id,  # type: ignore[union-attr]
+                    initial_cash=manifest.initial_cash,  # type: ignore[union-attr]
+                    session_date=manifest.session_date,  # type: ignore[union-attr]
+                    opened_at=manifest.created_at,  # type: ignore[union-attr]
+                )
+            return SimpleNamespace(
+                run_id=manifest.run_id,  # type: ignore[union-attr]
+                session_date=manifest.session_date,  # type: ignore[union-attr]
+                completed=True,
+                event_count=0,
+                notification_required=0,
+                notification_sent=0,
+                notification_gaps=0,
+                artifact_delivery_status="SENT",
+                artifact_delivery_complete=True,
+                daily_review_delivery_complete=True,
+                final_snapshot=snapshot,
+                report_path=tmp_path / "report.md",
+            )
+
+    monkeypatch.setattr(runtime, "SystemAwakeGuard", Awake)
+    monkeypatch.setattr(notifiers, "OneBotNotifier", Notifier)
+    monkeypatch.setattr(paper_day_service, "ASharePaperDayRunner", Runner)
+    monkeypatch.setattr(
+        DeepSeekChatMacroAnalyzer,
+        "for_intraday",
+        staticmethod(analyzer_factory),
+    )
+
+    common = {
+        "session_root": tmp_path / session.isoformat(),
+        "session_date": session,
+        "latest_completed_session": date(2099, 8, 13),
+        "account_id": "day-account",
+        "initial_cash": Decimal("200000"),
+        "target_kind_value": "private",
+        "target_id": "12345",
+        "base_url": "http://127.0.0.1:3000",
+        "access_token": "dummy-token",
+        "intraday_llm_events_db": str(events_path),
+        "intraday_llm_api_key": "secret-deepseek-key",
+    }
+    first = asyncio.run(
+        cli._run_ashare_paper_day(started_at=first_start, **common)  # type: ignore[arg-type]
+    )
+    second = asyncio.run(
+        cli._run_ashare_paper_day(  # type: ignore[arg-type]
+            started_at=first_start + timedelta(minutes=30),
+            **common,
+        )
+    )
+    events_path.unlink()
+    replay_mismatch = asyncio.run(
+        cli._run_ashare_paper_day(  # type: ignore[arg-type]
+            started_at=first_start + timedelta(hours=1),
+            **common,
+        )
+    )
+
+    assert first["run_id"] == second["run_id"] == replay_mismatch["run_id"]
+    # 首次冻结会并行执行一条 baseline 与 FAST 的两个对抗角色；后续恢复不得重跑。
+    assert analyzer.calls == 3
+    assert runner_kwargs[0]["llm_preopen_context"] is not None
+    assert runner_kwargs[1]["llm_preopen_context"] is None
+    assert runner_kwargs[2]["llm_preopen_context"] is None
+    assert runner_kwargs[2]["intraday_llm_plan_factory"].available is False  # type: ignore[union-attr]
+    assert replay_mismatch["intraday_llm"] == {
+        "enabled": True,
+        "required_for_buy": True,
+        "runtime_evidence_failure_code": ("LLM_EVIDENCE_SNAPSHOT_REPLAY_MISMATCH"),
+        "runtime_evidence_status": "UNAVAILABLE",
+    }
+    first_manifest = runner_kwargs[0]["manifest"]
+    second_manifest = runner_kwargs[1]["manifest"]
+    assert first_manifest.run_id == second_manifest.run_id  # type: ignore[union-attr]
+    binding = first_manifest.config["intraday_llm_evidence_snapshot"]  # type: ignore[union-attr]
+    assert binding["evidence_as_of"] == (  # type: ignore[index]
+        first_start.astimezone(UTC).isoformat()
+    )
+    assert all(client.is_closed for client in clients)
+    retained = first_manifest.config_json + json.dumps(first, default=str)  # type: ignore[union-attr]
+    for secret_text in (
+        "secret-deepseek-key",
+        "sensitive headline",
+        "sensitive summary",
+    ):
+        assert secret_text not in retained
+
+
+def test_ashare_paper_day_notification_preflight_fails_before_databases(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import gribuki_trade.adapters.notifiers as notifiers
+    import gribuki_trade.runtime as runtime
+
+    class FakeAwakeGuard:
+        def __enter__(self) -> "FakeAwakeGuard":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            pass
+
+    class OfflineNotifier:
+        channel = "onebot"
+
+        def __init__(self, _config: object) -> None:
+            pass
+
+        async def __aenter__(self) -> "OfflineNotifier":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            pass
+
+        async def get_status(self) -> dict[str, bool]:
+            return {"good": True, "online": False}
+
+    monkeypatch.setattr(runtime, "SystemAwakeGuard", FakeAwakeGuard)
+    monkeypatch.setattr(notifiers, "OneBotNotifier", OfflineNotifier)
+    session_root = tmp_path / "2026-08-14"
+    with pytest.raises(cli._PaperDayCLIError) as raised:
+        asyncio.run(
+            cli._run_ashare_paper_day(
+                session_root=session_root,
+                session_date=date(2026, 8, 14),
+                latest_completed_session=date(2026, 8, 13),
+                account_id="day-account",
+                initial_cash=Decimal("200000"),
+                target_kind_value="private",
+                target_id="12345",
+                base_url="http://127.0.0.1:3000",
+                access_token="dummy-token",
+                started_at=datetime.fromisoformat("2026-08-14T08:00:00+08:00"),
+                intraday_llm_enabled=False,
+            )
+        )
+    assert raised.value.code == "PAPER_DAY_NOTIFICATION_PREFLIGHT_FAILED"
+    assert not tuple(session_root.glob("*.sqlite3"))
+
+
+def test_ashare_paper_day_reuses_legacy_manifest_when_risk_policy_is_upgraded(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """热更新风险策略时必须续写旧运行，绝不能创建重复运行。"""
+
+    import gribuki_trade.adapters.notifiers as notifiers
+    import gribuki_trade.runtime as runtime
+    import gribuki_trade.services.ashare_paper_day as paper_day_service
+    from gribuki_trade.domain.paper_day import (
+        PaperDayRunManifest,
+        paper_day_target_hash,
+    )
+    from gribuki_trade.services.ashare_paper_day import ASharePaperDayConfig
+    from gribuki_trade.storage.paper_day import SQLitePaperDayStore
+
+    session = date(2026, 8, 14)
+    created_at = datetime.fromisoformat("2026-08-14T08:00:00+08:00")
+    session_root = tmp_path / session.isoformat()
+    session_root.mkdir()
+    config = ASharePaperDayConfig(initial_cash=Decimal("200000"))
+    legacy_config = {
+        **config.audit_document(),
+        "calendar_provider": "BaoStock",
+        "calendar_verified": True,
+        "latest_completed_session": "2026-08-13",
+        "notification_channel": "onebot",
+        "notification_preflight_policy": "GET_STATUS_GOOD_AND_ONLINE",
+        "notification_preflight_required": True,
+        "notification_target_kind": "private",
+    }
+    target_hash = paper_day_target_hash(
+        channel="onebot",
+        target_kind="private",
+        target_id="12345",
+    )
+    legacy = PaperDayRunManifest.create(
+        session_date=session,
+        account_id="day-account",
+        config=legacy_config,
+        created_at=created_at,
+        target_hash=target_hash,
+        initial_cash=Decimal("200000"),
+    )
+    with SQLitePaperDayStore(session_root / "journal.sqlite3") as store:
+        store.create_run(legacy)
+
+    class Awake:
+        def __enter__(self) -> "Awake":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            pass
+
+    class Notifier:
+        channel = "onebot"
+
+        def __init__(self, _config: object) -> None:
+            pass
+
+        async def __aenter__(self) -> "Notifier":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            pass
+
+        async def get_status(self) -> dict[str, bool]:
+            return {"good": True, "online": True}
+
+    class Runner:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+        async def run(self) -> SimpleNamespace:
+            manifest = self.kwargs["manifest"]
+            assert manifest.run_id == legacy.run_id  # type: ignore[union-attr]
+            risk_config = self.kwargs["risk_config"]
+            assert risk_config.maximum_positions is None  # type: ignore[union-attr]
+            paper = self.kwargs["paper"]
+            snapshot = paper.open_account(  # type: ignore[union-attr]
+                manifest.account_id,  # type: ignore[union-attr]
+                initial_cash=manifest.initial_cash,  # type: ignore[union-attr]
+                session_date=manifest.session_date,  # type: ignore[union-attr]
+                opened_at=manifest.created_at,  # type: ignore[union-attr]
+            )
+            return SimpleNamespace(
+                run_id=manifest.run_id,  # type: ignore[union-attr]
+                session_date=manifest.session_date,  # type: ignore[union-attr]
+                completed=True,
+                event_count=0,
+                notification_required=0,
+                notification_sent=0,
+                notification_gaps=0,
+                artifact_delivery_status="SENT",
+                artifact_delivery_complete=True,
+                daily_review_delivery_complete=True,
+                final_snapshot=snapshot,
+                report_path=tmp_path / "report.md",
+            )
+
+    monkeypatch.setattr(runtime, "SystemAwakeGuard", Awake)
+    monkeypatch.setattr(notifiers, "OneBotNotifier", Notifier)
+    monkeypatch.setattr(paper_day_service, "ASharePaperDayRunner", Runner)
+
+    result = asyncio.run(
+        cli._run_ashare_paper_day(
+            session_root=session_root,
+            session_date=session,
+            latest_completed_session=date(2026, 8, 13),
+            account_id="day-account",
+            initial_cash=Decimal("200000"),
+            target_kind_value="private",
+            target_id="12345",
+            base_url="http://127.0.0.1:3000",
+            access_token="dummy-token",
+            started_at=created_at,
+            intraday_llm_enabled=False,
+        )
+    )
+
+    assert result["run_id"] == legacy.run_id
+    with SQLitePaperDayStore(session_root / "journal.sqlite3") as store:
+        assert tuple(item.run_id for item in store.list_runs()) == (legacy.run_id,)
 
 
 def test_ashare_market_screen_parser_defaults_overrides_and_invalid_values() -> None:
@@ -284,6 +1778,80 @@ def test_strategy_factor_discover_parser_main_and_atomic_inventory(
     assert result["warnings"] == ["MULTIPLE_HYPOTHESIS_TESTING_REQUIRED"]
 
 
+def test_strategy_exit_evaluate_parser_and_research_only_guard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parser = build_parser()
+    parsed = parser.parse_args(
+        [
+            "strategy-exit-evaluate",
+            "--dataset",
+            "dataset.json",
+            "--specification",
+            "specification.json",
+            "--output",
+            "registry.json",
+            "--confirm",
+            "RESEARCH_ONLY",
+        ]
+    )
+    assert parsed.command == "strategy-exit-evaluate"
+    assert parsed.confirm == "RESEARCH_ONLY"
+
+    invoked = False
+
+    def fake_run(*_args: object, **_kwargs: object) -> object:
+        nonlocal invoked
+        invoked = True
+        metrics = SimpleNamespace(
+            maximum_drawdown=Decimal("0.1"),
+            net_return=Decimal("0.2"),
+        )
+        registry = SimpleNamespace(
+            baseline_holdout=SimpleNamespace(metrics=metrics),
+            selected_holdout=SimpleNamespace(metrics=metrics),
+            registry_sha256="a" * 64,
+            selected_trial_id="exit-selected",
+            trials=(1, 2),
+        )
+        return SimpleNamespace(
+            artifact_sha256="b" * 64,
+            dataset_file_sha256="c" * 64,
+            destination=(tmp_path / "registry.json").resolve(),
+            registry=registry,
+            specification_file_sha256="d" * 64,
+        )
+
+    import gribuki_trade.strategy_lab as strategy_lab
+
+    monkeypatch.setattr(strategy_lab, "run_frozen_exit_policy_experiment", fake_run)
+    rejected = _strategy_exit_evaluate(
+        dataset="dataset.json",
+        specification="specification.json",
+        output="registry.json",
+        created_at=None,
+        overwrite=False,
+        confirmation=None,
+    )
+    assert rejected["error_code"] == "EXIT_POLICY_RESEARCH_CONFIRMATION_REQUIRED"
+    assert invoked is False
+
+    accepted = _strategy_exit_evaluate(
+        dataset="dataset.json",
+        specification="specification.json",
+        output="registry.json",
+        created_at=datetime(2026, 8, 14, tzinfo=UTC),
+        overwrite=False,
+        confirmation="RESEARCH_ONLY",
+    )
+    assert accepted["ok"] is True
+    assert accepted["execution_authority"] is False
+    assert accepted["promotion_authorized"] is False
+    assert accepted["trial_count"] == 2
+    assert invoked is True
+
+
 def test_strategy_factor_discover_budget_failure_is_structured_and_stable() -> None:
     first = _strategy_factor_discover(1)
     second = _strategy_factor_discover(1)
@@ -342,13 +1910,9 @@ def test_ashare_research_runs_list_summary_and_get_full_documents(
             config={"macro_weight": Decimal("0.25")},
             payload={"decision": "WATCH", "score": Decimal("0.123")},
         )
-    expected_id = research_run_id(
-        "ashare_close_research", "510300.SH/2026-08-14"
-    )
+    expected_id = research_run_id("ashare_close_research", "510300.SH/2026-08-14")
 
-    listed = _ashare_research_runs(
-        "list", str(run_db), None, "ashare_close_research", 5
-    )
+    listed = _ashare_research_runs("list", str(run_db), None, "ashare_close_research", 5)
     assert listed["ok"] is True
     assert listed["count"] == 1
     summary = listed["runs"][0]
@@ -403,9 +1967,7 @@ def test_ashare_candidates_manual_lifecycle_and_parser(tmp_path: Path) -> None:
 
     candidate_db = str(tmp_path / "candidates.sqlite3")
     at = datetime.fromisoformat("2026-08-14T10:00:00+08:00")
-    added = _ashare_candidates(
-        "add", "510300.SH", "MANUAL_TEST", candidate_db, 60, 10, now=at
-    )
+    added = _ashare_candidates("add", "510300.SH", "MANUAL_TEST", candidate_db, 60, 10, now=at)
     assert added["mutation_appended"] is True
     assert added["candidates"][0]["status"] == "active"
     assert added["candidates"][0]["sources"] == ["manual"]
@@ -994,10 +2556,7 @@ def test_napcat_status_returns_structured_transport_failure(
         "base_url": "http://127.0.0.1:3000",
         "error_code": "transport_error",
         "good": False,
-        "next_action": (
-            "powershell.exe -NoProfile -ExecutionPolicy Bypass -File "
-            ".\\scripts\\start_napcat.ps1"
-        ),
+        "next_action": "在 GUI 的‘集成管理’页显式启动 NapCat 并完成 QQ 登录",
         "online": False,
         "protocol_version": "unknown",
         "retryable": True,
@@ -1020,14 +2579,132 @@ def test_napcat_status_returns_structured_secret_failure(
         "error_code": "LOCAL_SECRET_UNAVAILABLE",
         "good": False,
         "next_action": (
-            ".\\.venv\\Scripts\\python.exe -m gribuki_trade "
-            "secret-set napcat.onebot.access_token"
+            ".\\.venv\\Scripts\\python.exe -m gribuki_trade secret-set napcat.onebot.access_token"
         ),
         "online": False,
         "protocol_version": "unknown",
         "retryable": False,
     }
     assert "credential backend detail" not in repr(result)
+
+
+def test_napcat_send_test_uses_system_health_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from gribuki_trade.adapters import notifiers
+
+    delivered: list[object] = []
+
+    class FakeNotifier:
+        channel = "onebot"
+
+        def __init__(self, _config: object) -> None:
+            pass
+
+        async def __aenter__(self) -> "FakeNotifier":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def send(self, notification: object) -> object:
+            delivered.append(notification)
+            return SimpleNamespace(channel="onebot", provider_message_id="health-1")
+
+    monkeypatch.setattr(cli, "_required_local_secret", lambda _name: "test-token")
+    monkeypatch.setattr(notifiers, "OneBotNotifier", FakeNotifier)
+
+    result = asyncio.run(cli._napcat_send_test("http://127.0.0.1:3000", "private", "12345"))
+
+    assert result["delivered"] is True
+    assert len(delivered) == 1
+    text = delivered[0].text  # type: ignore[attr-defined]
+    validate_text_report_contract(ReportKind.SYSTEM_HEALTH, text)
+    assert "不包含交易指令" in text
+    assert "GUI 集成管理页" in text
+
+
+def test_post_close_delivery_sends_one_contract_summary_then_full_markdown(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from gribuki_trade.adapters import notifiers
+    from gribuki_trade.ports.notifier import NotificationTargetKind
+
+    delivered: list[object] = []
+    uploaded: list[tuple[str, str]] = []
+
+    class FakeNotifier:
+        channel = "onebot"
+
+        def __init__(self, _config: object) -> None:
+            pass
+
+        async def __aenter__(self) -> "FakeNotifier":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def get_status(self) -> dict[str, object]:
+            return {"good": True, "online": True}
+
+        async def send(self, notification: object) -> object:
+            delivered.append(notification)
+            return SimpleNamespace(channel="onebot", provider_message_id="summary-1")
+
+        async def upload_private_file(self, target_id: str, artifact: str) -> object:
+            uploaded.append((target_id, artifact))
+            return SimpleNamespace(provider_file_id="file-1")
+
+    post_root = tmp_path / "post-close"
+    report_dir = tmp_path / "reports"
+    post_root.mkdir()
+    report_dir.mkdir()
+    artifact = report_dir / "盘后日报.md"
+    contract = REPORT_CONTRACTS[ReportKind.DAILY_REVIEW]
+    artifact.write_text(
+        render_stable_markdown_report(
+            ReportKind.DAILY_REVIEW,
+            title="A股盘后日报",
+            sections={
+                name: f"{name}内容" + "详细复盘" * 800 for name in contract.required_sections
+            },
+        ),
+        encoding="utf-8",
+    )
+    status: dict[str, object] = {}
+    status_path = post_root / "status.json"
+    audit_path = post_root / "audit.jsonl"
+    monkeypatch.setattr(cli, "_required_local_secret", lambda _name: "test-token")
+    monkeypatch.setattr(notifiers, "OneBotNotifier", FakeNotifier)
+
+    completed = asyncio.run(
+        cli._deliver_post_close_artifact(
+            post_root=post_root,
+            status=status,
+            status_path=status_path,
+            audit_path=audit_path,
+            run_id="post-close-run-0123456789",
+            target_hash="a" * 64,
+            target_kind=NotificationTargetKind.PRIVATE,
+            target_id="12345",
+            base_url="http://127.0.0.1:3000",
+            artifact_path=artifact,
+            dispatch_cycles=1,
+            dispatch_poll_interval=0,
+        )
+    )
+
+    assert completed is True
+    assert len(delivered) == 1
+    summary = delivered[0].text  # type: ignore[attr-defined]
+    validate_text_report_contract(ReportKind.DAILY_REVIEW, summary)
+    assert len(summary) < len(artifact.read_text(encoding="utf-8"))
+    assert uploaded == [("12345", artifact.name)]
+    assert status["text_part_count"] == 1
+    assert status["artifact_delivery"] == "SENT"
+    assert status["phase"] == "COMPLETE"
 
 
 def test_cli_defaults_to_gui_and_testnet_cycle_requires_confirmation() -> None:
@@ -1088,6 +2765,8 @@ def test_napcat_artifact_parser_requires_explicit_confirmation() -> None:
             "12345",
             "--artifact-kind",
             "file",
+            "--report-kind",
+            "DAILY_REVIEW",
             "--artifact",
             "report.md",
             "--confirm",
@@ -1097,6 +2776,8 @@ def test_napcat_artifact_parser_requires_explicit_confirmation() -> None:
 
     assert args.artifact_root == "runtime/reports"
     assert args.artifact == "report.md"
+    assert args.report_kind == "DAILY_REVIEW"
+    assert args.receipt_db == "runtime/notifications/report-artifacts.sqlite3"
     with pytest.raises(SystemExit):
         parser.parse_args(
             [
@@ -1107,6 +2788,8 @@ def test_napcat_artifact_parser_requires_explicit_confirmation() -> None:
                 "12345",
                 "--artifact-kind",
                 "file",
+                "--report-kind",
+                "DAILY_REVIEW",
                 "--artifact",
                 "report.md",
             ]
@@ -1120,8 +2803,19 @@ def test_napcat_send_artifact_uses_exact_target_and_trusted_root(
     from gribuki_trade.adapters import notifiers
 
     report = tmp_path / "report.md"
-    report.write_text("# report\n", encoding="utf-8")
+    report.write_text(
+        render_stable_markdown_report(
+            ReportKind.DAILY_REVIEW,
+            title="日报",
+            sections={
+                section: f"{section}内容"
+                for section in REPORT_CONTRACTS[ReportKind.DAILY_REVIEW].required_sections
+            },
+        ),
+        encoding="utf-8",
+    )
     observed: dict[str, object] = {}
+    upload_count = 0
 
     class FakeNotifier:
         def __init__(self, config: object) -> None:
@@ -1133,9 +2827,9 @@ def test_napcat_send_artifact_uses_exact_target_and_trusted_root(
         async def __aexit__(self, *_args: object) -> None:
             return None
 
-        async def upload_private_file(
-            self, target_id: str, artifact: str
-        ) -> object:
+        async def upload_private_file(self, target_id: str, artifact: str) -> object:
+            nonlocal upload_count
+            upload_count += 1
             observed["target_id"] = target_id
             observed["artifact"] = artifact
             return SimpleNamespace(provider_file_id="file-1")
@@ -1149,8 +2843,22 @@ def test_napcat_send_artifact_uses_exact_target_and_trusted_root(
             "private",
             "12345",
             "file",
+            "DAILY_REVIEW",
             str(tmp_path),
             "report.md",
+            str(tmp_path / "receipts.sqlite3"),
+        )
+    )
+    repeated = asyncio.run(
+        _napcat_send_artifact(
+            "http://127.0.0.1:3000",
+            "private",
+            "12345",
+            "file",
+            "DAILY_REVIEW",
+            str(tmp_path),
+            "report.md",
+            str(tmp_path / "receipts.sqlite3"),
         )
     )
 
@@ -1159,8 +2867,98 @@ def test_napcat_send_artifact_uses_exact_target_and_trusted_root(
     assert config.private_target_ids == frozenset({"12345"})
     assert config.group_target_ids == frozenset()
     assert config.artifact_root == tmp_path.resolve()
-    assert observed["artifact"] == "report.md"
+    assert observed["artifact"] == str(report.resolve())
     assert result["provider_identifier"] == "file-1"
+    assert result["report_kind"] == "DAILY_REVIEW"
+    assert result["ok"] is True
+    assert repeated["already_sent"] is True
+    assert upload_count == 1
+
+
+def test_napcat_send_artifact_rejects_noncontract_report_before_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    report = tmp_path / "report.md"
+    report.write_text("# uncontracted report\n", encoding="utf-8")
+    receipt_database = tmp_path / "receipts.sqlite3"
+
+    def unexpected_secret(_name: str) -> str:
+        raise AssertionError("invalid reports must not read secrets")
+
+    monkeypatch.setattr(cli, "_required_local_secret", unexpected_secret)
+
+    with pytest.raises(ValueError, match="missing required report section"):
+        asyncio.run(
+            _napcat_send_artifact(
+                "http://127.0.0.1:3000",
+                "private",
+                "12345",
+                "file",
+                "DAILY_REVIEW",
+                str(tmp_path),
+                "report.md",
+                str(receipt_database),
+            )
+        )
+
+    assert not receipt_database.exists()
+
+
+def test_napcat_send_artifact_does_not_retry_an_ambiguous_upload(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    report = tmp_path / "report.md"
+    report.write_text(
+        render_stable_markdown_report(
+            ReportKind.POSITION_REVIEW,
+            title="持仓复核",
+            sections={
+                section: f"{section}内容"
+                for section in REPORT_CONTRACTS[ReportKind.POSITION_REVIEW].required_sections
+            },
+        ),
+        encoding="utf-8",
+    )
+    attempts = 0
+
+    class AmbiguousNotifier:
+        def __init__(self, _config: object) -> None:
+            pass
+
+        async def __aenter__(self) -> "AmbiguousNotifier":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def upload_private_file(self, _target_id: str, _artifact: str) -> object:
+            nonlocal attempts
+            attempts += 1
+            raise OSError("connection ended after upload request")
+
+    from gribuki_trade.adapters import notifiers
+
+    monkeypatch.setattr(cli, "_required_local_secret", lambda _name: "test-token")
+    monkeypatch.setattr(notifiers, "OneBotNotifier", AmbiguousNotifier)
+    arguments = (
+        "http://127.0.0.1:3000",
+        "private",
+        "12345",
+        "file",
+        "POSITION_REVIEW",
+        str(tmp_path),
+        "report.md",
+        str(tmp_path / "receipts.sqlite3"),
+    )
+
+    first = asyncio.run(_napcat_send_artifact(*arguments))
+    second = asyncio.run(_napcat_send_artifact(*arguments))
+
+    assert first["error_code"] == "REPORT_ARTIFACT_DELIVERY_AMBIGUOUS"
+    assert second["error_code"] == "REPORT_ARTIFACT_DELIVERY_AMBIGUOUS"
+    assert attempts == 1
 
 
 def test_main_dispatches_binance_testnet_oms_cycle(
@@ -1335,9 +3133,7 @@ def test_binance_testnet_oms_cycle_persists_streams_cancels_and_reconciles(
                     command_type=SimpleNamespace(value="SUBMIT_ORDER"),
                 )
             )
-            await self.stream.queue.put(
-                FakeExecutionReport(order.client_order_id, "NEW")
-            )
+            await self.stream.queue.put(FakeExecutionReport(order.client_order_id, "NEW"))
             return self.store.snapshot
 
         async def consume_user_event(self, _event: object) -> bool:
@@ -1355,9 +3151,7 @@ def test_binance_testnet_oms_cycle_persists_streams_cancels_and_reconciles(
                     command_type=SimpleNamespace(value="CANCEL_ORDER"),
                 )
             )
-            await self.stream.queue.put(
-                FakeExecutionReport(client_order_id, "CANCELED")
-            )
+            await self.stream.queue.put(FakeExecutionReport(client_order_id, "CANCELED"))
             return self.store.snapshot
 
         async def reconcile_startup(self) -> cli.BinanceStartupReconciliation:
@@ -1608,18 +3402,12 @@ def test_binance_testnet_oms_fill_uses_durable_testnet_service_offline(
         async def account(self) -> SimpleNamespace:
             self.account_calls += 1
             btc_free = Decimal("1") if self.account_calls < 3 else Decimal("1.002")
-            usdt_free = (
-                Decimal("1000") if self.account_calls < 3 else Decimal("980")
-            )
+            usdt_free = Decimal("1000") if self.account_calls < 3 else Decimal("980")
             return SimpleNamespace(
                 can_trade=True,
                 balances=(
-                    SimpleNamespace(
-                        asset="BTC", free=btc_free, locked=Decimal("0")
-                    ),
-                    SimpleNamespace(
-                        asset="USDT", free=usdt_free, locked=Decimal("0")
-                    ),
+                    SimpleNamespace(asset="BTC", free=btc_free, locked=Decimal("0")),
+                    SimpleNamespace(asset="USDT", free=usdt_free, locked=Decimal("0")),
                 ),
             )
 
@@ -1852,9 +3640,7 @@ def test_main_dispatches_bounded_binance_shadow_run(
         )
         == 0
     )
-    assert json.loads(capsys.readouterr().out) == {
-        "watermark": "PAPER_SHADOW/NO_REMOTE_ORDERS"
-    }
+    assert json.loads(capsys.readouterr().out) == {"watermark": "PAPER_SHADOW/NO_REMOTE_ORDERS"}
     assert calls == [
         (
             "ETHUSDT",
@@ -2032,9 +3818,7 @@ def test_futures_demo_status_is_public_by_default_and_authenticates_per_product(
             raise SecretProviderError("offline test backend unavailable")
 
     provider_box[0] = BrokenProvider()  # type: ignore[list-item]
-    keyring_unavailable = asyncio.run(
-        cli._binance_futures_demo_status("USDS_FUTURES", None)
-    )
+    keyring_unavailable = asyncio.run(cli._binance_futures_demo_status("USDS_FUTURES", None))
     assert keyring_unavailable["authenticated"] is False
     assert keyring_unavailable["credential_store_available"] is False
     assert FakeFuturesClient.instances[1].credentials is None
@@ -2089,16 +3873,14 @@ def test_futures_demo_status_is_public_by_default_and_authenticates_per_product(
 def test_futures_demo_order_test_requires_confirmation_and_whole_coin_contracts() -> None:
     with pytest.raises(RuntimeError, match="requires --confirm FUTURES_DEMO_TEST"):
         asyncio.run(
-            cli._binance_futures_demo_status(
-                "USDS_FUTURES", None, True, None, Decimal("0.001")
-            )
+            cli._binance_futures_demo_status("USDS_FUTURES", None, True, None, Decimal("0.001"))
         )
 
     with pytest.raises(ValueError, match="whole contract"):
         asyncio.run(
             cli._binance_futures_demo_status(
                 "COIN_FUTURES",
-                None,
+                "deepseek-v4-flash",
                 True,
                 "FUTURES_DEMO_TEST",
                 Decimal("0.5"),
@@ -2124,32 +3906,24 @@ def test_cli_secret_set_accepts_only_known_names() -> None:
     args = parser.parse_args(["secret-set", "schwab.client_id"])
     assert args.name == "schwab.client_id"
     assert parser.parse_args(["secret-set", "openai.api_key"]).name == "openai.api_key"
-    assert (
-        parser.parse_args(["secret-set", "deepseek.api_key"]).name
-        == "deepseek.api_key"
-    )
+    assert parser.parse_args(["secret-set", "deepseek.api_key"]).name == "deepseek.api_key"
     assert (
         parser.parse_args(["secret-set", "napcat.onebot.access_token"]).name
         == "napcat.onebot.access_token"
     )
     assert (
-        parser.parse_args(["secret-set", "search.tavily.api_key"]).name
-        == "search.tavily.api_key"
+        parser.parse_args(["secret-set", "search.tavily.api_key"]).name == "search.tavily.api_key"
     )
     assert (
         parser.parse_args(["secret-set", "search.searxng.bearer_token"]).name
         == "search.searxng.bearer_token"
     )
     assert (
-        parser.parse_args(
-            ["secret-set", "binance.usds_futures.demo.api_key"]
-        ).name
+        parser.parse_args(["secret-set", "binance.usds_futures.demo.api_key"]).name
         == "binance.usds_futures.demo.api_key"
     )
     assert (
-        parser.parse_args(
-            ["secret-set", "binance.coin_futures.demo.secret_key"]
-        ).name
+        parser.parse_args(["secret-set", "binance.coin_futures.demo.secret_key"]).name
         == "binance.coin_futures.demo.secret_key"
     )
 
@@ -2200,9 +3974,7 @@ def test_cli_rejects_invalid_notional(value: str) -> None:
 def test_cli_exposes_research_data_and_explicit_notification_checks() -> None:
     parser = build_parser()
 
-    bars = parser.parse_args(
-        ["ashare-bars", "--symbol", "000001.SZ", "--interval", "1m"]
-    )
+    bars = parser.parse_args(["ashare-bars", "--symbol", "000001.SZ", "--interval", "1m"])
     assert bars.symbol == "000001.SZ"
     assert bars.interval == "1m"
     assert bars.lookback_minutes == 480
@@ -2227,9 +3999,7 @@ def test_cli_exposes_research_data_and_explicit_notification_checks() -> None:
     assert message.target_id == "12345"
 
     with pytest.raises(SystemExit):
-        parser.parse_args(
-            ["napcat-send-test", "--target-kind", "private", "--target-id", "12345"]
-        )
+        parser.parse_args(["napcat-send-test", "--target-kind", "private", "--target-id", "12345"])
 
 
 def test_napcat_configure_creates_loopback_configs_without_printing_tokens(
@@ -2245,9 +4015,7 @@ def test_napcat_configure_creates_loopback_configs_without_printing_tokens(
     provider = MemorySecretProvider()
     monkeypatch.setattr(cli, "KeyringSecretProvider", lambda: provider)
 
-    parsed = build_parser().parse_args(
-        ["napcat-configure", "--runtime-dir", str(runtime)]
-    )
+    parsed = build_parser().parse_args(["napcat-configure", "--runtime-dir", str(runtime)])
     assert parsed.onebot_port == 3000
     assert parsed.webui_port == 6099
     result = cli._napcat_configure(str(runtime), 3000, 6099, False)
@@ -2266,6 +4034,19 @@ def test_napcat_configure_creates_loopback_configs_without_printing_tokens(
 def test_cli_rejects_invalid_positive_integer(value: str) -> None:
     with pytest.raises(argparse.ArgumentTypeError):
         _positive_integer(value)
+
+
+def test_cli_parses_positive_integer_or_unlimited() -> None:
+    assert _positive_integer_or_unlimited("41") == 41
+    assert _positive_integer_or_unlimited("unlimited") is None
+    assert _positive_integer_or_unlimited("UNLIMITED") is None
+    with pytest.raises(argparse.ArgumentTypeError):
+        _positive_integer_or_unlimited("0")
+
+    parsed = build_parser().parse_args(
+        ["ashare-paper-day", "run", "--intraday-llm-max-calls", "unlimited"]
+    )
+    assert parsed.intraday_llm_max_calls is None
 
 
 def test_news_watch_parser_supports_repeated_sources_and_finite_cycles() -> None:
@@ -2830,9 +4611,17 @@ def test_napcat_dispatch_helper_uses_exact_allowlist_and_closes_resources(
             state["notifier_closed"] = True
 
     class FakeDispatchService:
-        def __init__(self, outbox: object, notifier_map: dict[str, object]) -> None:
+        def __init__(
+            self,
+            outbox: object,
+            notifier_map: dict[str, object],
+            *,
+            target_kind: object,
+            target_id: str,
+        ) -> None:
             state["service_outbox"] = outbox
             state["notifier_map"] = notifier_map
+            state["dispatch_scope"] = (target_kind, target_id)
 
         async def poll(
             self,
@@ -2874,6 +4663,7 @@ def test_napcat_dispatch_helper_uses_exact_allowlist_and_closes_resources(
     assert config.group_target_ids == group_ids  # type: ignore[attr-defined]
     assert state["outbox_path"] == outbox_path.resolve()
     assert state["poll"] == (2, 0.25)
+    assert state["dispatch_scope"] == (target_kind, "12345")
     assert set(state["notifier_map"]) == {"onebot"}  # type: ignore[arg-type]
     assert state["notifier_entered"] is True
     assert state["notifier_closed"] is True
@@ -2929,7 +4719,12 @@ def test_napcat_dispatch_closes_resources_when_polling_fails(
             closed["notifier"] = True
 
     class FailingDispatchService:
-        def __init__(self, _outbox: object, _notifiers: dict[str, object]) -> None:
+        def __init__(
+            self,
+            _outbox: object,
+            _notifiers: dict[str, object],
+            **_scope: object,
+        ) -> None:
             pass
 
         async def poll(self, **_kwargs: object) -> None:
@@ -3023,7 +4818,7 @@ def test_ashare_research_parser_defaults_and_conditional_arguments() -> None:
     assert defaults.research_db == "runtime/research/research.sqlite3"
     assert defaults.outbox_db == "runtime/research/outbox.sqlite3"
     assert defaults.macro is False
-    assert defaults.macro_provider == "deepseek"
+    assert defaults.macro_provider is None
     assert defaults.model is None
     assert defaults.notify_target_kind is None
     assert defaults.notify_target_id is None
@@ -3064,11 +4859,9 @@ def test_ashare_research_parser_defaults_and_conditional_arguments() -> None:
     assert configured.notify_target_kind == "group"
     assert configured.notify_target_id == "12345"
 
-    # argparse captures either half so the helper can issue one stable paired-
-    # argument error before opening stores or reading a key.
-    incomplete = parser.parse_args(
-        ["ashare-research-once", "--notify-target-kind", "private"]
-    )
+    # argparse 会接收成对参数中的任意一半，使辅助函数能够在打开存储或
+    # 读取密钥前给出稳定的成对参数错误。
+    incomplete = parser.parse_args(["ashare-research-once", "--notify-target-kind", "private"])
     assert incomplete.notify_target_kind == "private"
     assert incomplete.notify_target_id is None
 
@@ -3255,9 +5048,31 @@ def _install_research_cli_fakes(
             state["macro_call"] = kwargs
             return SimpleNamespace(
                 analysis=macro_analysis,
+                baseline_analysis=macro_analysis,
+                adversarial_analysis=macro_analysis,
+                selected_track="ADVERSARIAL",
+                dual_audit_record_sha256="d" * 64,
                 selection=selection,
                 failure_code=macro_failure_code,
             )
+
+    class FakeOwnedDualAnalyzer:
+        def __init__(self, baseline: object) -> None:
+            self.baseline = baseline
+
+        def __enter__(self) -> "FakeOwnedDualAnalyzer":
+            state["dual_entered"] = True
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            state["dual_closed"] = True
+
+    def fake_build_dual(
+        baseline: object,
+        **kwargs: object,
+    ) -> FakeOwnedDualAnalyzer:
+        state["dual_build"] = kwargs
+        return FakeOwnedDualAnalyzer(baseline)
 
     def fake_select(
         symbol: str,
@@ -3273,6 +5088,7 @@ def _install_research_cli_fakes(
     monkeypatch.setattr(llm_adapters, "OpenAIResponsesMacroAnalyzer", FakeAnalyzer)
     monkeypatch.setattr(services, "AShareResearchService", FakeResearchService)
     monkeypatch.setattr(services, "MacroResearchService", FakeMacroService)
+    monkeypatch.setattr(services, "build_production_dual_track_analyzer", fake_build_dual)
     monkeypatch.setattr(services, "select_macro_evidence", fake_select)
     monkeypatch.setattr(storage, "SQLiteEventStore", FakeEventStore)
     monkeypatch.setattr(storage, "SQLiteOutbox", FakeOutbox)
@@ -3508,7 +5324,7 @@ def test_close_research_parser_defaults_and_explicit_controls() -> None:
     assert defaults.search_discovery is True
     assert defaults.searxng_url is None
     assert defaults.macro is True
-    assert defaults.macro_provider == "deepseek"
+    assert defaults.macro_provider is None
     assert defaults.macro_weight == Decimal("0.25")
     assert defaults.outbox_db == "runtime/notifications/outbox.sqlite3"
 
@@ -3541,13 +5357,9 @@ def test_close_research_parser_defaults_and_explicit_controls() -> None:
     assert explicit.held is True
 
     with pytest.raises(SystemExit):
-        parser.parse_args(
-            ["ashare-close-research-once", "--session-date", "2026/08/13"]
-        )
+        parser.parse_args(["ashare-close-research-once", "--session-date", "2026/08/13"])
     with pytest.raises(SystemExit):
-        parser.parse_args(
-            ["ashare-close-research-once", "--macro-weight", "0.41"]
-        )
+        parser.parse_args(["ashare-close-research-once", "--macro-weight", "0.41"])
 
 
 def test_close_research_batch_parser_is_bounded_and_accepts_candidates() -> None:
@@ -3688,9 +5500,7 @@ def test_close_research_dynamic_profile_resolver_prefers_retained_profile(
         lambda _symbol: retained,
     )
 
-    profile, failure = asyncio.run(
-        cli._resolve_close_instrument_profile_for_run("600000.SH")
-    )
+    profile, failure = asyncio.run(cli._resolve_close_instrument_profile_for_run("600000.SH"))
     assert profile is retained
     assert failure is None
 
@@ -3715,9 +5525,7 @@ def test_close_research_dynamic_profile_resolver_fetches_new_market_candidate(
     monkeypatch.setattr(cli, "_resolve_close_instrument_profile", lambda _symbol: None)
     monkeypatch.setattr(adapters, "AKShareInstrumentProfileAdapter", FakeProfileAdapter)
 
-    profile, failure = asyncio.run(
-        cli._resolve_close_instrument_profile_for_run("601318.SH")
-    )
+    profile, failure = asyncio.run(cli._resolve_close_instrument_profile_for_run("601318.SH"))
     assert profile is dynamic
     assert failure is None
     assert captured["symbol"] == "601318.SH"
@@ -3742,9 +5550,7 @@ def test_close_research_dynamic_profile_resolver_returns_stable_failure(
 
     monkeypatch.setattr(cli, "_resolve_close_instrument_profile", lambda _symbol: None)
     monkeypatch.setattr(adapters, "AKShareInstrumentProfileAdapter", FakeProfileAdapter)
-    profile, failure = asyncio.run(
-        cli._resolve_close_instrument_profile_for_run("601318.SH")
-    )
+    profile, failure = asyncio.run(cli._resolve_close_instrument_profile_for_run("601318.SH"))
     assert profile is None
     assert failure == "PROFILE_TIMEOUT"
 
@@ -3752,14 +5558,9 @@ def test_close_research_dynamic_profile_resolver_returns_stable_failure(
 def test_close_research_retains_daily_route_provenance() -> None:
     assert cli._daily_evidence_provider_id(None) == "baostock.daily"
     assert cli._daily_evidence_provider_id("BaoStock") == "baostock.daily"
+    assert cli._daily_evidence_provider_id("AKShare/Sina fund_etf_hist_sina") == "akshare.daily"
     assert (
-        cli._daily_evidence_provider_id("AKShare/Sina fund_etf_hist_sina")
-        == "akshare.daily"
-    )
-    assert (
-        cli._daily_evidence_provider_id(
-            "MIXED/TAIL_STITCH base=AKShare/Sina tail=BaoStock"
-        )
+        cli._daily_evidence_provider_id("MIXED/TAIL_STITCH base=AKShare/Sina tail=BaoStock")
         == "mixed.tail_stitch.daily"
     )
 
@@ -3828,13 +5629,13 @@ def test_main_dispatches_close_research_and_prints_json(
             False,
             "deepseek",
             None,
-                Decimal("0.35"),
-                True,
-                "private",
-                "12345",
-                "runtime/reports",
-            )
-        ]
+            Decimal("0.35"),
+            True,
+            "private",
+            "12345",
+            "runtime/reports",
+        )
+    ]
     assert json.loads(capsys.readouterr().out) == {
         "next_session": "2026-08-14",
         "ok": True,

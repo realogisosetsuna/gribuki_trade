@@ -1,4 +1,4 @@
-"""Pure strategy implementations."""
+"""纯策略实现。"""
 
 from gribuki_trade.strategy.crypto_trend import (
     CryptoTrendConfig,

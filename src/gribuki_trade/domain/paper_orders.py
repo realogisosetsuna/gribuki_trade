@@ -1,4 +1,4 @@
-"""Deterministic A-share paper-order and daily-bar matching value objects."""
+"""确定性的 A 股模拟订单与日线匹配值对象。"""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ _SYMBOL = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 
 
 class PaperOrderStatus(StrEnum):
-    """Lifecycle states of the local, broker-free paper order."""
+    """本地且不依赖券商的模拟订单生命周期状态。"""
 
     PENDING = "PENDING"
     PARTIALLY_FILLED = "PARTIALLY_FILLED"
@@ -29,14 +29,14 @@ class PaperOrderStatus(StrEnum):
 
 
 class PaperTimeInForce(StrEnum):
-    """How many confirmed, tradeable daily bars may see an order."""
+    """一个订单最多可经历多少根已确认且可交易的日线柱。"""
 
     NEXT_TRADING_BAR = "NEXT_TRADING_BAR"
     GOOD_TILL_DATE = "GOOD_TILL_DATE"
 
 
 class PaperMatchReason(StrEnum):
-    """Machine-readable explanations retained by order snapshots and runs."""
+    """订单快照与运行记录所保留的机器可读说明。"""
 
     BUY_QUANTITY_NOT_ROUND_LOT = "BUY_QUANTITY_NOT_ROUND_LOT"
     LIMIT_PRICE_NOT_TICK_ALIGNED = "LIMIT_PRICE_NOT_TICK_ALIGNED"
@@ -62,7 +62,7 @@ class PaperMatchReason(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class ASharePaperOrderIntent:
-    """A generic limit ``OrderIntent`` plus A-share simulation semantics."""
+    """通用限价 ``OrderIntent`` 与 A 股模拟语义的组合。"""
 
     order: OrderIntent
     instrument_type: PaperInstrumentType
@@ -117,7 +117,7 @@ class ASharePaperOrderIntent:
 
 @dataclass(frozen=True, slots=True)
 class ExplicitPriceBand:
-    """Caller-supplied daily price limits; two ``None`` values mean unbounded."""
+    """由调用方提供的每日价格限制；两个 ``None`` 表示不设边界。"""
 
     lower: Decimal | None
     upper: Decimal | None
@@ -132,7 +132,7 @@ class ExplicitPriceBand:
 
     @classmethod
     def unbounded(cls) -> ExplicitPriceBand:
-        """Explicitly state that the instrument has no modeled daily band."""
+        """明确声明该标的没有建模的每日价格区间。"""
 
         return cls(lower=None, upper=None)
 
@@ -144,11 +144,11 @@ class ExplicitPriceBand:
 
 @dataclass(frozen=True, slots=True)
 class SimulatedDailyBar:
-    """A PIT-aware unadjusted daily bar supplied to the paper matcher.
+    """提供给模拟匹配器、感知时点且未复权的日线柱。
 
-    ``price_band=None`` means the required limit metadata is missing and fails
-    closed.  Use :meth:`ExplicitPriceBand.unbounded` when no band is intended.
-    ``volume_shares`` is always shares, never lots or currency turnover.
+    ``price_band=None`` 表示所需涨跌停元数据缺失，并按失败关闭处理。若确实不设
+    区间，应使用 :meth:`ExplicitPriceBand.unbounded`。``volume_shares`` 始终以股为
+    单位，绝不是手数或成交额。
     """
 
     symbol: str
@@ -215,7 +215,7 @@ class SimulatedDailyBar:
         source_revision: str,
         price_band: ExplicitPriceBand | None,
     ) -> SimulatedDailyBar:
-        """Adapt a strict unadjusted ``DailyBar`` whose volume unit is shares."""
+        """适配一根成交量单位为股的严格未复权 ``DailyBar``。"""
 
         if bar.adjustment is not PriceAdjustment.NONE:
             raise ValueError("paper matching requires original, unadjusted prices")
@@ -251,7 +251,7 @@ class SimulatedDailyBar:
 
 @dataclass(frozen=True, slots=True)
 class PaperMatchingConfig:
-    """Conservative daily-bar execution assumptions."""
+    """保守的日线执行假设。"""
 
     volume_participation_rate: Decimal = Decimal("0.01")
     stock_slippage_rate: Decimal = Decimal("0.0005")
@@ -282,7 +282,7 @@ class PaperMatchingConfig:
 
 @dataclass(frozen=True, slots=True)
 class PaperOrderSnapshot:
-    """Latest deterministic state for one paper limit order."""
+    """单个模拟限价订单的最新确定性状态。"""
 
     intent: ASharePaperOrderIntent
     status: PaperOrderStatus
@@ -349,7 +349,7 @@ class PaperOrderSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class PaperOrderMatchOutcome:
-    """One order's result from processing one daily bar."""
+    """单个订单处理一根日线柱后的结果。"""
 
     client_order_id: str
     status_before: PaperOrderStatus
@@ -375,7 +375,7 @@ class PaperOrderMatchOutcome:
 
 @dataclass(frozen=True, slots=True)
 class PaperBarMatchRun:
-    """Idempotent result for one symbol/session bar."""
+    """单个标的/交易日日线柱的幂等结果。"""
 
     bar: SimulatedDailyBar
     applied_new: bool

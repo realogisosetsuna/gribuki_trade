@@ -1,4 +1,4 @@
-"""Read-only adapters for official SSE ETF shares and option closing risk."""
+"""上交所官方 ETF 份额与期权收盘风险的只读适配器。"""
 
 from __future__ import annotations
 
@@ -93,7 +93,7 @@ class _RequestHTTPStatus(_RequestError):
 
 
 class SSEOptionRiskAdapter:
-    """Fetch official SSE closing Greeks and implied volatility by date."""
+    """按日期获取上交所官方收盘希腊字母和隐含波动率。"""
 
     def __init__(
         self,
@@ -116,13 +116,11 @@ class SSEOptionRiskAdapter:
         as_of: datetime | None = None,
         allow_latest_available: bool = True,
     ) -> SSEOptionRiskSnapshot:
-        """Return an exact session or an explicitly dated latest fallback.
+        """返回精确交易日，或带明确日期的最新回退。
 
-        The fallback uses the exchange's unfiltered latest document and then
-        filters by the exact six-digit underlying code.  Its actual
-        ``TRADE_DATE`` is retained and is never rewritten as ``requested_date``.
-        Omit ``as_of`` for a live collection; first-seen visibility then starts
-        at ``fetched_at``.  Supplying a historical cutoff is fail-closed.
+        回退使用交易所未过滤的最新文档，再按精确六位标的代码过滤。保留实际
+        ``TRADE_DATE``，绝不改写为 ``requested_date``。实时采集时省略 ``as_of``，
+        此时首次可见性从 ``fetched_at`` 开始；提供历史截止时点则关闭失败。
         """
 
         symbol = _validate_symbol(underlying_symbol)
@@ -198,8 +196,7 @@ class SSEOptionRiskAdapter:
                 allow_other_underlyings=True,
             )
             if observed_date >= requested_date:
-                # Equality would have been supplied by the exact query.  Treat
-                # disagreement between the two official query modes as drift.
+        # 精确查询本应给出相同结果；将两种官方查询模式之间的不一致视为漂移。
                 raise SSEOptionRiskSchemaError(
                     "latest SSE option document conflicts with empty exact-date response"
                 )
@@ -247,7 +244,7 @@ class SSEOptionRiskAdapter:
 
 
 class SSEETFShareAdapter:
-    """Fetch exact official SSE post-settlement ETF total shares."""
+    """获取上交所官方结算后 ETF 精确总份额。"""
 
     def __init__(
         self,
@@ -274,12 +271,11 @@ class SSEETFShareAdapter:
         as_of: datetime | None = None,
         allow_latest_available: bool = True,
     ) -> SSEETFShareObservation:
-        """Return exact shares or an explicitly older observation.
+        """返回精确份额或明确更早的观测。
 
-        The SSE field ``TOT_VOL`` is published in ten-thousand shares after
-        daily settlement.  It is not converted into fund assets or labelled as
-        subscription/redemption flow.  Omit ``as_of`` for live collection or
-        provide an explicit historical cutoff for fail-closed replay.
+        上交所字段 ``TOT_VOL`` 在每日结算后以万份发布。它不会转换为基金资产，
+        也不会标记为申购/赎回流量。实时采集时省略 ``as_of``；历史重放则提供
+        明确截止时点，以便关闭失败。
         """
 
         validated_symbol = _validate_symbol(symbol)
@@ -717,8 +713,8 @@ def _metadata(
         source_url=document.source_url,
         requested_date=requested_date,
         observed_date=observed_date,
-        # No exchange release timestamp is exposed.  First seen and fetched are
-        # intentionally identical rather than backdating visibility to session close.
+    # 交易所没有暴露发布时间戳。首次发现和获取时间刻意保持相同，不把可见性
+    # 回填到交易日收盘时刻。
         available_at=document.fetched_at,
         fetched_at=document.fetched_at,
         exact_date_match=not fallback,

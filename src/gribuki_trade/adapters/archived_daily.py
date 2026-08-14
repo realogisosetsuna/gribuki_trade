@@ -1,9 +1,8 @@
-"""Point-in-time replay of immutable local A-share daily-bar evidence.
+"""按时点重放不可变的本地 A 股日线证据。
 
-This adapter is deliberately narrower than a cache.  It only opens the exact
-source/symbol/completed-session URL written by ``archive_daily_bar_evidence``
-and never relabels an older session as current data.  Every selected raw
-document and version-1 payload is validated again before any bar is returned.
+该适配器刻意比缓存更严格：它只打开 ``archive_daily_bar_evidence`` 写入的
+精确来源/代码/已完成交易日 URL，绝不会把旧交易日重新标记为当前数据。返回
+任何行情柱之前，都会再次验证所选原始文档和第一版载荷。
 """
 
 from __future__ import annotations
@@ -81,24 +80,24 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ArchivedDailyEvidenceError(MarketDataUnavailableError):
-    """Base failure for a retained daily-bar evidence replay."""
+    """保留日线证据重放失败的基类。"""
 
 
 class ArchivedDailyEvidenceUnavailableError(ArchivedDailyEvidenceError):
-    """No point-in-time eligible retained body satisfies the exact request."""
+    """没有在指定时点可用且满足精确请求的保留正文。"""
 
 
 class ArchivedDailyEvidenceSchemaError(ArchivedDailyEvidenceError):
-    """A candidate archive failed identity, integrity, or schema validation."""
+    """候选归档未通过身份、完整性或架构验证。"""
 
 
 class ArchivedDailyEvidenceUnsupportedAdjustmentError(ArchivedDailyEvidenceError):
-    """The immutable evidence archive contains original prices only."""
+    """不可变证据归档仅包含原始价格。"""
 
 
 @dataclass(frozen=True, slots=True)
 class ArchivedDailyBarSnapshot:
-    """Validated replay result with the immutable source identity retained."""
+    """保留不可变来源身份的已验证重放结果。"""
 
     bars: tuple[DailyBar, ...]
     source_id: str
@@ -121,11 +120,10 @@ def load_archived_daily_bar_evidence(
     source_id: str = "baostock.daily",
     minimum_bars: int = 1,
 ) -> ArchivedDailyBarSnapshot:
-    """Load the latest exact archive revision visible at ``as_of``.
+    """加载在 ``as_of`` 时点可见的最新精确归档修订版。
 
-    The URL embeds ``latest_completed_session``.  Consequently, an archive
-    ending on an older date is not even a candidate and cannot be presented as
-    data for the requested completed session.
+    URL 内嵌 ``latest_completed_session``。因此，截止日期更早的归档甚至不会
+    成为候选，也不能被当作所请求已完成交易日的数据。
     """
 
     if start > latest_completed_session:
@@ -229,13 +227,12 @@ def load_archived_daily_bar_evidence(
 
 
 class ArchivedHistoricalDailyAdapter:
-    """Read-only sync/async historical-data adapter over audited snapshots.
+    """基于已审计快照的只读同步/异步历史数据适配器。
 
-    ``source_ids`` is an ordered allowlist, not a fuzzy lookup.  Each source is
-    queried through its exact canonical URL; if several have eligible evidence
-    the newest ``first_seen_at`` wins, with allowlist order as a deterministic
-    final tie-break.  A corrupt candidate fails closed instead of silently
-    falling back to a different body.
+    ``source_ids`` 是有序允许列表，而非模糊查找。每个来源都通过精确的规范
+    URL 查询；若多个来源都有合格证据，则最新的 ``first_seen_at`` 胜出，并以
+    允许列表顺序作为确定性的最终平局裁决。候选损坏时关闭失败，而不会静默
+    回退到另一份正文。
     """
 
     def __init__(
@@ -255,7 +252,7 @@ class ArchivedHistoricalDailyAdapter:
         )
         if not canonical_sources or any(not item for item in canonical_sources):
             raise ValueError("source_ids must contain at least one non-blank source")
-        # Validate source identifiers before retaining constructor state.
+        # 在保留构造函数状态前验证来源标识符。
         for source_id in canonical_sources:
             daily_bar_evidence_canonical_url(
                 symbol="VALIDATION",

@@ -13,7 +13,6 @@ from gribuki_trade.domain.events import SourceTier
 from gribuki_trade.ingest.http import HttpxNewsTransport
 from gribuki_trade.ingest.search_discovery import (
     DISCOVERY_CONFIRMED_EVENT_TYPE,
-    DISCOVERY_HINT_EVENT_TYPE,
     DiscoveryConfirmationBasis,
     DiscoverySourcesExhausted,
     MultiProviderDiscoverySource,
@@ -107,8 +106,9 @@ def test_httpx_transport_forwards_optional_body_without_breaking_old_positionals
         content = b"{}"
 
     class FakeClient:
-        def __init__(self, *, follow_redirects: bool) -> None:
+        def __init__(self, *, follow_redirects: bool, trust_env: bool) -> None:
             captured["follow_redirects"] = follow_redirects
+            captured["trust_env"] = trust_env
 
         async def __aenter__(self):
             return self
@@ -116,13 +116,14 @@ def test_httpx_transport_forwards_optional_body_without_breaking_old_positionals
         async def __aexit__(self, *args):
             return None
 
-        async def request(self, method, url, *, headers, content, timeout):
+        async def request(self, method, url, *, headers, content, timeout, extensions):
             captured.update(
                 method=method,
                 url=url,
                 headers=headers,
                 content=content,
                 timeout=timeout,
+                extensions=extensions,
             )
             return FakeResponse()
 
@@ -140,6 +141,9 @@ def test_httpx_transport_forwards_optional_body_without_breaking_old_positionals
     assert response.status_code == 200
     assert captured["content"] == b'{"query":"secret query"}'
     assert captured["timeout"] == 7.0
+    assert captured["follow_redirects"] is False
+    assert captured["trust_env"] is False
+    assert captured["extensions"] == {}
     assert "secret query" not in repr(request)
 
 
@@ -337,7 +341,7 @@ def test_multi_provider_failure_isolation_dedupe_and_confirmation_lineage() -> N
                 hit(
                     "tavily",
                     macro,
-                    url="https://one.example.com/story",
+                    url="https://one.example.net/story",
                     title="跨市场同一故事！",
                 ),
             ),
@@ -363,7 +367,7 @@ def test_multi_provider_failure_isolation_dedupe_and_confirmation_lineage() -> N
                 hit(
                     "searxng",
                     macro,
-                    url="https://two.example.com/another-path",
+                    url="https://two.example.org/another-path",
                     title="跨市场同一故事",
                 ),
             ),
@@ -381,8 +385,8 @@ def test_multi_provider_failure_isolation_dedupe_and_confirmation_lineage() -> N
     assert len(result.failures) == 1
     assert result.failures[0].error_code == "SearchProviderAccessDenied"
     assert len(result.batch.events) == 4
-    assert len(result.confirmed_events) == 3
-    assert len(result.hint_events) == 1
+    assert len(result.confirmed_events) == 2
+    assert len(result.hint_events) == 2
     assert all(event.source_tier is SourceTier.PUBLIC_MEDIA for event in result.batch.events)
     assert all(event.first_seen_at == NOW for event in result.batch.events)
     assert all(len(event.content_sha256) == 64 for event in result.batch.events)
@@ -401,23 +405,171 @@ def test_multi_provider_failure_isolation_dedupe_and_confirmation_lineage() -> N
     same_url = next(
         item for item in result.lineage if "media.example.com/same" in item.canonical_url
     )
-    assert same_url.provider_ids == ("tavily", "searxng")
-    assert same_url.confirmation_basis is DiscoveryConfirmationBasis.MULTI_PROVIDER
-    assert same_url.eligible_for_evidence is True
+    assert same_url.provider_ids == ("searxng", "tavily")
+    assert same_url.publisher_identities == ("publisher-domain:example.com",)
+    assert same_url.independent_publisher_count == 1
+    assert same_url.confirmation_basis is DiscoveryConfirmationBasis.NONE
+    assert same_url.eligible_for_evidence is False
 
     official = next(item for item in result.lineage if item.official_host == "sse.com.cn")
     assert official.confirmation_basis is DiscoveryConfirmationBasis.OFFICIAL_HOST
+    assert official.publisher_identities == ("official-body:sse",)
     assert official.event_type == DISCOVERY_CONFIRMED_EVENT_TYPE
 
     hint_lineage = next(
-        item for item in result.lineage if item.event_type == DISCOVERY_HINT_EVENT_TYPE
+        item for item in result.lineage if "media.example.com/hint" in item.canonical_url
     )
     assert hint_lineage.provider_ids == ("tavily",)
     assert hint_lineage.eligible_for_evidence is False
     hint_event = next(item for item in result.hint_events if item.event_id == hint_lineage.event_id)
     assert "不可直接作为可操作证据" in hint_event.summary
-    assert hint_event.entities  # Entity metadata alone must never promote the hint.
+    assert hint_event.entities  # 仅凭实体元数据绝不能提升提示等级。
     assert hint_event not in select_confirmed_discovery_events(result.batch.events)
+
+
+def test_same_url_from_two_search_providers_remains_a_hint() -> None:
+    query = stock_query()
+    source = MultiProviderDiscoverySource(
+        (
+            StubProvider(
+                "tavily",
+                {
+                    DiscoveryQueryKind.STOCK: (
+                        hit(
+                            "tavily",
+                            query,
+                            url="https://news.example.com/item?utm_source=tavily",
+                            title="同一页面不是两家发布者",
+                        ),
+                    )
+                },
+            ),
+            StubProvider(
+                "searxng",
+                {
+                    DiscoveryQueryKind.STOCK: (
+                        hit(
+                            "searxng",
+                            query,
+                            url="https://news.example.com/item",
+                            title="同一页面不是两家发布者",
+                        ),
+                    )
+                },
+            ),
+        ),
+        (query,),
+        clock=lambda: NOW,
+    )
+
+    result = asyncio.run(source.collect_with_diagnostics())
+
+    assert len(result.lineage) == 1
+    lineage = result.lineage[0]
+    assert lineage.provider_ids == ("searxng", "tavily")
+    assert lineage.matched_urls == ("https://news.example.com/item",)
+    assert lineage.publisher_identities == ("publisher-domain:example.com",)
+    assert lineage.confirmation_basis is DiscoveryConfirmationBasis.NONE
+    assert result.confirmed_events == ()
+    assert len(result.hint_events) == 1
+
+
+def test_same_registered_publisher_domain_with_different_urls_remains_a_hint() -> None:
+    query = stock_query()
+    title = "同一媒体域名下的同一条报道"
+    source = MultiProviderDiscoverySource(
+        (
+            StubProvider(
+                "tavily",
+                {
+                    DiscoveryQueryKind.STOCK: (
+                        hit(
+                            "tavily",
+                            query,
+                            url="https://finance.media.example.com/story/1",
+                            title=title,
+                        ),
+                    )
+                },
+            ),
+            StubProvider(
+                "searxng",
+                {
+                    DiscoveryQueryKind.STOCK: (
+                        hit(
+                            "searxng",
+                            query,
+                            url="https://news.media.example.com/story/2",
+                            title=title,
+                        ),
+                    )
+                },
+            ),
+        ),
+        (query,),
+        clock=lambda: NOW,
+    )
+
+    result = asyncio.run(source.collect_with_diagnostics())
+
+    assert len(result.lineage) == 1
+    lineage = result.lineage[0]
+    assert lineage.matched_urls == (
+        "https://finance.media.example.com/story/1",
+        "https://news.media.example.com/story/2",
+    )
+    assert lineage.publisher_identities == ("publisher-domain:example.com",)
+    assert lineage.confirmation_basis is DiscoveryConfirmationBasis.NONE
+    assert lineage.eligible_for_evidence is False
+    assert result.confirmed_events == ()
+
+
+def test_matching_story_from_independent_publisher_domains_is_confirmed() -> None:
+    query = stock_query()
+    title = "两家独立媒体报道同一公司事项"
+    source = MultiProviderDiscoverySource(
+        (
+            StubProvider(
+                "tavily",
+                {
+                    DiscoveryQueryKind.STOCK: (
+                        hit(
+                            "tavily",
+                            query,
+                            url="https://wire-one.example/story",
+                            title=title,
+                        ),
+                        hit(
+                            "tavily",
+                            query,
+                            url="https://wire-two.example/story",
+                            title=title,
+                        ),
+                    )
+                },
+            ),
+        ),
+        (query,),
+        clock=lambda: NOW,
+    )
+
+    result = asyncio.run(source.collect_with_diagnostics())
+
+    assert len(result.lineage) == 1
+    lineage = result.lineage[0]
+    assert lineage.provider_ids == ("tavily",)
+    assert lineage.publisher_identities == (
+        "publisher-domain:wire-one.example",
+        "publisher-domain:wire-two.example",
+    )
+    assert lineage.independent_publisher_count == 2
+    assert (
+        lineage.confirmation_basis
+        is DiscoveryConfirmationBasis.INDEPENDENT_PUBLISHERS
+    )
+    assert lineage.confirmation_basis.value == "independent_publishers"
+    assert lineage.eligible_for_evidence is True
+    assert len(result.confirmed_events) == 1
 
 
 def test_short_generic_equal_titles_do_not_create_false_confirmation() -> None:

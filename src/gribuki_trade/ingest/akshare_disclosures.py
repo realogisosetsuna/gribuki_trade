@@ -1,4 +1,4 @@
-"""CNINFO company-disclosure leads exposed through AKShare."""
+"""通过 AKShare 暴露的巨潮资讯公司公告线索。"""
 
 from __future__ import annotations
 
@@ -25,11 +25,11 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 class AKShareDisclosureError(RuntimeError):
-    """The CNINFO wrapper failed or returned an invalid table."""
+    """巨潮资讯包装接口失败或返回了无效表格。"""
 
 
 class AKShareDisclosureTimeoutError(AKShareDisclosureError):
-    """The caller-visible timeout elapsed."""
+    """调用方可见的超时时间已耗尽。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +66,7 @@ class AKShareDisclosureConfig:
 
 
 class AKShareDisclosureSource:
-    """Collect a bounded CNINFO disclosure index without following attachments."""
+    """有界采集巨潮资讯公告索引，且不跟随附件链接。"""
 
     _COLUMNS = frozenset({"代码", "简称", "公告标题", "公告时间", "公告链接"})
 

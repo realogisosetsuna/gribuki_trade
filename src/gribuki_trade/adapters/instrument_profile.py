@@ -1,11 +1,9 @@
-"""Current, point-in-time instrument metadata for dynamically discovered A-shares.
+"""动态发现 A 股的当前时点证券元数据。
 
-The AKShare endpoints used here are live public-web snapshots.  They do not
-provide historical revisions or an authoritative provider timestamp.  The
-adapter therefore accepts only a request close to the collector clock, records
-the actual observation date, and fails closed for historical replay.  A stored
-profile may be replayed later; this adapter must not be queried during a
-historical backtest as a substitute for archived security-master data.
+此处使用的 AKShare 端点是实时公开网页快照，不提供历史修订或权威提供者时间戳。
+因此适配器只接受接近采集器时钟的请求，记录实际观测日期，并对历史重放关闭
+失败。已存储档案可在之后重放；历史回测期间不得查询本适配器来替代已归档的
+证券主数据。
 """
 
 from __future__ import annotations
@@ -31,7 +29,7 @@ _DEFAULT_POINT_IN_TIME_TOLERANCE = timedelta(minutes=5)
 
 
 class InstrumentProfileFailureCode(StrEnum):
-    """Stable machine-readable failures at the live profile boundary."""
+    """实时证券档案边界上的稳定机器可读失败。"""
 
     AKSHARE_NOT_INSTALLED = "AKSHARE_NOT_INSTALLED"
     LIVE_PROFILE_HISTORICAL_UNSUPPORTED = "LIVE_PROFILE_HISTORICAL_UNSUPPORTED"
@@ -60,29 +58,28 @@ class InstrumentProfileFailureCode(StrEnum):
 
 
 class InstrumentProfileDataError(RuntimeError):
-    """A live profile could not be produced without guessing."""
+    """无法在不猜测的情况下生成实时证券档案。"""
 
     def __init__(self, failure_code: InstrumentProfileFailureCode) -> None:
         self.failure_code = failure_code
-        # Keep ``code`` as a plain string for CLI/error-document compatibility.
+        # 为兼容命令行和错误文档，将 ``code`` 保持为普通字符串。
         self.code = failure_code.value
         super().__init__(f"instrument profile data failed ({self.code})")
 
 
 class InstrumentProfilePointInTimeError(InstrumentProfileDataError):
-    """A live endpoint was asked to represent an unavailable historical state."""
+    """实时端点被要求表示一个不可取得的历史状态。"""
 
 
 _T = TypeVar("_T")
 
 
 class AKShareInstrumentProfileAdapter:
-    """Resolve current descriptive metadata without creating an order input.
+    """解析当前描述性元数据，但不创建订单输入。
 
-    ``known_at`` is a live collection cutoff, not an arbitrary as-of time.  The
-    small tolerance accommodates a run timestamp captured immediately before
-    this adapter is called and ordinary collector clock skew.  Historical
-    consumers must use a previously persisted profile revision.
+    ``known_at`` 是实时采集截止时点，而不是任意查询时点。较小容差用于接纳在
+    调用本适配器前刚刚捕获的运行时间戳和普通采集器时钟偏移。历史消费者必须
+    使用先前已持久化的档案修订版。
     """
 
     def __init__(
@@ -108,7 +105,7 @@ class AKShareInstrumentProfileAdapter:
         *,
         known_at: datetime,
     ) -> ResearchInstrumentProfile:
-        """Fetch one live stock/ETF profile and retain its actual observation day."""
+        """获取一份实时股票/ETF 档案并保留其实际观测日。"""
 
         canonical, asset_type = _classify_symbol(symbol)
         known = _aware_utc(known_at, "known_at")
@@ -514,8 +511,7 @@ def _is_missing(value: object) -> bool:
         return not math.isfinite(value)
     if isinstance(value, Decimal):
         return not value.is_finite()
-    # Covers provider sentinels such as pandas.NA/NaT without importing pandas
-    # into the production adapter.
+    # 覆盖 pandas.NA/NaT 等提供者哨兵值，同时不把 pandas 导入生产适配器。
     try:
         text = unicodedata.normalize("NFKC", str(value)).strip().casefold()
     except Exception:

@@ -1,9 +1,7 @@
-"""Provider-neutral contracts for observational cross-market snapshots.
+"""与提供方无关的观察性跨市场快照契约。
 
-The types in this module deliberately describe quotes and their provenance,
-not causal relationships.  A simultaneous move in two markets is evidence of
-co-movement only; a research layer must supply separately sourced evidence
-before making a causal claim.
+本模块中的类型刻意只描述行情及其来源，而不描述因果关系。两个市场同步波动只能证明
+共同运动；研究层必须提供独立来源的证据，才能提出因果主张。
 """
 
 from __future__ import annotations
@@ -22,19 +20,19 @@ from gribuki_trade.ports.market_data import (
 
 
 class CrossMarketDataError(MarketDataUnavailableError):
-    """Base failure raised by a cross-market data adapter."""
+    """跨市场数据适配器抛出的基础失败。"""
 
 
 class CrossMarketDataTimeoutError(MarketDataTimeoutError, CrossMarketDataError):
-    """The full-table snapshot did not finish within the caller's deadline."""
+    """全表快照未在调用方期限内完成。"""
 
 
 class CrossMarketPayloadError(CrossMarketDataError):
-    """The provider returned an incompatible or internally invalid payload."""
+    """提供方返回了不兼容或内部无效的载荷。"""
 
 
 class CrossMarketSegment(StrEnum):
-    """Broad market bucket used for report composition, never causal inference."""
+    """用于报告编排的宽泛市场分组，绝不用于因果推断。"""
 
     A_SHARE = "A_SHARE"
     HONG_KONG = "HONG_KONG"
@@ -45,7 +43,7 @@ class CrossMarketSegment(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class CrossMarketInstrumentSpec:
-    """Exact provider aliases and local-time semantics for one desired series."""
+    """一个目标序列的精确提供方别名与本地时间语义。"""
 
     instrument_id: str
     display_name: str
@@ -74,7 +72,7 @@ class CrossMarketInstrumentSpec:
 
 @dataclass(frozen=True, slots=True)
 class CrossMarketQuote:
-    """One strictly parsed quote from a single full-market provider snapshot."""
+    """从单个全市场提供方快照中严格解析的一条行情。"""
 
     instrument_id: str
     display_name: str
@@ -106,7 +104,7 @@ class CrossMarketQuote:
 
 @dataclass(frozen=True, slots=True)
 class CrossMarketMissingItem:
-    """A requested series absent from the provider table; no value is invented."""
+    """提供方表中缺失的请求序列；不会虚构任何数值。"""
 
     instrument_id: str
     display_name: str
@@ -118,7 +116,7 @@ class CrossMarketMissingItem:
 
 @dataclass(frozen=True, slots=True)
 class CrossMarketSnapshot:
-    """Point-in-time cross-market observations plus explicit coverage gaps."""
+    """时点跨市场观测及显式覆盖缺口。"""
 
     fetched_at: datetime
     provider: str
@@ -142,7 +140,7 @@ class CrossMarketSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class CrossMarketSummaryItem:
-    """Presentation-ready values with exactly three fractional digits."""
+    """已可展示且恰有三位小数的数值。"""
 
     instrument_id: str
     display_name: str
@@ -156,7 +154,7 @@ class CrossMarketSummaryItem:
 
 @dataclass(frozen=True, slots=True)
 class CrossMarketThreeDecimalSummary:
-    """Compact lossless-status projection for notification/report layers."""
+    """供通知与报告层使用的紧凑无损状态投影。"""
 
     fetched_at: datetime
     provider: str
@@ -171,7 +169,7 @@ class CrossMarketThreeDecimalSummary:
 def build_three_decimal_summary(
     snapshot: CrossMarketSnapshot,
 ) -> CrossMarketThreeDecimalSummary:
-    """Project numeric quote values to stable three-decimal display strings."""
+    """将数值行情投影为稳定的三位小数展示字符串。"""
 
     quantum = Decimal("0.001")
     return CrossMarketThreeDecimalSummary(

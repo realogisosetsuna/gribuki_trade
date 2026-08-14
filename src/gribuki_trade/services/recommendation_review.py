@@ -1,4 +1,4 @@
-"""Application service for broker-independent recommendation review callbacks."""
+"""用于独立于券商的推荐复核回调的应用服务。"""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from gribuki_trade.domain.review_cases import (
 
 
 class ReviewCaseRepository(Protocol):
-    """Persistence boundary used by the review workflow."""
+    """复核工作流使用的持久化边界。"""
 
     def append_opened(self, item: ReviewCaseOpened) -> bool: ...
 
@@ -51,12 +51,12 @@ class ReviewCaseRepository(Protocol):
 
 
 class RecommendationReviewError(RuntimeError):
-    """A safe, stable validation error in the research-review workflow."""
+    """研究复核工作流中安全且稳定的校验错误。"""
 
 
 @dataclass(frozen=True, slots=True)
 class RecommendationReviewPolicy:
-    """Expiry and evidence rules for detailed-analysis callbacks."""
+    """详细分析回调的过期与证据规则。"""
 
     maximum_review_window: timedelta = timedelta(hours=4)
     require_evidence_for_confirmation: bool = True
@@ -68,14 +68,14 @@ class RecommendationReviewPolicy:
 
 @dataclass(frozen=True, slots=True)
 class ReviewCaseMutation:
-    """Idempotent write result and the resulting research-only projection."""
+    """幂等写入结果及由此产生的纯研究投影。"""
 
     case: RecommendationReviewCase
     appended: bool
 
 
 class RecommendationReviewService:
-    """Open and resolve recommendation reviews without execution side effects."""
+    """发起并解决推荐复核，不产生执行副作用。"""
 
     def __init__(
         self,
@@ -102,7 +102,7 @@ class RecommendationReviewService:
         at: datetime | None = None,
         expires_at: datetime | None = None,
     ) -> ReviewCaseMutation:
-        """Create one review per immutable recommendation."""
+        """为每条不可变推荐创建一个复核。"""
 
         opened_at = _utc(at or self._now(), "at")
         recommendation_as_of = _utc(recommendation.as_of, "recommendation.as_of")
@@ -165,7 +165,7 @@ class RecommendationReviewService:
         at: datetime | None = None,
         operation_id: str | None = None,
     ) -> ReviewCaseMutation:
-        """Confirm a research conclusion; this never authorizes a trade."""
+        """确认研究结论；该操作绝不授权交易。"""
 
         return self._transition(
             case_id,

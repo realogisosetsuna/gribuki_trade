@@ -1,12 +1,10 @@
-"""Explicit Binance Global product/environment capability matrix.
+"""显式维护 Binance Global 的产品/环境能力矩阵。
 
-Binance does not expose one interchangeable test environment for every
-product.  Keeping the official endpoints and capabilities in one immutable
-matrix prevents an unsupported non-production request from silently falling
-back to a live host.
+Binance 并没有为每一类产品都提供可互换的测试环境。把官方端点与能力集中
+放进一张不可变矩阵，可以避免不受支持的非生产请求悄悄回退到真实主机。
 
-The matrix was verified against the official Binance developer documentation
-and ``binance/binance-spot-api-docs`` on 2026-08-13.
+这张矩阵已在 2026-08-13 对照官方开发者文档与
+``binance/binance-spot-api-docs`` 校验。
 """
 
 from __future__ import annotations
@@ -19,7 +17,7 @@ from typing import Final
 
 
 class BinanceProduct(StrEnum):
-    """Binance Global trading product families relevant to this adapter."""
+    """与当前适配器相关的 Binance Global 交易产品家族。"""
 
     SPOT = "SPOT"
     MARGIN = "MARGIN"
@@ -29,7 +27,7 @@ class BinanceProduct(StrEnum):
 
 
 class BinanceStage(StrEnum):
-    """Officially distinct Binance execution environments."""
+    """官方区分的 Binance 执行环境。"""
 
     LIVE = "LIVE"
     TESTNET = "TESTNET"
@@ -37,7 +35,7 @@ class BinanceStage(StrEnum):
 
 
 class BinanceCapability(StrEnum):
-    """Coarse capabilities that are safe to infer from official docs."""
+    """可以安全地从官方文档推断出的粗粒度能力。"""
 
     PUBLIC_REST = "PUBLIC_REST"
     SIGNED_REST = "SIGNED_REST"
@@ -55,12 +53,12 @@ class BinanceCapability(StrEnum):
 
 
 class UnsupportedBinanceEnvironment(ValueError):
-    """A product has no officially documented endpoint for the requested stage."""
+    """请求的阶段没有该产品的官方文档化端点。"""
 
 
 @dataclass(frozen=True, slots=True)
 class BinanceEnvironmentProfile:
-    """One explicit product/environment routing and capability record."""
+    """一条显式的产品/环境路由与能力记录。"""
 
     product: BinanceProduct
     stage: BinanceStage
@@ -264,7 +262,7 @@ def binance_environment(
     product: BinanceProduct | str,
     stage: BinanceStage | str,
 ) -> BinanceEnvironmentProfile:
-    """Return an exact official profile; never substitute a live endpoint."""
+    """返回精确的官方环境配置，绝不擅自替换成真实端点。"""
 
     try:
         selected_product = _coerce_product(product)

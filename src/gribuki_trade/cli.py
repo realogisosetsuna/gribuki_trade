@@ -1,20 +1,22 @@
-"""Operational command-line entry points for local integration checks."""
+"""用于本地集成检查的运维命令行入口。"""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
+import sys
 import tempfile
 import time
-from collections.abc import Awaitable, Sequence
-from contextlib import suppress
+from collections.abc import Awaitable, Iterator, Mapping, Sequence
+from contextlib import contextmanager, suppress
 from datetime import UTC, date, datetime, timedelta
 from datetime import time as datetime_time
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal, InvalidOperation
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -58,7 +60,18 @@ from gribuki_trade.domain.orders import OrderIntent, OrderStatus, Side
 from gribuki_trade.features import CloseInstrumentType
 from gribuki_trade.napcat_setup import NAPCAT_WEBUI_TOKEN_SECRET
 from gribuki_trade.ports.news import NewsSource
+from gribuki_trade.runtime.integration_settings import (
+    IntegrationSettingsError,
+    load_integration_settings,
+)
+from gribuki_trade.runtime.integration_settings import (
+    validate_model_id as validate_runtime_model_id,
+)
 from gribuki_trade.security import KeyringSecretProvider, SecretProviderError
+from gribuki_trade.security.post_close_urls import (
+    PostCloseSearxngURLValidationError,
+    validate_post_close_searxng_url,
+)
 from gribuki_trade.services.binance_execution import (
     BinanceSpotTestnetExecutionService,
     BinanceStartupReconciliation,
@@ -67,8 +80,22 @@ from gribuki_trade.sqlite_runtime import sqlite_runtime_status
 from gribuki_trade.trading import SQLiteOrderManagementStore
 
 if TYPE_CHECKING:
+    from gribuki_trade.domain.paper_trading import PaperPosition
+    from gribuki_trade.domain.post_close import PostCloseInstrumentResearch
     from gribuki_trade.ports.ashare_screening import AsyncAShareScreeningData
     from gribuki_trade.ports.ashare_surveillance import AsyncAShareIntradayUniverseData
+    from gribuki_trade.ports.market_data import AsyncTradingCalendar
+    from gribuki_trade.reporting.paper_day_summary import PaperDayExecutiveProjection
+    from gribuki_trade.services.ashare_close_sessions import CloseSessionResolution
+    from gribuki_trade.services.ashare_intraday_llm import IntradayLLMConfig
+    from gribuki_trade.services.ashare_paper import ASharePaperTradingService
+    from gribuki_trade.services.ashare_paper_day import (
+        PaperDayDeepExitAssessmentProvider,
+        PaperDayIntradayLLMPlanFactory,
+    )
+    from gribuki_trade.services.ashare_post_close import PostCloseOrchestrationResult
+    from gribuki_trade.services.macro_research import MacroResearchService
+    from gribuki_trade.storage.candidate_store import SQLiteCandidateStore
     from gribuki_trade.storage.research_runs import StoredResearchRun
     from gribuki_trade.strategy_lab.discovery import FactorCandidateInventory
 
@@ -101,6 +128,8 @@ KNOWN_SECRET_STATUS_NAMES = (
 
 
 def build_parser() -> argparse.ArgumentParser:
+    from gribuki_trade.reporting.contracts import ReportKind
+
     parser = argparse.ArgumentParser(prog="gribuki-trade")
     commands = parser.add_subparsers(dest="command")
 
@@ -126,6 +155,17 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "sqlite-runtime-status",
         help="report whether the bundled SQLite is safe for shared WAL deployment",
+    )
+    temp_root = commands.add_parser(
+        "temp-root",
+        help="resolve or prepare the centralized disposable-work root",
+    )
+    temp_root.add_argument("action", choices=("status", "prepare"))
+    temp_root.add_argument(
+        "--temp-dir",
+        help=(
+            "explicit scratch root; otherwise GRIBUKI_TRADE_TMP_DIR and then runtime/tmp are used"
+        ),
     )
 
     status = commands.add_parser(
@@ -424,9 +464,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     market_screen = commands.add_parser(
         "ashare-market-screen-once",
-        help=(
-            "run one post-close, non-trading three-layer full-market A-share screen"
-        ),
+        help=("run one post-close, non-trading three-layer full-market A-share screen"),
     )
     market_screen.add_argument(
         "--top-n",
@@ -499,13 +537,9 @@ def build_parser() -> argparse.ArgumentParser:
         type=_non_negative_decimal,
         default=Decimal("2000000"),
     )
-    intraday_scan.add_argument(
-        "--candidate-db", default="runtime/research/candidates.sqlite3"
-    )
+    intraday_scan.add_argument("--candidate-db", default="runtime/research/candidates.sqlite3")
     intraday_scan.add_argument("--no-store-candidates", action="store_true")
-    intraday_scan.add_argument(
-        "--run-db", default="runtime/research/runs.sqlite3"
-    )
+    intraday_scan.add_argument("--run-db", default="runtime/research/runs.sqlite3")
     intraday_scan.add_argument("--no-store-run", action="store_true")
     intraday_scan.add_argument(
         "--output",
@@ -527,14 +561,43 @@ def build_parser() -> argparse.ArgumentParser:
         help="optional JSON destination written atomically; stdout is always retained",
     )
 
+    exit_evaluate = commands.add_parser(
+        "strategy-exit-evaluate",
+        help="对冻结 A 股退出样本运行仅研究的 walk-forward/holdout 实验",
+    )
+    exit_evaluate.add_argument("--dataset", required=True, help="冻结样本 JSON 文件")
+    exit_evaluate.add_argument(
+        "--specification",
+        required=True,
+        help="预注册搜索空间、成本和 walk-forward 规格 JSON 文件",
+    )
+    exit_evaluate.add_argument(
+        "--output",
+        required=True,
+        help="完整不可变 trial registry 的原子输出路径",
+    )
+    exit_evaluate.add_argument(
+        "--created-at",
+        type=_iso_datetime,
+        help="可选的可重放实验时点；必须含时区",
+    )
+    exit_evaluate.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="显式允许替换同一路径的研究产物；绝不修改生产策略",
+    )
+    exit_evaluate.add_argument(
+        "--confirm",
+        choices=("RESEARCH_ONLY",),
+        help="写入试验登记前必须精确确认 RESEARCH_ONLY",
+    )
+
     research_runs = commands.add_parser(
         "ashare-research-runs",
         help="read immutable A-share operational research run outputs and lineage",
     )
     research_runs.add_argument("action", choices=("list", "get"))
-    research_runs.add_argument(
-        "--run-db", default="runtime/research/runs.sqlite3"
-    )
+    research_runs.add_argument("--run-db", default="runtime/research/runs.sqlite3")
     research_runs.add_argument("--run-id")
     research_runs.add_argument("--run-type")
     research_runs.add_argument("--limit", type=_positive_integer, default=100)
@@ -543,26 +606,18 @@ def build_parser() -> argparse.ArgumentParser:
         "ashare-candidates",
         help="inspect or mutate the unified research-only candidate universe",
     )
-    candidates.add_argument(
-        "action", choices=("list", "add", "cool", "activate", "remove")
-    )
+    candidates.add_argument("action", choices=("list", "add", "cool", "activate", "remove"))
     candidates.add_argument("--symbol")
     candidates.add_argument("--reason", default="MANUAL_RESEARCH_SELECTION")
-    candidates.add_argument(
-        "--candidate-db", default="runtime/research/candidates.sqlite3"
-    )
-    candidates.add_argument(
-        "--cooling-minutes", type=_positive_integer, default=240
-    )
+    candidates.add_argument("--candidate-db", default="runtime/research/candidates.sqlite3")
+    candidates.add_argument("--cooling-minutes", type=_positive_integer, default=240)
     candidates.add_argument("--limit", type=_positive_integer, default=500)
 
     review = commands.add_parser(
         "ashare-review",
         help="open and resolve broker-independent recommendation research reviews",
     )
-    review.add_argument(
-        "action", choices=("open", "list", "get", "confirm", "reject", "cancel")
-    )
+    review.add_argument("action", choices=("open", "list", "get", "confirm", "reject", "cancel"))
     review.add_argument("--review-db", default="runtime/research/reviews.sqlite3")
     review.add_argument("--research-db", default="runtime/research/research.sqlite3")
     review.add_argument("--candidate-db", default="runtime/research/candidates.sqlite3")
@@ -603,6 +658,322 @@ def build_parser() -> argparse.ArgumentParser:
     paper.add_argument("--actual-transfer-fee", type=_non_negative_decimal)
     paper.add_argument("--actual-stamp-tax", type=_non_negative_decimal)
 
+    live_sync = commands.add_parser(
+        "live-sync",
+        help="接收实盘成交、检查账本，或执行一次应用级保护分析与行情跟踪",
+    )
+    live_sync.add_argument("action", choices=("ingest", "status", "cycle"))
+    live_sync.add_argument(
+        "--ledger-db",
+        default="runtime/live/observed-live.sqlite3",
+        help="与 PAPER 完全隔离的实盘观察 SQLite 账本",
+    )
+    live_sync.add_argument(
+        "--allowed-sender",
+        action="append",
+        help="ingest 必填；可重复指定允许同步成交的 QQ 号",
+    )
+    live_sync.add_argument(
+        "--event-json",
+        help="ingest 必填；OneBot v11 私聊事件 JSON 文件，使用 - 从标准输入读取",
+    )
+    live_sync.add_argument("--account", help="status 必填；要检查的实盘观察账户")
+    live_sync.add_argument(
+        "--received-at",
+        type=_iso_datetime,
+        help="可选接收时点；仅用于可重放导入，必须含时区",
+    )
+    live_sync.add_argument(
+        "--exit-plan-db",
+        default="runtime/live/exit-plans.sqlite3",
+        help="cycle 使用的独立退出计划哈希账本",
+    )
+    live_sync.add_argument(
+        "--outbox-path",
+        default="runtime/live/outbox.sqlite3",
+        help="cycle 使用的单目标 NapCat 出站队列",
+    )
+    live_sync.add_argument("--target-kind", choices=("private", "group"))
+    live_sync.add_argument("--target-id")
+    live_sync.add_argument(
+        "--base-url",
+        default=None,
+        help="OneBot 地址；cycle 省略时读取 GUI 共享配置",
+    )
+    live_sync.add_argument(
+        "--llm-provider",
+        choices=("deepseek", "openai"),
+        default=None,
+        help="cycle 双轨分析 provider；省略时读取 GUI 共享配置",
+    )
+    live_sync.add_argument(
+        "--llm-model",
+        default=None,
+        help="cycle 双轨分析模型；省略时读取 GUI 共享配置",
+    )
+    live_sync.add_argument("--work-limit", type=_positive_integer, default=20)
+    live_sync.add_argument(
+        "--quick-timeout-seconds",
+        type=_positive_float,
+        default=45.0,
+        help="ingest 确认 BUY 后建立 QUICK 及单次跟踪各自允许的有限秒数",
+    )
+    live_sync.add_argument(
+        "--deep-timeout-seconds",
+        type=_positive_float,
+        default=600.0,
+        help="单轮等待 DEEP 的有限秒数；超时后持久任务自动释放以便下轮重试",
+    )
+    live_sync.add_argument(
+        "--tracking-pump-interval",
+        type=_positive_float,
+        default=30.0,
+        help="等待 DEEP 时继续观察完整 K 线的间隔秒数",
+    )
+    live_sync.add_argument(
+        "--tracking-pump-limit",
+        type=_positive_integer,
+        default=20,
+        help="等待 DEEP 时最多追加的持仓观察轮数",
+    )
+    live_sync.add_argument(
+        "--dispatch-cycles",
+        type=_positive_integer,
+        default=3,
+        help="cycle 最多执行的 NapCat outbox 派发轮数",
+    )
+    live_sync.add_argument(
+        "--dispatch-poll-interval",
+        type=_non_negative_float,
+        default=0.5,
+    )
+    live_sync.add_argument(
+        "--confirm",
+        choices=("LIVE_SYNC_CYCLE",),
+        help="cycle 必须显式确认；该动作只分析、跟踪和提醒，绝不下单",
+    )
+
+    paper_day = commands.add_parser(
+        "ashare-paper-day",
+        help="run or inspect one realistic broker-free A-share PAPER trading day",
+    )
+    paper_day.add_argument("action", choices=("run", "status", "report", "summary"))
+    paper_day.add_argument(
+        "--runtime-dir",
+        default="runtime/paper/day",
+        help="session parent directory; each trading date receives an isolated child",
+    )
+    paper_day.add_argument(
+        "--session-date",
+        type=_iso_date,
+        help="Shanghai trading date; defaults to today's local date",
+    )
+    paper_day.add_argument("--account", default="ashare-paper-day")
+    paper_day.add_argument(
+        "--initial-cash",
+        type=_positive_decimal,
+        default=Decimal("200000"),
+    )
+    paper_day.add_argument("--target-kind", choices=("private", "group"))
+    paper_day.add_argument("--target-id")
+    paper_day.add_argument(
+        "--base-url",
+        default=None,
+        help="OneBot 地址；省略时读取 GUI 共享配置",
+    )
+    paper_day.add_argument(
+        "--confirm",
+        choices=("PAPER_DAY",),
+        help="run requires exactly PAPER_DAY; no real broker is ever contacted",
+    )
+    paper_day.add_argument(
+        "--recover-after-abort",
+        action="store_true",
+        help=(
+            "explicitly authorize the same append-only run to continue after "
+            "a terminal DAY_ABORTED event"
+        ),
+    )
+    paper_day.add_argument(
+        "--maximum-positions",
+        type=_positive_integer,
+        default=None,
+        help=(
+            "optional positive count-based position circuit breaker; omitted "
+            "means no hard position-count limit (capital/risk limits still apply)"
+        ),
+    )
+    paper_day.add_argument(
+        "--confirm-risk-policy-change",
+        choices=("PAPER_RISK_POLICY_CHANGE",),
+        help=(
+            "strong one-time confirmation required to migrate an already "
+            "journalled intraday risk policy"
+        ),
+    )
+    paper_day.add_argument(
+        "--report-artifact-recovery-action",
+        choices=(
+            "MARK_SENT_AFTER_PROVIDER_VERIFICATION",
+            "RESEND_AFTER_PROVIDER_NON_RECEIPT_VERIFICATION",
+        ),
+        help=(
+            "only for an AMBIGUOUS DAILY_REVIEW attachment after the operator "
+            "has checked the provider-side result"
+        ),
+    )
+    paper_day.add_argument(
+        "--report-artifact-provider-id",
+        help="provider file ID required only when recovery marks a verified receipt as sent",
+    )
+    paper_day.add_argument(
+        "--confirm-report-artifact-recovery",
+        choices=("PAPER_REPORT_ARTIFACT_RECOVERY",),
+        help="strong confirmation required for either ambiguous attachment recovery action",
+    )
+    paper_day.add_argument(
+        "--intraday-llm",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "require background dual-track LLM evidence review for new PAPER buys; "
+            "--no-intraday-llm is an audited monitor/sell-only mode that blocks "
+            "every new buy"
+        ),
+    )
+    paper_day.add_argument(
+        "--intraday-llm-review-top-n",
+        type=_positive_integer,
+        default=6,
+        help="maximum ranked surveillance candidates reviewed per refresh",
+    )
+    paper_day.add_argument(
+        "--intraday-llm-review-ttl-minutes",
+        type=_positive_integer,
+        default=20,
+        help="positive lifetime of one journal-accepted candidate review",
+    )
+    paper_day.add_argument(
+        "--intraday-llm-max-calls",
+        type=_positive_integer_or_unlimited,
+        default=None,
+        metavar="POSITIVE_INT|unlimited",
+        help="optional per-session provider-call cap (default: unlimited)",
+    )
+    paper_day.add_argument(
+        "--intraday-llm-events-db",
+        default="runtime/news/events.sqlite3",
+        help="existing SQLite event database frozen read-only at startup",
+    )
+    paper_day.add_argument(
+        "--intraday-llm-provider",
+        choices=("deepseek", "openai"),
+        default=None,
+        help="LLM provider；省略时读取 GUI 共享配置",
+    )
+    paper_day.add_argument(
+        "--intraday-llm-model",
+        default=None,
+        help="provider 模型；省略时读取 GUI 共享配置",
+    )
+
+    post_close = commands.add_parser(
+        "ashare-post-close",
+        help="run or inspect one idempotent same-day A-share post-close review",
+    )
+    post_close.add_argument(
+        "action",
+        choices=("run", "status", "report"),
+    )
+    post_close.add_argument("--runtime-dir", default="runtime/paper/day")
+    post_close.add_argument("--session-date", type=_iso_date)
+    post_close.add_argument("--account", default="ashare-paper-day")
+    post_close.add_argument("--target-kind", choices=("private", "group"))
+    post_close.add_argument("--target-id")
+    post_close.add_argument(
+        "--base-url",
+        default=None,
+        help="OneBot 地址；省略时读取 GUI 共享配置",
+    )
+    post_close.add_argument(
+        "--candidate-db",
+        default="runtime/research/candidates.sqlite3",
+    )
+    post_close.add_argument("--history-days", type=_positive_integer, default=540)
+    post_close.add_argument("--news-runtime-dir", default="runtime/news")
+    post_close.add_argument(
+        "--research-db",
+        default="runtime/research/research.sqlite3",
+    )
+    post_close.add_argument(
+        "--market-evidence-dir",
+        default="runtime/research/market_evidence",
+    )
+    post_close.add_argument(
+        "--news-feed",
+        action="append",
+        choices=(
+            "global_eastmoney",
+            "global_cailianpress",
+            "global_sina",
+            "global_10jqka",
+        ),
+        dest="news_feeds",
+    )
+    post_close.add_argument(
+        "--refresh-news",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    post_close.add_argument(
+        "--search-discovery",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    post_close.add_argument("--searxng-url")
+    post_close.add_argument(
+        "--macro",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="enable configured evidence-bound dual-track close research (default: enabled)",
+    )
+    post_close.add_argument(
+        "--macro-provider",
+        choices=("deepseek", "openai"),
+        default=None,
+    )
+    post_close.add_argument("--model")
+    post_close.add_argument(
+        "--macro-weight",
+        type=_macro_weight_decimal,
+        default=Decimal("0.25"),
+    )
+    post_close.add_argument(
+        "--dispatch-cycles",
+        type=_positive_integer,
+        default=3,
+    )
+    post_close.add_argument(
+        "--dispatch-poll-interval",
+        type=_non_negative_float,
+        default=2.0,
+    )
+    post_close.add_argument(
+        "--recover-analysis",
+        action="store_true",
+        help="explicitly authorize re-analysis after an ambiguous interrupted phase",
+    )
+    post_close.add_argument(
+        "--recover-delivery",
+        action="store_true",
+        help="explicitly authorize a possibly duplicate delivery after ambiguity",
+    )
+    post_close.add_argument(
+        "--confirm",
+        choices=("POST_CLOSE",),
+        help="run requires POST_CLOSE",
+    )
+
     research = commands.add_parser(
         "ashare-research-once",
         help="build and retain one evidence-gated A-share research recommendation",
@@ -621,7 +992,7 @@ def build_parser() -> argparse.ArgumentParser:
     research.add_argument(
         "--macro-provider",
         choices=("deepseek", "openai"),
-        default="deepseek",
+        default=None,
     )
     research.add_argument(
         "--model",
@@ -704,12 +1075,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--macro",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="run evidence-bound DeepSeek macro analysis (default: enabled)",
+        help="run configured evidence-bound dual-track macro analysis (default: enabled)",
     )
     close_research.add_argument(
         "--macro-provider",
         choices=("deepseek", "openai"),
-        default="deepseek",
+        default=None,
     )
     close_research.add_argument("--model")
     close_research.add_argument(
@@ -717,8 +1088,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=_macro_weight_decimal,
         default=Decimal("0.25"),
         help=(
-            "bounded macro contribution to the uncalibrated combined score "
-            "(0..0.40; default: 0.25)"
+            "bounded macro contribution to the uncalibrated combined score (0..0.40; default: 0.25)"
         ),
     )
     close_research.add_argument(
@@ -751,15 +1121,9 @@ def build_parser() -> argparse.ArgumentParser:
     close_batch.add_argument("--session-date", type=_iso_date)
     close_batch.add_argument("--next-session", type=_iso_date)
     close_batch.add_argument("--news-runtime-dir", default="runtime/news")
-    close_batch.add_argument(
-        "--research-db", default="runtime/research/research.sqlite3"
-    )
-    close_batch.add_argument(
-        "--market-evidence-dir", default="runtime/research/market_evidence"
-    )
-    close_batch.add_argument(
-        "--outbox-db", default="runtime/notifications/outbox.sqlite3"
-    )
+    close_batch.add_argument("--research-db", default="runtime/research/research.sqlite3")
+    close_batch.add_argument("--market-evidence-dir", default="runtime/research/market_evidence")
+    close_batch.add_argument("--outbox-db", default="runtime/notifications/outbox.sqlite3")
     close_batch.add_argument("--report-dir", default="runtime/reports")
     close_batch.add_argument(
         "--news-feed",
@@ -772,19 +1136,13 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         dest="news_feeds",
     )
-    close_batch.add_argument(
-        "--refresh-news", action=argparse.BooleanOptionalAction, default=True
-    )
+    close_batch.add_argument("--refresh-news", action=argparse.BooleanOptionalAction, default=True)
     close_batch.add_argument(
         "--search-discovery", action=argparse.BooleanOptionalAction, default=True
     )
     close_batch.add_argument("--searxng-url")
-    close_batch.add_argument(
-        "--macro", action=argparse.BooleanOptionalAction, default=True
-    )
-    close_batch.add_argument(
-        "--macro-provider", choices=("deepseek", "openai"), default="deepseek"
-    )
+    close_batch.add_argument("--macro", action=argparse.BooleanOptionalAction, default=True)
+    close_batch.add_argument("--macro-provider", choices=("deepseek", "openai"), default=None)
     close_batch.add_argument("--model")
     close_batch.add_argument(
         "--macro-weight",
@@ -830,7 +1188,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--cycles",
         type=_positive_integer,
         default=3,
-        help="bounded polling cycles; use an OS supervisor for continuous operation",
+        help="bounded polling cycles; a future application runtime owns continuity",
     )
     research_watch.add_argument("--events-db", default="runtime/news/events.sqlite3")
     research_watch.add_argument(
@@ -849,7 +1207,7 @@ def build_parser() -> argparse.ArgumentParser:
     research_watch.add_argument(
         "--macro-provider",
         choices=("deepseek", "openai"),
-        default="deepseek",
+        default=None,
     )
     research_watch.add_argument(
         "--model",
@@ -873,7 +1231,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     napcat_configure.add_argument(
         "--runtime-dir",
-        default="vendor/NapCatQQ-shell-v4.18.18",
+        default=None,
+        help="NapCat 目录；省略时读取 GUI 共享配置",
     )
     napcat_configure.add_argument("--onebot-port", type=_positive_integer, default=3000)
     napcat_configure.add_argument("--webui-port", type=_positive_integer, default=6099)
@@ -883,13 +1242,13 @@ def build_parser() -> argparse.ArgumentParser:
         "napcat-status",
         help="check a loopback NapCat/OneBot endpoint without sending a message",
     )
-    napcat_status.add_argument("--base-url", default="http://127.0.0.1:3000")
+    napcat_status.add_argument("--base-url", default=None)
 
     napcat_dispatch = commands.add_parser(
         "napcat-dispatch",
         help="dispatch a finite number of outbound-only NapCat outbox polling cycles",
     )
-    napcat_dispatch.add_argument("--base-url", default="http://127.0.0.1:3000")
+    napcat_dispatch.add_argument("--base-url", default=None)
     napcat_dispatch.add_argument(
         "--target-kind",
         choices=("private", "group"),
@@ -917,22 +1276,24 @@ def build_parser() -> argparse.ArgumentParser:
         "napcat-send-test",
         help="send one fixed, non-trading test message through local NapCat",
     )
-    napcat_test.add_argument("--base-url", default="http://127.0.0.1:3000")
+    napcat_test.add_argument("--base-url", default=None)
     napcat_test.add_argument("--target-kind", choices=("private", "group"), required=True)
     napcat_test.add_argument("--target-id", required=True)
     napcat_test.add_argument("--confirm", choices=("SEND_TEST",), required=True)
 
     napcat_artifact = commands.add_parser(
         "napcat-send-artifact",
-        help="send one allowlisted local report image or upload one report file",
+        help="validate and durably upload one allowlisted Markdown report",
     )
-    napcat_artifact.add_argument("--base-url", default="http://127.0.0.1:3000")
-    napcat_artifact.add_argument(
-        "--target-kind", choices=("private", "group"), required=True
-    )
+    napcat_artifact.add_argument("--base-url", default=None)
+    napcat_artifact.add_argument("--target-kind", choices=("private", "group"), required=True)
     napcat_artifact.add_argument("--target-id", required=True)
+    napcat_artifact.add_argument("--artifact-kind", choices=("file",), required=True)
     napcat_artifact.add_argument(
-        "--artifact-kind", choices=("image", "file"), required=True
+        "--report-kind",
+        choices=tuple(kind.value for kind in ReportKind),
+        required=True,
+        help="stable report contract the Markdown artifact must satisfy",
     )
     napcat_artifact.add_argument(
         "--artifact-root",
@@ -945,8 +1306,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="path relative to --artifact-root, or an absolute path inside it",
     )
     napcat_artifact.add_argument(
-        "--confirm", choices=("SEND_ARTIFACT",), required=True
+        "--receipt-db",
+        default="runtime/notifications/report-artifacts.sqlite3",
+        help="durable delivery claim and provider receipt database",
     )
+    napcat_artifact.add_argument("--confirm", choices=("SEND_ARTIFACT",), required=True)
     return parser
 
 
@@ -1006,6 +1370,12 @@ def _positive_integer(value: str) -> int:
     return number
 
 
+def _positive_integer_or_unlimited(value: str) -> int | None:
+    if value.strip().lower() == "unlimited":
+        return None
+    return _positive_integer(value)
+
+
 def _iso_date(value: str) -> date:
     try:
         return date.fromisoformat(value)
@@ -1055,10 +1425,114 @@ def _non_negative_float(value: str) -> float:
     return number
 
 
+def _apply_integration_runtime_defaults(args: argparse.Namespace) -> None:
+    """把 GUI 共享配置应用到未被命令行显式覆盖的集成参数。"""
+
+    command = args.command or "gui"
+    action = getattr(args, "action", None)
+    paper_day_run = command == "ashare-paper-day" and action == "run"
+    post_close_run = command == "ashare-post-close" and action == "run"
+    live_cycle = command == "live-sync" and action == "cycle"
+    live_ingest = command == "live-sync" and action == "ingest"
+    live_onebot = live_cycle or live_ingest
+    base_url_commands = {
+        "napcat-status",
+        "napcat-dispatch",
+        "napcat-send-test",
+        "napcat-send-artifact",
+    }
+    model_commands = {
+        "ashare-post-close",
+        "ashare-research-once",
+        "ashare-close-research-once",
+        "ashare-close-research-batch",
+        "ashare-research-watch",
+    }
+    needs_settings = (
+        (
+            (command in base_url_commands or paper_day_run or post_close_run or live_onebot)
+            and getattr(args, "base_url", None) is None
+        )
+        or (command == "napcat-configure" and getattr(args, "runtime_dir", None) is None)
+        or (
+            command in model_commands
+            and (command != "ashare-post-close" or post_close_run)
+            and (
+                getattr(args, "macro_provider", None) is None
+                or getattr(args, "model", None) is None
+            )
+        )
+        or (
+            paper_day_run
+            and (
+                getattr(args, "intraday_llm_provider", None) is None
+                or getattr(args, "intraday_llm_model", None) is None
+            )
+        )
+        or (
+            live_cycle
+            and (
+                getattr(args, "llm_provider", None) is None
+                or getattr(args, "llm_model", None) is None
+            )
+        )
+    )
+    if not needs_settings:
+        return
+    settings = load_integration_settings()
+    if (command in base_url_commands or paper_day_run or post_close_run or live_onebot) and getattr(
+        args, "base_url", None
+    ) is None:
+        args.base_url = settings.onebot_url
+    if command == "napcat-configure" and getattr(args, "runtime_dir", None) is None:
+        args.runtime_dir = settings.napcat_runtime
+    if command in model_commands and (command != "ashare-post-close" or post_close_run):
+        if getattr(args, "macro_provider", None) is None:
+            args.macro_provider = settings.llm_provider
+        if getattr(args, "macro", False) is True and getattr(args, "model", None) is None:
+            args.model = (
+                settings.deepseek_model
+                if args.macro_provider == "deepseek"
+                else settings.openai_model
+            )
+    if paper_day_run:
+        if args.intraday_llm_provider is None:
+            args.intraday_llm_provider = settings.llm_provider
+        if args.intraday_llm_model is None:
+            args.intraday_llm_model = (
+                settings.deepseek_model
+                if args.intraday_llm_provider == "deepseek"
+                else settings.openai_model
+            )
+    if live_cycle:
+        if args.llm_provider is None:
+            args.llm_provider = settings.llm_provider
+        if args.llm_model is None:
+            args.llm_model = (
+                settings.deepseek_model
+                if args.llm_provider == "deepseek"
+                else settings.openai_model
+            )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     command = args.command or "gui"
+    try:
+        _apply_integration_runtime_defaults(args)
+    except IntegrationSettingsError:
+        print(
+            json.dumps(
+                {
+                    "error_code": "INTEGRATION_SETTINGS_INVALID",
+                    "ok": False,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+        return 1
     if command == "gui":
         from gribuki_trade.gui import run
 
@@ -1075,6 +1549,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = asyncio.run(_deepseek_status())
     elif command == "sqlite-runtime-status":
         result = _sqlite_runtime_status()
+    elif command == "temp-root":
+        result = _temp_root(args.action, args.temp_dir)
     elif command == "binance-testnet-status":
         result = asyncio.run(_binance_testnet_status(args.symbol))
     elif command == "binance-testnet-order-test":
@@ -1082,13 +1558,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif command == "binance-testnet-cycle":
         result = asyncio.run(_binance_testnet_cycle(args.symbol, args.notional))
     elif command == "binance-testnet-oms-cycle":
-        result = asyncio.run(
-            _binance_testnet_oms_cycle(args.symbol, args.notional, args.database)
-        )
+        result = asyncio.run(_binance_testnet_oms_cycle(args.symbol, args.notional, args.database))
     elif command == "binance-testnet-oms-fill":
-        result = asyncio.run(
-            _binance_testnet_oms_fill(args.symbol, args.notional, args.database)
-        )
+        result = asyncio.run(_binance_testnet_oms_fill(args.symbol, args.notional, args.database))
     elif command == "binance-history-sync":
         result = asyncio.run(
             _binance_history_sync(
@@ -1150,9 +1622,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif command == "ashare-daily":
         result = _ashare_daily(args.symbol, args.days)
     elif command == "ashare-news":
-        result = asyncio.run(
-            _ashare_news(args.feed, args.symbol, args.limit, args.archive_dir)
-        )
+        result = asyncio.run(_ashare_news(args.feed, args.symbol, args.limit, args.archive_dir))
     elif command == "ashare-news-watch":
         result = asyncio.run(
             _ashare_news_watch(
@@ -1217,6 +1687,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_path = Path(args.output).resolve()
             result["output"] = str(output_path)
             _atomic_write_cli_json(output_path, result)
+    elif command == "strategy-exit-evaluate":
+        result = _strategy_exit_evaluate(
+            dataset=args.dataset,
+            specification=args.specification,
+            output=args.output,
+            created_at=args.created_at,
+            overwrite=args.overwrite,
+            confirmation=args.confirm,
+        )
     elif command == "ashare-research-runs":
         result = _ashare_research_runs(
             args.action,
@@ -1266,6 +1745,101 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.actual_commission,
             args.actual_transfer_fee,
             args.actual_stamp_tax,
+        )
+    elif command == "live-sync":
+        if args.action == "cycle":
+            result = asyncio.run(
+                _live_sync_cycle(
+                    ledger_db=args.ledger_db,
+                    exit_plan_db=args.exit_plan_db,
+                    outbox_path=args.outbox_path,
+                    target_kind_value=args.target_kind,
+                    target_id=args.target_id,
+                    base_url=args.base_url,
+                    llm_provider=args.llm_provider,
+                    llm_model=args.llm_model,
+                    work_limit=args.work_limit,
+                    deep_timeout_seconds=args.deep_timeout_seconds,
+                    tracking_pump_interval=args.tracking_pump_interval,
+                    tracking_pump_limit=args.tracking_pump_limit,
+                    dispatch_cycles=args.dispatch_cycles,
+                    dispatch_poll_interval=args.dispatch_poll_interval,
+                    confirmation=args.confirm,
+                )
+            )
+        else:
+            result = _live_sync(
+                args.action,
+                args.ledger_db,
+                args.allowed_sender,
+                args.event_json,
+                args.account,
+                args.received_at,
+                exit_plan_db=args.exit_plan_db,
+                outbox_path=args.outbox_path,
+                target_kind_value=args.target_kind,
+                target_id=args.target_id,
+                quick_timeout_seconds=args.quick_timeout_seconds,
+                base_url=args.base_url,
+                dispatch_cycles=args.dispatch_cycles,
+                dispatch_poll_interval=args.dispatch_poll_interval,
+            )
+    elif command == "ashare-paper-day":
+        result = asyncio.run(
+            _ashare_paper_day(
+                args.action,
+                args.runtime_dir,
+                args.session_date,
+                args.account,
+                args.initial_cash,
+                args.target_kind,
+                args.target_id,
+                args.base_url,
+                args.confirm,
+                args.recover_after_abort,
+                args.maximum_positions,
+                args.confirm_risk_policy_change,
+                args.intraday_llm,
+                args.intraday_llm_review_top_n,
+                args.intraday_llm_review_ttl_minutes,
+                args.intraday_llm_max_calls,
+                args.intraday_llm_events_db,
+                args.intraday_llm_provider,
+                args.intraday_llm_model,
+                args.report_artifact_recovery_action,
+                args.confirm_report_artifact_recovery,
+                args.report_artifact_provider_id,
+            )
+        )
+    elif command == "ashare-post-close":
+        result = asyncio.run(
+            _ashare_post_close(
+                args.action,
+                args.runtime_dir,
+                args.session_date,
+                args.account,
+                args.target_kind,
+                args.target_id,
+                args.base_url,
+                args.candidate_db,
+                args.history_days,
+                args.news_runtime_dir,
+                args.research_db,
+                args.market_evidence_dir,
+                args.news_feeds,
+                args.refresh_news,
+                args.search_discovery,
+                args.searxng_url,
+                args.macro,
+                args.macro_provider,
+                args.model,
+                args.macro_weight,
+                args.dispatch_cycles,
+                args.dispatch_poll_interval,
+                args.confirm,
+                args.recover_analysis,
+                args.recover_delivery,
+            )
         )
     elif command == "ashare-research-once":
         result = asyncio.run(
@@ -1382,9 +1956,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
     elif command == "napcat-send-test":
-        result = asyncio.run(
-            _napcat_send_test(args.base_url, args.target_kind, args.target_id)
-        )
+        result = asyncio.run(_napcat_send_test(args.base_url, args.target_kind, args.target_id))
     elif command == "napcat-send-artifact":
         result = asyncio.run(
             _napcat_send_artifact(
@@ -1392,13 +1964,27 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.target_kind,
                 args.target_id,
                 args.artifact_kind,
+                args.report_kind,
                 args.artifact_root,
                 args.artifact,
+                args.receipt_db,
             )
         )
     else:  # pragma: no cover - argparse owns the accepted command set
         parser.error(f"unknown command: {command}")
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    if (
+        command
+        in {
+            "ashare-paper-day",
+            "ashare-post-close",
+            "live-sync",
+            "napcat-send-artifact",
+            "strategy-exit-evaluate",
+        }
+        and result.get("ok") is False
+    ):
+        return 1
     return 0
 
 
@@ -1410,10 +1996,7 @@ def _set_secret(name: str) -> None:
 
 def _secret_status() -> dict[str, bool]:
     provider = KeyringSecretProvider()
-    return {
-        name: provider.get_secret(name) is not None
-        for name in KNOWN_SECRET_STATUS_NAMES
-    }
+    return {name: provider.get_secret(name) is not None for name in KNOWN_SECRET_STATUS_NAMES}
 
 
 def _sqlite_runtime_status() -> dict[str, object]:
@@ -1429,17 +2012,32 @@ def _sqlite_runtime_status() -> dict[str, object]:
     }
 
 
+def _temp_root(action: str, explicit: str | None) -> dict[str, object]:
+    from gribuki_trade.runtime.temp_root import TempRootResolver
+
+    if action not in {"status", "prepare"}:
+        raise ValueError("unsupported temp-root action")
+    resolved = TempRootResolver().resolve(
+        explicit,
+        create=action == "prepare",
+    )
+    return {
+        "action": action,
+        **resolved.audit_document(),
+        "exists": resolved.path.is_dir(),
+        "ok": True,
+    }
+
+
 def _required_local_secret(name: str) -> str:
     value = KeyringSecretProvider().get_secret(name)
     if value is None:
-        raise RuntimeError(
-            f"required local secret {name!r} is not configured; use secret-set"
-        )
+        raise RuntimeError(f"required local secret {name!r} is not configured; use secret-set")
     return value
 
 
 def _optional_local_secret(name: str) -> str | None:
-    """Read an optional integration secret without making that provider mandatory."""
+    """读取可选集成密钥，同时不将对应供应商变为必需依赖。"""
 
     try:
         return KeyringSecretProvider().get_secret(name)
@@ -1452,13 +2050,13 @@ def _decimal_text(value: Decimal | None) -> str | None:
 
 
 def _three_decimal_text(value: Decimal | None) -> str | None:
-    """Stable presentation precision for human-facing research documents."""
+    """面向人员的研究文档所采用的稳定展示精度。"""
 
     return None if value is None else format(value.quantize(Decimal("0.001")), "f")
 
 
 def _atomic_write_cli_json(path: Path, payload: object) -> None:
-    """Durably replace one optional CLI JSON artifact on the same filesystem."""
+    """在同一文件系统上持久替换一个可选 CLI JSON 产物。"""
 
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
@@ -1491,7 +2089,7 @@ def _atomic_write_cli_json(path: Path, payload: object) -> None:
 
 
 def _strategy_factor_discover(max_trials: int) -> dict[str, object]:
-    """Expand the controlled factor grammar without data or configuration writes."""
+    """在不写入数据或配置的情况下扩展受控因子语法。"""
 
     from gribuki_trade.strategy_lab import (
         FactorSearchBudget,
@@ -1523,6 +2121,77 @@ def _strategy_factor_discover(max_trials: int) -> dict[str, object]:
     return _factor_candidate_inventory_json(inventory)
 
 
+def _strategy_exit_evaluate(
+    *,
+    dataset: str,
+    specification: str,
+    output: str,
+    created_at: datetime | None,
+    overwrite: bool,
+    confirmation: str | None,
+) -> dict[str, object]:
+    """运行冻结退出策略实验并返回不含逐笔大对象的可读摘要。"""
+
+    if confirmation != "RESEARCH_ONLY":
+        return {
+            "error_code": "EXIT_POLICY_RESEARCH_CONFIRMATION_REQUIRED",
+            "execution_authority": False,
+            "ok": False,
+            "promotion_authorized": False,
+            "research_only": True,
+        }
+    from gribuki_trade.strategy_lab import run_frozen_exit_policy_experiment
+
+    try:
+        artifact = run_frozen_exit_policy_experiment(
+            Path(dataset),
+            Path(specification),
+            Path(output),
+            created_at=created_at,
+            overwrite=overwrite,
+        )
+    except FileExistsError:
+        return {
+            "error_code": "EXIT_POLICY_ARTIFACT_ALREADY_EXISTS",
+            "execution_authority": False,
+            "ok": False,
+            "promotion_authorized": False,
+            "research_only": True,
+        }
+    except (OSError, TypeError, ValueError, ArithmeticError):
+        return {
+            "error_code": "EXIT_POLICY_EXPERIMENT_INPUT_INVALID",
+            "execution_authority": False,
+            "ok": False,
+            "promotion_authorized": False,
+            "research_only": True,
+        }
+    registry = artifact.registry
+    selected = registry.selected_holdout.metrics
+    baseline = registry.baseline_holdout.metrics
+    return {
+        "artifact_sha256": artifact.artifact_sha256,
+        "baseline_holdout": {
+            "maximum_drawdown": str(baseline.maximum_drawdown),
+            "net_return": str(baseline.net_return),
+        },
+        "dataset_file_sha256": artifact.dataset_file_sha256,
+        "execution_authority": False,
+        "ok": True,
+        "output": str(artifact.destination),
+        "promotion_authorized": False,
+        "registry_sha256": registry.registry_sha256,
+        "research_only": True,
+        "selected_holdout": {
+            "maximum_drawdown": str(selected.maximum_drawdown),
+            "net_return": str(selected.net_return),
+        },
+        "selected_trial_id": registry.selected_trial_id,
+        "specification_file_sha256": artifact.specification_file_sha256,
+        "trial_count": len(registry.trials),
+    }
+
+
 def _factor_candidate_inventory_json(
     inventory: FactorCandidateInventory,
 ) -> dict[str, object]:
@@ -1544,10 +2213,7 @@ def _factor_candidate_inventory_json(
                 "template_id": item.template_id,
                 "template_version": item.template_version,
                 "economic_family": item.economic_family.value,
-                "parameters": [
-                    {"name": name, "value": value}
-                    for name, value in item.parameters
-                ],
+                "parameters": [{"name": name, "value": value} for name, value in item.parameters],
                 "expression": item.expression,
                 "canonical_expression": item.canonical_expression,
                 "expression_sha256": item.expression_sha256,
@@ -1562,10 +2228,7 @@ def _factor_candidate_inventory_json(
                 "template_id": item.template_id,
                 "template_version": item.template_version,
                 "economic_family": item.economic_family.value,
-                "parameters": [
-                    {"name": name, "value": value}
-                    for name, value in item.parameters
-                ],
+                "parameters": [{"name": name, "value": value} for name, value in item.parameters],
                 "expression": item.expression,
                 "reason_codes": [reason.value for reason in item.reason_codes],
                 "canonical_expression": item.canonical_expression,
@@ -1589,7 +2252,7 @@ def _ashare_research_runs(
     run_type: str | None,
     limit: int,
 ) -> dict[str, object]:
-    """Read retained run outputs without creating an absent registry."""
+    """读取已保留运行输出，且不创建原本不存在的注册表。"""
 
     from gribuki_trade.storage import SQLiteResearchRunStore
 
@@ -1659,8 +2322,7 @@ def _research_run_summary(item: StoredResearchRun) -> dict[str, object]:
         "started_at": item.started_at.isoformat(),
         "completed_at": item.completed_at.isoformat(),
         "source_revisions": [
-            {"source": source, "revision": revision}
-            for source, revision in item.source_revisions
+            {"source": source, "revision": revision} for source, revision in item.source_revisions
         ],
         "config_sha256": item.config_sha256,
         "payload_sha256": item.payload_sha256,
@@ -1718,11 +2380,7 @@ def _ashare_bars(
     from gribuki_trade.adapters import AKShareMarketDataAdapter
     from gribuki_trade.ports.market_data import MinuteInterval
 
-    interval = (
-        MinuteInterval.ONE_MINUTE
-        if interval_value == "1m"
-        else MinuteInterval.FIVE_MINUTES
-    )
+    interval = MinuteInterval.ONE_MINUTE if interval_value == "1m" else MinuteInterval.FIVE_MINUTES
     now = datetime.now(ZoneInfo("Asia/Shanghai"))
     bars = AKShareMarketDataAdapter().fetch_intraday_bars(
         symbol,
@@ -1813,9 +2471,7 @@ async def _ashare_news(
                 "event_id": event.event_id,
                 "first_seen_at": event.first_seen_at.isoformat(),
                 "published_at": (
-                    event.published_at.isoformat()
-                    if event.published_at is not None
-                    else None
+                    event.published_at.isoformat() if event.published_at is not None else None
                 ),
                 "source_id": event.source_id,
                 "summary": event.summary,
@@ -1881,6 +2537,7 @@ async def _ashare_news_watch(
         SQLiteEventStore(root / "events.sqlite3") as event_store,
         SQLiteSourceHealthStore(root / "source_health.sqlite3") as health_store,
     ):
+
         def observe(item: SourceCollectionObservation) -> None:
             result = item.result
             successful = result.status in {
@@ -1894,16 +2551,10 @@ async def _ashare_news_watch(
                     operation="news_collect",
                     started_at=item.started_at,
                     finished_at=item.finished_at,
-                    status=(
-                        ProviderRunStatus.SUCCESS
-                        if successful
-                        else ProviderRunStatus.FAILURE
-                    ),
+                    status=(ProviderRunStatus.SUCCESS if successful else ProviderRunStatus.FAILURE),
                     error_code=result.error_code,
                     item_count=(
-                        result.events_new
-                        + result.events_revised
-                        + result.events_duplicate
+                        result.events_new + result.events_revised + result.events_duplicate
                     ),
                     degraded=result.status is SourceRunStatus.BACKOFF,
                     stale=False,
@@ -1963,7 +2614,7 @@ def _ashare_source_health(
     days: int,
     runtime_dir: str,
 ) -> dict[str, object]:
-    """Summarize append-only collection telemetry without network access."""
+    """在不访问网络的情况下汇总仅追加的采集遥测。"""
 
     from gribuki_trade.storage import SQLiteSourceHealthStore
 
@@ -2061,9 +2712,7 @@ async def _ashare_disclosures(
         )
         result = (await service.run_once())[0]
         latest = tuple(
-            event
-            for event in event_store.latest(limit=200)
-            if event.source_id == config.source_id
+            event for event in event_store.latest(limit=200) if event.source_id == config.source_id
         )
     return {
         "documents_saved": result.documents_saved,
@@ -2076,9 +2725,7 @@ async def _ashare_disclosures(
                 "available_at": event.available_at.isoformat(),
                 "event_id": event.event_id,
                 "published_at": (
-                    None
-                    if event.published_at is None
-                    else event.published_at.isoformat()
+                    None if event.published_at is None else event.published_at.isoformat()
                 ),
                 "title": event.title,
                 "url": event.canonical_url,
@@ -2136,7 +2783,7 @@ async def _ashare_market_screen_once(
     data_source: AsyncAShareScreeningData | None = None,
     decision_at: datetime | None = None,
 ) -> dict[str, object]:
-    """Run one same-day post-close full-market screen without an order path."""
+    """运行一次当日收盘后全市场筛选，且不包含订单路径。"""
 
     if top_n < 1:
         raise ValueError("top_n must be positive")
@@ -2179,10 +2826,7 @@ async def _ashare_market_screen_once(
     )
 
     resolved_decision_at = decision_at or datetime.now(UTC)
-    if (
-        resolved_decision_at.tzinfo is None
-        or resolved_decision_at.utcoffset() is None
-    ):
+    if resolved_decision_at.tzinfo is None or resolved_decision_at.utcoffset() is None:
         raise ValueError("decision_at must be timezone-aware")
     local_decision = resolved_decision_at.astimezone(ZoneInfo("Asia/Shanghai"))
     as_of = local_decision.date()
@@ -2304,8 +2948,7 @@ async def _ashare_market_screen_once(
                         (run.universe_source_id, run.universe_source_revision),
                         (
                             None
-                            if run.factor_source_id is None
-                            or run.factor_source_revision is None
+                            if run.factor_source_id is None or run.factor_source_revision is None
                             else (run.factor_source_id, run.factor_source_revision)
                         ),
                     )
@@ -2354,7 +2997,7 @@ def _persist_operational_research_run(
     config: dict[str, object],
     payload: dict[str, object],
 ) -> dict[str, object]:
-    """Append one output/lineage manifest without claiming raw-input replay."""
+    """追加一份输出/血缘清单，且不声称能够回放原始输入。"""
 
     from gribuki_trade.storage import SQLiteResearchRunStore, research_run_id
 
@@ -2381,7 +3024,7 @@ def _persist_operational_research_run(
 
 
 def _ashare_screening_run_json(run: object) -> dict[str, object]:
-    """Serialize one typed screening run without leaking provider objects."""
+    """序列化一次类型化筛选运行，且不泄露供应商对象。"""
 
     from gribuki_trade.services.ashare_screening import AShareScreeningRun
 
@@ -2465,9 +3108,7 @@ def _ashare_screening_run_json(run: object) -> dict[str, object]:
                 "factor_contributions": [
                     {
                         "contribution": factor.contribution,
-                        "cross_section_observations": (
-                            factor.cross_section_observations
-                        ),
+                        "cross_section_observations": (factor.cross_section_observations),
                         "directional_score": factor.directional_score,
                         "factor": factor.factor_id.value,
                         "percentile_rank": factor.percentile_rank,
@@ -2501,7 +3142,7 @@ def _ashare_screening_failure_json(
     run_store_path: str | None = None,
     run_config: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    """Return a stable failure envelope without provider exception details."""
+    """返回不含供应商异常细节的稳定失败信封。"""
 
     result: dict[str, object] = {
         "as_of": as_of.isoformat(),
@@ -2560,7 +3201,7 @@ async def _ashare_intraday_scan_once(
     requested_at: datetime | None = None,
     completed_at: datetime | None = None,
 ) -> dict[str, object]:
-    """Run one intraday anomaly scan; candidates remain research-only inputs."""
+    """运行一次盘中异常扫描；候选标的始终只是研究输入。"""
 
     if top_n < 1:
         raise ValueError("top_n must be positive")
@@ -2584,10 +3225,7 @@ async def _ashare_intraday_scan_once(
     )
 
     resolved_requested_at = requested_at or datetime.now(UTC)
-    if (
-        resolved_requested_at.tzinfo is None
-        or resolved_requested_at.utcoffset() is None
-    ):
+    if resolved_requested_at.tzinfo is None or resolved_requested_at.utcoffset() is None:
         raise ValueError("requested_at must be timezone-aware")
     local = resolved_requested_at.astimezone(ZoneInfo("Asia/Shanghai"))
     resolved_source = data_source or AKShareAShareSurveillanceAdapter()
@@ -2716,9 +3354,7 @@ def _ashare_intraday_run_json(run: object) -> dict[str, object]:
                         "directional_score": factor.directional_score,
                         "weight": factor.configured_weight,
                         "contribution": factor.contribution,
-                        "cross_section_observations": (
-                            factor.cross_section_observations
-                        ),
+                        "cross_section_observations": (factor.cross_section_observations),
                     }
                     for factor in candidate.factors
                 ],
@@ -2786,7 +3422,7 @@ def _ashare_candidates(
     *,
     now: datetime | None = None,
 ) -> dict[str, object]:
-    """Manage the research candidate event store without any execution path."""
+    """管理研究候选事件存储，且不包含任何执行路径。"""
 
     from gribuki_trade.domain.candidates import CandidateSource
     from gribuki_trade.services.candidate_universe import (
@@ -2858,13 +3494,9 @@ def _ashare_candidates(
                 "discovered_at": item.discovered_at.isoformat(),
                 "first_observed_at": item.first_observed_at.isoformat(),
                 "last_observed_at": item.last_observed_at.isoformat(),
-                "expires_at": (
-                    None if item.expires_at is None else item.expires_at.isoformat()
-                ),
+                "expires_at": (None if item.expires_at is None else item.expires_at.isoformat()),
                 "cooling_until": (
-                    None
-                    if item.cooling_until is None
-                    else item.cooling_until.isoformat()
+                    None if item.cooling_until is None else item.cooling_until.isoformat()
                 ),
                 "provenance_count": len(item.provenance),
             }
@@ -2886,7 +3518,7 @@ def _ashare_review(
     *,
     now: datetime | None = None,
 ) -> dict[str, object]:
-    """Operate the research-review state machine without execution side effects."""
+    """操作研究复核状态机，且不产生执行副作用。"""
 
     from gribuki_trade.domain.review_cases import RecommendationReviewCase, ReviewActor
     from gribuki_trade.services.recommendation_review import (
@@ -2905,9 +3537,7 @@ def _ashare_review(
     if resolved_now.tzinfo is None or resolved_now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
     resolved_now = resolved_now.astimezone(UTC)
-    recommendation_id = _optional_cli_identifier(
-        recommendation_id, "recommendation_id"
-    )
+    recommendation_id = _optional_cli_identifier(recommendation_id, "recommendation_id")
     case_id = _optional_cli_identifier(case_id, "case_id")
     if action == "open":
         if recommendation_id is None or case_id is not None:
@@ -3035,9 +3665,7 @@ def _bounded_review_reasons(
     if len(normalized) > 12:
         raise ValueError("at most 12 review reason codes are allowed")
     if any(
-        not item
-        or len(item) > 120
-        or any(ord(character) < 32 for character in item)
+        not item or len(item) > 120 or any(ord(character) < 32 for character in item)
         for item in normalized
     ):
         raise ValueError("review reasons must be non-empty bounded single-line values")
@@ -3092,6 +3720,810 @@ def _ashare_review_case_json(item: object) -> dict[str, object]:
     }
 
 
+def _live_sync(
+    action: str,
+    ledger_db: str,
+    allowed_senders: Sequence[str] | None,
+    event_json: str | None,
+    account_id: str | None,
+    received_at: datetime | None,
+    *,
+    exit_plan_db: str = "runtime/live/exit-plans.sqlite3",
+    outbox_path: str = "runtime/live/outbox.sqlite3",
+    target_kind_value: str | None = None,
+    target_id: str | None = None,
+    quick_timeout_seconds: float = 45.0,
+    base_url: str | None = None,
+    dispatch_cycles: int = 3,
+    dispatch_poll_interval: float = 0.5,
+) -> dict[str, object]:
+    """单次处理 OneBot 私聊事件；没有监听端口或操作系统常驻任务。"""
+
+    from gribuki_trade.services.live_trade_records import (
+        LiveTradeRecordError,
+        LiveTradeRecordService,
+        parse_onebot_private_message,
+        project_live_account,
+    )
+    from gribuki_trade.storage.live_records import SQLiteLiveRecordStore
+
+    try:
+        supplied_ledger = Path(ledger_db)
+        if supplied_ledger.exists() and supplied_ledger.is_symlink():
+            return {"error_code": "LIVE_LEDGER_SYMLINK_REJECTED", "ok": False}
+        ledger = supplied_ledger.resolve()
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        immediate_request: tuple[str, str, str] | None = None
+        with SQLiteLiveRecordStore(ledger) as store:
+            if action == "status":
+                if account_id is None or not account_id.strip():
+                    return {"error_code": "LIVE_ACCOUNT_REQUIRED", "ok": False}
+                snapshot = project_live_account(account_id, store.events(account_id))
+                tracking = store.tracking(account_id, active_only=False)
+                work_items = store.work_items(account_id)
+                return {
+                    "account_id": snapshot.account_id,
+                    "confirmed_fill_count": snapshot.confirmed_fill_count,
+                    "integrity_verified": True,
+                    "last_sequence": snapshot.last_sequence,
+                    "ok": True,
+                    "positions": [
+                        {
+                            "average_cost": str(item.average_cost),
+                            "instrument_type": item.instrument_type.value,
+                            "quantity": item.quantity,
+                            "realized_pnl": str(item.realized_pnl),
+                            "symbol": item.symbol,
+                        }
+                        for item in snapshot.positions
+                    ],
+                    "protection_tracking": [
+                        {
+                            "buy_command_id": item.buy_command_id,
+                            "plan_ready": item.plan_ready,
+                            "plan_stream_id": item.plan_stream_id,
+                            "protection_id": item.protection_id,
+                            "remaining_quantity": item.remaining_quantity,
+                            "symbol": item.symbol,
+                        }
+                        for item in tracking
+                    ],
+                    "total_fees": str(snapshot.total_fees),
+                    "work_items": [
+                        {
+                            "attempts": item.attempts,
+                            "error_code": item.error_code,
+                            "kind": item.kind.value,
+                            "protection_id": item.protection_id,
+                            "result_code": item.result_code,
+                            "status": item.status.value,
+                            "work_id": item.work_id,
+                        }
+                        for item in work_items
+                    ],
+                }
+            if action != "ingest":
+                return {"error_code": "LIVE_ACTION_INVALID", "ok": False}
+            senders = frozenset(allowed_senders or ())
+            if not senders:
+                return {"error_code": "LIVE_ALLOWED_SENDER_REQUIRED", "ok": False}
+            if event_json is None:
+                return {"error_code": "LIVE_EVENT_JSON_REQUIRED", "ok": False}
+            try:
+                payload_text = _read_live_event_json(event_json)
+                payload = json.loads(payload_text)
+                if not isinstance(payload, dict) or any(
+                    not isinstance(key, str) for key in payload
+                ):
+                    raise ValueError("OneBot payload must be an object")
+                message = parse_onebot_private_message(cast(dict[str, object], payload))
+                if message.sender_id not in senders:
+                    return {"error_code": "SENDER_NOT_ALLOWED", "ok": False}
+                service = LiveTradeRecordService(
+                    store,
+                    allowed_sender_ids=senders,
+                    # 服务先完成发送者、消息时效和命令校验；仅合法 proposal
+                    # 访问日历，确认/取消不会重复联网解释已经冻结的事实。
+                    execution_session_validator=_verify_live_execution_session,
+                )
+                outcome = service.ingest(message, received_at=received_at)
+            except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+                return {"error_code": "LIVE_EVENT_INVALID", "ok": False}
+            except LiveTradeRecordError as error:
+                return {"error_code": error.code, "ok": False}
+            result: dict[str, object] = {
+                "account_id": outcome.account_id,
+                "analysis_required": outcome.analysis_required,
+                "command_id": outcome.command_id,
+                "event_sequence": outcome.event_sequence,
+                "fingerprint": outcome.fingerprint,
+                "ok": True,
+                "protection_id": outcome.protection_id,
+                "protection_work_id": outcome.protection_work_id,
+                "response_text": outcome.response_text,
+                "status": outcome.status.value,
+            }
+            if outcome.analysis_required and outcome.protection_id is not None:
+                if outcome.protection_work_id is None:  # pragma: no cover - domain invariant
+                    return {"error_code": "LIVE_LEDGER_INTEGRITY_FAILURE", "ok": False}
+                immediate_request = (
+                    message.sender_id,
+                    outcome.protection_id,
+                    outcome.protection_work_id,
+                )
+        if immediate_request is not None:
+            sender_id, protection_id, protection_work_id = immediate_request
+            try:
+                immediate = asyncio.run(
+                    _live_sync_post_confirm_quick_and_track(
+                        ledger_db=str(ledger),
+                        exit_plan_db=exit_plan_db,
+                        outbox_path=outbox_path,
+                        account_id=cast(str, result["account_id"]),
+                        protection_id=protection_id,
+                        protection_work_id=protection_work_id,
+                        confirming_sender_id=sender_id,
+                        target_kind_value=target_kind_value,
+                        target_id=target_id,
+                        quick_timeout_seconds=quick_timeout_seconds,
+                        base_url=base_url,
+                        dispatch_cycles=dispatch_cycles,
+                        dispatch_poll_interval=dispatch_poll_interval,
+                    )
+                )
+            except (OSError, RuntimeError, TypeError, ValueError, ArithmeticError):
+                immediate = {
+                    "error_code": "LIVE_IMMEDIATE_PROTECTION_FAILED",
+                    "execution_authority": False,
+                    "ok": False,
+                    "protection_work_id": protection_work_id,
+                }
+            result["immediate_protection"] = immediate
+            result["response_text"] = _append_live_immediate_protection_receipt(
+                cast(str, result["response_text"]),
+                immediate,
+            )
+        return result
+    except (OSError, RuntimeError):
+        return {"error_code": "LIVE_LEDGER_UNAVAILABLE", "ok": False}
+
+
+def _verify_live_execution_session(executed_at: datetime) -> bool:
+    """用 BaoStock 的精确自然日记录判断外部成交日是否开市。"""
+
+    from gribuki_trade.adapters.baostock import BaoStockDailyAdapter
+
+    if executed_at.tzinfo is None or executed_at.utcoffset() is None:
+        raise ValueError("executed_at must be timezone-aware")
+    local_date = executed_at.astimezone(ZoneInfo("Asia/Shanghai")).date()
+    days = tuple(
+        BaoStockDailyAdapter(max_attempts=2, timeout_seconds=20.0).fetch_trade_calendar(
+            local_date,
+            local_date,
+        )
+    )
+    if (
+        len(days) != 1
+        or days[0].calendar_date != local_date
+        or type(days[0].is_trading_day) is not bool
+    ):
+        raise RuntimeError("BaoStock returned an invalid one-day trading calendar")
+    return days[0].is_trading_day
+
+
+def _read_live_event_json(source: str) -> str:
+    """限制 OneBot 单事件大小，避免把任意大文件读入应用进程。"""
+
+    maximum_bytes = 64 * 1024
+    if source == "-":
+        text = sys.stdin.read(maximum_bytes + 1)
+        if len(text.encode("utf-8")) > maximum_bytes:
+            raise ValueError("OneBot event exceeds size limit")
+        return text
+    path = Path(source)
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("OneBot event path must be a regular file")
+    if path.stat().st_size > maximum_bytes:
+        raise ValueError("OneBot event exceeds size limit")
+    return path.read_text(encoding="utf-8")
+
+
+async def _live_sync_post_confirm_quick_and_track(
+    *,
+    ledger_db: str,
+    exit_plan_db: str,
+    outbox_path: str,
+    account_id: str,
+    protection_id: str,
+    protection_work_id: str,
+    confirming_sender_id: str,
+    target_kind_value: str | None,
+    target_id: str | None,
+    quick_timeout_seconds: float,
+    base_url: str | None = None,
+    dispatch_cycles: int = 3,
+    dispatch_poll_interval: float = 0.5,
+) -> dict[str, object]:
+    """成交提交后，只为本次 BUY 尝试一次有限 QUICK 与行情观察。"""
+
+    if not 0 < quick_timeout_seconds < float("inf"):
+        return {
+            "error_code": "LIVE_IMMEDIATE_TIMEOUT_INVALID",
+            "execution_authority": False,
+            "ok": False,
+            "protection_work_id": protection_work_id,
+        }
+    supplied_paths = tuple(Path(value) for value in (ledger_db, exit_plan_db, outbox_path))
+    paths = tuple(path.resolve() for path in supplied_paths)
+    if len(set(paths)) != len(paths) or any(path.is_symlink() for path in supplied_paths):
+        return {
+            "error_code": "LIVE_RUNTIME_PATH_INVALID",
+            "execution_authority": False,
+            "ok": False,
+            "protection_work_id": protection_work_id,
+        }
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+    from gribuki_trade.adapters.akshare import AKShareMarketDataAdapter
+    from gribuki_trade.adapters.baostock import BaoStockDailyAdapter
+    from gribuki_trade.domain.live_records import LiveWorkKind
+    from gribuki_trade.ports.notifier import NotificationTargetKind
+    from gribuki_trade.services.exit_plan_lifecycle import ExitPlanLifecycleService
+    from gribuki_trade.services.live_market_tracking import LiveMarketTrackingCycleService
+    from gribuki_trade.services.live_protection_inputs import (
+        PublicMarketLiveProtectionInputProvider,
+    )
+    from gribuki_trade.services.live_trade_orchestration import (
+        LiveTradeOrchestrationService,
+    )
+    from gribuki_trade.storage.exit_plans import SQLiteExitPlanStore
+    from gribuki_trade.storage.live_records import SQLiteLiveRecordStore
+    from gribuki_trade.storage.outbox import SQLiteOutbox
+
+    target_fallback = (target_kind_value is None) != (target_id is None)
+    resolved_target_kind = NotificationTargetKind(
+        "private" if target_fallback else target_kind_value or "private"
+    )
+    resolved_target_id = (
+        confirming_sender_id if target_fallback else target_id or confirming_sender_id
+    ).strip()
+    if not resolved_target_id:
+        return {
+            "error_code": "LIVE_NOTIFICATION_TARGET_REQUIRED",
+            "execution_authority": False,
+            "ok": False,
+            "protection_work_id": protection_work_id,
+        }
+    market_data = AKShareMarketDataAdapter(
+        timeout_seconds=12.0,
+        max_attempts=1,
+        intraday_stale_after_seconds=180.0,
+    )
+    protection_inputs = PublicMarketLiveProtectionInputProvider(
+        market_data=market_data,
+        calendar=BaoStockDailyAdapter(max_attempts=2, timeout_seconds=20.0),
+        semantic_analyzer=None,
+    )
+    try:
+        with (
+            SQLiteLiveRecordStore(paths[0]) as live_store,
+            SQLiteExitPlanStore(paths[1]) as exit_store,
+            SQLiteOutbox(paths[2]) as outbox,
+        ):
+            orchestration = LiveTradeOrchestrationService(
+                live_store=live_store,
+                exit_lifecycle=ExitPlanLifecycleService(exit_store),
+                protection_inputs=protection_inputs,
+                outbox=outbox,
+                notification_target_kind=resolved_target_kind,
+                notification_target_id=resolved_target_id,
+            )
+            quick = await orchestration.process_due_work(
+                kinds=frozenset({LiveWorkKind.BUILD_PROTECTION}),
+                work_ids=frozenset({protection_work_id}),
+                limit=1,
+                work_timeout_seconds=quick_timeout_seconds,
+            )
+            work = next(
+                (
+                    item
+                    for item in live_store.work_items(account_id)
+                    if item.work_id == protection_work_id
+                ),
+                None,
+            )
+            tracking_state = next(
+                (
+                    item
+                    for item in live_store.tracking(account_id, active_only=False)
+                    if item.protection_id == protection_id
+                ),
+                None,
+            )
+            if work is None or tracking_state is None:
+                raise RuntimeError("confirmed protection state disappeared")
+            deep_work = next(
+                (
+                    item
+                    for item in live_store.work_items(account_id)
+                    if item.kind is LiveWorkKind.BUILD_DEEP_PROTECTION
+                    and item.protection_id == protection_id
+                ),
+                None,
+            )
+            tracking_result: dict[str, object]
+            tracking_ok = True
+            if tracking_state.plan_ready and tracking_state.remaining_quantity > 0:
+                tracker = LiveMarketTrackingCycleService(
+                    live_store=live_store,
+                    market_data=market_data,
+                    orchestration=orchestration,
+                    maximum_concurrency=1,
+                )
+                try:
+                    observed = await asyncio.wait_for(
+                        tracker.run_once(
+                            delivery_limit=100,
+                            protection_ids=frozenset({protection_id}),
+                        ),
+                        timeout=quick_timeout_seconds,
+                    )
+                except TimeoutError:
+                    tracking_ok = False
+                    tracking_result = {
+                        "attempted": True,
+                        "error_code": "LIVE_IMMEDIATE_TRACKING_TIMEOUT",
+                        "ok": False,
+                    }
+                else:
+                    delivery_ok = (
+                        observed.delivery.retried == 0
+                        and observed.delivery.dead == 0
+                        and observed.delivery.completed == observed.queued_alerts
+                    )
+                    tracking_ok = not observed.failures and delivery_ok
+                    tracking_result = {
+                        "attempted": True,
+                        "barrier_observations": observed.barrier_observations,
+                        "failures": [
+                            {
+                                "account_id": item.account_id,
+                                "error_code": item.error_code,
+                                "symbol": item.symbol,
+                            }
+                            for item in observed.failures
+                        ],
+                        "fetched_bars": observed.fetched_bars,
+                        "outbox_delivery": {
+                            "completed": observed.delivery.completed,
+                            "dead": observed.delivery.dead,
+                            "retried": observed.delivery.retried,
+                        },
+                        "ok": tracking_ok,
+                        "queued_alerts": observed.queued_alerts,
+                        "target_count": observed.target_count,
+                    }
+                    if not tracking_ok:
+                        tracking_result["error_code"] = (
+                            "LIVE_IMMEDIATE_TRACKING_INCOMPLETE"
+                            if observed.failures
+                            else "LIVE_IMMEDIATE_ALERT_OUTBOX_PENDING"
+                        )
+            else:
+                tracking_result = {
+                    "attempted": False,
+                    "ok": tracking_state.remaining_quantity == 0,
+                    "reason_code": (
+                        "POSITION_ALREADY_CLOSED"
+                        if tracking_state.remaining_quantity == 0
+                        else "QUICK_PLAN_NOT_READY"
+                    ),
+                }
+                tracking_ok = tracking_state.remaining_quantity == 0
+            quick_ok = tracking_state.plan_ready or tracking_state.remaining_quantity == 0
+            result: dict[str, object] = {
+                "deep": {
+                    "queued": deep_work is not None,
+                    "status": None if deep_work is None else deep_work.status.value,
+                    "work_id": None if deep_work is None else deep_work.work_id,
+                },
+                "execution_authority": False,
+                "ok": quick_ok and tracking_ok,
+                "notification_target_fallback": target_fallback,
+                "protection_id": protection_id,
+                "protection_work_id": protection_work_id,
+                "quick": {
+                    "claimed": quick.claimed,
+                    "completed": quick.completed,
+                    "dead": quick.dead,
+                    "error_code": work.error_code,
+                    "plan_ready": tracking_state.plan_ready,
+                    "remaining_quantity": tracking_state.remaining_quantity,
+                    "result_code": work.result_code,
+                    "retried": quick.retried,
+                    "status": work.status.value,
+                },
+                "tracking": tracking_result,
+            }
+            if not result["ok"]:
+                result["error_code"] = (
+                    work.error_code
+                    or tracking_result.get("error_code")
+                    or "LIVE_IMMEDIATE_PROTECTION_PENDING"
+                )
+            raw_outbox_delivery = tracking_result.get("outbox_delivery")
+            delivered_to_outbox: Mapping[str, object] | None = (
+                raw_outbox_delivery if isinstance(raw_outbox_delivery, Mapping) else None
+            )
+            if (
+                base_url is not None
+                and delivered_to_outbox is not None
+                and delivered_to_outbox.get("completed") == tracking_result.get("queued_alerts")
+                and delivered_to_outbox.get("completed") != 0
+            ):
+                try:
+                    dispatched = await _napcat_dispatch(
+                        base_url,
+                        resolved_target_kind.value,
+                        resolved_target_id,
+                        str(paths[2]),
+                        dispatch_cycles,
+                        dispatch_poll_interval,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except (OSError, RuntimeError, TypeError, ValueError):
+                    result["dispatch"] = {
+                        "attempted": True,
+                        "error_code": "LIVE_IMMEDIATE_ALERT_DISPATCH_FAILED",
+                        "ok": False,
+                    }
+                else:
+                    dispatch_ok = (
+                        dispatched["dead"] == 0
+                        and dispatched["retry_scheduled"] == 0
+                    )
+                    result["dispatch"] = {
+                        "attempted": True,
+                        "dead": dispatched["dead"],
+                        "ok": dispatch_ok,
+                        "retry_scheduled": dispatched["retry_scheduled"],
+                        "sent": dispatched["sent"],
+                    }
+                    if not dispatch_ok:
+                        cast(dict[str, object], result["dispatch"])["error_code"] = (
+                            "LIVE_IMMEDIATE_ALERT_DISPATCH_PENDING"
+                        )
+            else:
+                result["dispatch"] = {
+                    "attempted": False,
+                    "ok": True,
+                    "reason_code": (
+                        "NAPCAT_NOT_CONFIGURED"
+                        if base_url is None
+                        else "NO_DURABLE_ALERT_READY"
+                    ),
+                }
+            return result
+    except asyncio.CancelledError:
+        raise
+    except (OSError, RuntimeError, TypeError, ValueError, ArithmeticError):
+        return {
+            "error_code": "LIVE_IMMEDIATE_PROTECTION_FAILED",
+            "execution_authority": False,
+            "ok": False,
+            "protection_id": protection_id,
+            "protection_work_id": protection_work_id,
+        }
+
+
+def _append_live_immediate_protection_receipt(
+    response_text: str,
+    immediate: Mapping[str, object],
+) -> str:
+    """把提交后尝试的真实状态追加到成交回执，而不改写成交结论。"""
+
+    quick = immediate.get("quick")
+    tracking = immediate.get("tracking")
+    if (
+        isinstance(quick, Mapping)
+        and quick.get("plan_ready") is True
+        and isinstance(tracking, Mapping)
+        and tracking.get("ok") is True
+    ):
+        detail = "QUICK 已生成并已完成一次有限行情跟踪；DEEP 已持久排队。"
+    elif isinstance(quick, Mapping) and quick.get("plan_ready") is True:
+        error_code = immediate.get("error_code") or "LIVE_IMMEDIATE_TRACKING_INCOMPLETE"
+        detail = f"QUICK 已生成，但本次有限跟踪未完整完成（{error_code}）；后续 cycle 将继续恢复。"
+    elif immediate.get("ok") is True:
+        detail = "持仓已在并发同步中关闭，无需再激活保护计划。"
+    else:
+        error_code = immediate.get("error_code") or "LIVE_IMMEDIATE_PROTECTION_PENDING"
+        detail = f"本次有限 QUICK/跟踪未完整完成（{error_code}）；持久工作仍由后续 cycle 恢复。"
+    dispatch = immediate.get("dispatch")
+    if isinstance(dispatch, Mapping) and dispatch.get("attempted") is True:
+        if dispatch.get("ok") is True:
+            detail += f" NapCat 有限派发已完成，发送 {dispatch.get('sent', 0)} 条。"
+        else:
+            dispatch_code = dispatch.get("error_code") or "LIVE_IMMEDIATE_ALERT_DISPATCH_PENDING"
+            detail += f" NapCat 派发未完成（{dispatch_code}），提醒仍保留在 durable outbox。"
+    return response_text.rstrip() + "\n即时保护结果：" + detail
+
+
+async def _live_sync_cycle(
+    *,
+    ledger_db: str,
+    exit_plan_db: str,
+    outbox_path: str,
+    target_kind_value: str | None,
+    target_id: str | None,
+    base_url: str | None,
+    llm_provider: str | None,
+    llm_model: str | None,
+    work_limit: int,
+    dispatch_cycles: int,
+    dispatch_poll_interval: float,
+    confirmation: str | None,
+    deep_timeout_seconds: float = 600.0,
+    tracking_pump_interval: float = 30.0,
+    tracking_pump_limit: int = 20,
+) -> dict[str, object]:
+    """执行一次有限的实盘保护构建、行情观察和 NapCat 派发。"""
+
+    if confirmation != "LIVE_SYNC_CYCLE":
+        return {"error_code": "LIVE_SYNC_CYCLE_CONFIRMATION_REQUIRED", "ok": False}
+    if (
+        not 0 < deep_timeout_seconds < float("inf")
+        or not 0 < tracking_pump_interval < float("inf")
+        or isinstance(tracking_pump_limit, bool)
+        or not isinstance(tracking_pump_limit, int)
+        or tracking_pump_limit < 1
+        or tracking_pump_interval * tracking_pump_limit < deep_timeout_seconds
+    ):
+        return {"error_code": "LIVE_DEEP_PUMP_CONFIG_INVALID", "ok": False}
+    if target_kind_value is None or target_id is None or not target_id.strip():
+        return {"error_code": "LIVE_NOTIFICATION_TARGET_REQUIRED", "ok": False}
+    if base_url is None:
+        return {"error_code": "LIVE_ONEBOT_URL_REQUIRED", "ok": False}
+    provider = (llm_provider or "").strip().casefold()
+    if provider not in {"deepseek", "openai"}:
+        return {"error_code": "LIVE_LLM_PROVIDER_INVALID", "ok": False}
+    try:
+        model = validate_runtime_model_id(llm_model or "")
+    except (TypeError, ValueError):
+        return {"error_code": "LIVE_LLM_MODEL_INVALID", "ok": False}
+    try:
+        api_key = _required_local_secret(
+            DEEPSEEK_API_KEY_SECRET if provider == "deepseek" else OPENAI_API_KEY_SECRET
+        )
+    except (RuntimeError, SecretProviderError):
+        return {"error_code": "LIVE_LLM_API_KEY_NOT_CONFIGURED", "ok": False}
+
+    paths = tuple(Path(value).resolve() for value in (ledger_db, exit_plan_db, outbox_path))
+    if len(set(paths)) != len(paths) or any(path.exists() and path.is_symlink() for path in paths):
+        return {"error_code": "LIVE_RUNTIME_PATH_INVALID", "ok": False}
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+    import httpx
+
+    from gribuki_trade.adapters.akshare import AKShareMarketDataAdapter
+    from gribuki_trade.adapters.baostock import BaoStockDailyAdapter
+    from gribuki_trade.adapters.llm import (
+        DeepSeekChatMacroAnalyzer,
+        OpenAIResponsesMacroAnalyzer,
+    )
+    from gribuki_trade.domain.live_records import LiveWorkKind
+    from gribuki_trade.ports.llm_analyzer import MacroAnalyzer
+    from gribuki_trade.ports.notifier import NotificationTargetKind
+    from gribuki_trade.security.config import SecretValue
+    from gribuki_trade.services.exit_plan_lifecycle import ExitPlanLifecycleService
+    from gribuki_trade.services.live_market_tracking import (
+        LiveMarketTrackingCycleService,
+    )
+    from gribuki_trade.services.live_protection_inputs import (
+        ProductionLiveDualExitSemanticAnalyzer,
+        PublicMarketLiveProtectionInputProvider,
+    )
+    from gribuki_trade.services.live_trade_orchestration import (
+        LiveTradeOrchestrationService,
+    )
+    from gribuki_trade.services.llm_production import (
+        ProductionLLMProfile,
+        build_production_dual_track_analyzer,
+    )
+    from gribuki_trade.storage.exit_plans import SQLiteExitPlanStore
+    from gribuki_trade.storage.live_records import SQLiteLiveRecordStore
+    from gribuki_trade.storage.outbox import SQLiteOutbox
+
+    target_kind = NotificationTargetKind(target_kind_value)
+    client = httpx.AsyncClient(
+        limits=httpx.Limits(max_connections=6, max_keepalive_connections=6),
+        timeout=httpx.Timeout(180.0),
+    )
+    owned_dual = None
+    try:
+        baseline: MacroAnalyzer
+        if provider == "deepseek":
+            baseline = DeepSeekChatMacroAnalyzer(
+                SecretValue(api_key),
+                model=model,
+                client=client,
+            )
+        else:
+            baseline = OpenAIResponsesMacroAnalyzer(
+                SecretValue(api_key),
+                model=model,
+                timeout_seconds=180.0,
+                client=client,
+            )
+        owned_dual = build_production_dual_track_analyzer(
+            baseline,
+            audit_path=paths[0].parent / "live-adversarial-audit.sqlite3",
+            profile=ProductionLLMProfile.DEEP,
+            maximum_calls_per_session=None,
+        )
+        market_data = AKShareMarketDataAdapter(
+            timeout_seconds=12.0,
+            max_attempts=1,
+            intraday_stale_after_seconds=180.0,
+        )
+        protection_inputs = PublicMarketLiveProtectionInputProvider(
+            market_data=market_data,
+            calendar=BaoStockDailyAdapter(max_attempts=2, timeout_seconds=20.0),
+            semantic_analyzer=ProductionLiveDualExitSemanticAnalyzer(owned_dual),
+        )
+        with (
+            SQLiteLiveRecordStore(paths[0]) as live_store,
+            SQLiteExitPlanStore(paths[1]) as exit_store,
+            SQLiteOutbox(paths[2]) as outbox,
+        ):
+            orchestration = LiveTradeOrchestrationService(
+                live_store=live_store,
+                exit_lifecycle=ExitPlanLifecycleService(exit_store),
+                protection_inputs=protection_inputs,
+                outbox=outbox,
+                notification_target_kind=target_kind,
+                notification_target_id=target_id.strip(),
+            )
+            tracker = LiveMarketTrackingCycleService(
+                live_store=live_store,
+                market_data=market_data,
+                orchestration=orchestration,
+                maximum_concurrency=1,
+            )
+            tracking_runs = [await tracker.run_once(delivery_limit=max(100, work_limit))]
+            dispatch_failed = False
+            try:
+                dispatch = await _napcat_dispatch(
+                    base_url,
+                    target_kind.value,
+                    target_id.strip(),
+                    str(paths[2]),
+                    dispatch_cycles,
+                    dispatch_poll_interval,
+                )
+            except asyncio.CancelledError:
+                raise
+            except (OSError, RuntimeError, TypeError, ValueError):
+                # 通知链路故障只能使 outbox 保持待派发，不能阻断 QUICK/DEEP
+                # 保护、成交关闭或后续 barrier 观察。
+                dispatch_failed = True
+                dispatch = {"dead": 0, "retry_scheduled": 0, "sent": 0}
+            close_work = await orchestration.process_due_work(
+                kinds=frozenset({LiveWorkKind.CLOSE_PROTECTION}),
+                limit=work_limit,
+            )
+            build_work = await orchestration.process_due_work(
+                kinds=frozenset({LiveWorkKind.BUILD_PROTECTION}),
+                limit=1,
+            )
+            deep_task = asyncio.create_task(
+                orchestration.process_due_work(
+                    kinds=frozenset({LiveWorkKind.BUILD_DEEP_PROTECTION}),
+                    limit=1,
+                    work_timeout_seconds=deep_timeout_seconds,
+                )
+            )
+            try:
+                for _ in range(tracking_pump_limit):
+                    if deep_task.done():
+                        break
+                    done, _pending = await asyncio.wait(
+                        {deep_task},
+                        timeout=tracking_pump_interval,
+                    )
+                    if done:
+                        break
+                    tracking_run = await tracker.run_once(delivery_limit=max(100, work_limit))
+                    tracking_runs.append(tracking_run)
+                    if not tracking_run.queued_alerts:
+                        continue
+                    try:
+                        later_dispatch = await _napcat_dispatch(
+                            base_url,
+                            target_kind.value,
+                            target_id.strip(),
+                            str(paths[2]),
+                            dispatch_cycles,
+                            dispatch_poll_interval,
+                        )
+                    except asyncio.CancelledError:
+                        raise
+                    except (OSError, RuntimeError, TypeError, ValueError):
+                        dispatch_failed = True
+                    else:
+                        dispatch = {
+                            key: cast(int, dispatch[key]) + cast(int, later_dispatch[key])
+                            for key in ("dead", "retry_scheduled", "sent")
+                        }
+                deep_work = await deep_task
+            finally:
+                if not deep_task.done():
+                    deep_task.cancel()
+                    await asyncio.gather(deep_task, return_exceptions=True)
+    except asyncio.CancelledError:
+        raise
+    except (OSError, RuntimeError, TypeError, ValueError, ArithmeticError):
+        return {"error_code": "LIVE_SYNC_CYCLE_FAILED", "ok": False}
+    finally:
+        if owned_dual is not None:
+            owned_dual.close()
+        await client.aclose()
+
+    result: dict[str, object] = {
+        "analysis": {
+            "build": {
+                "claimed": build_work.claimed,
+                "completed": build_work.completed,
+                "dead": build_work.dead,
+                "retried": build_work.retried,
+            },
+            "build_limit": 1,
+            "deep": {
+                "claimed": deep_work.claimed,
+                "completed": deep_work.completed,
+                "dead": deep_work.dead,
+                "retried": deep_work.retried,
+            },
+            "deep_timeout_seconds": deep_timeout_seconds,
+            "close": {
+                "claimed": close_work.claimed,
+                "completed": close_work.completed,
+                "dead": close_work.dead,
+                "retried": close_work.retried,
+            },
+        },
+        "dispatch": {
+            "dead": dispatch["dead"],
+            "retry_scheduled": dispatch["retry_scheduled"],
+            "sent": dispatch["sent"],
+        },
+        "execution_authority": False,
+        "ok": not dispatch_failed,
+        "tracking": {
+            "barrier_observations": sum(item.barrier_observations for item in tracking_runs),
+            "failures": [
+                {
+                    "account_id": item.account_id,
+                    "error_code": item.error_code,
+                    "symbol": item.symbol,
+                }
+                for run in tracking_runs
+                for item in run.failures
+            ],
+            "fetched_bars": sum(item.fetched_bars for item in tracking_runs),
+            "pump_runs": len(tracking_runs) - 1,
+            "queued_alerts": sum(item.queued_alerts for item in tracking_runs),
+            "target_count": max(item.target_count for item in tracking_runs),
+        },
+    }
+    if dispatch_failed:
+        result["error_code"] = "LIVE_ALERT_DISPATCH_FAILED"
+    return result
+
+
 def _ashare_paper(
     action: str,
     ledger_db: str,
@@ -3114,7 +4546,7 @@ def _ashare_paper(
     *,
     now: datetime | None = None,
 ) -> dict[str, object]:
-    """Operate the execution-led PAPER ledger; no market fill is invented."""
+    """操作由成交驱动的 PAPER 账本；不虚构任何市场成交。"""
 
     from gribuki_trade.domain.orders import Side
     from gribuki_trade.domain.paper_trading import (
@@ -3191,9 +4623,9 @@ def _ashare_paper(
             assert instrument is not None
             assert fill_id is not None
             resolved_executed_at = executed_at or resolved_now
-            trading_date = session_date or resolved_executed_at.astimezone(
-                ZoneInfo("Asia/Shanghai")
-            ).date()
+            trading_date = (
+                session_date or resolved_executed_at.astimezone(ZoneInfo("Asia/Shanghai")).date()
+            )
             override = None
             if all(item is not None for item in actual_fees):
                 assert actual_commission is not None
@@ -3242,6 +4674,2934 @@ def _ashare_paper(
             "fill": _paper_fill_json(receipt.applied_fill),
         }
     return result
+
+
+class _PaperDayCLIError(RuntimeError):
+    """消息中不含供应商数据的稳定生产边界错误。"""
+
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(f"A-share PAPER day unavailable ({code})")
+
+
+class _PaperDayResultProjectionSource(Protocol):
+    @property
+    def completed(self) -> bool: ...
+
+    @property
+    def notification_required(self) -> int: ...
+
+    @property
+    def notification_sent(self) -> int: ...
+
+    @property
+    def notification_gaps(self) -> int: ...
+
+    @property
+    def artifact_delivery_status(self) -> str: ...
+
+    @property
+    def artifact_delivery_complete(self) -> bool: ...
+
+    @property
+    def daily_review_delivery_complete(self) -> bool: ...
+
+
+def _paper_day_delivery_projection(
+    result: _PaperDayResultProjectionSource,
+) -> dict[str, object]:
+    """把交易终态与 DAILY_REVIEW 双交付状态分开投影给 CLI。"""
+
+    completed = bool(result.completed)
+    notification_required = int(result.notification_required)
+    notification_sent = int(result.notification_sent)
+    notification_gaps = int(result.notification_gaps)
+    artifact_delivery_status = str(
+        getattr(result, "artifact_delivery_status", "LEGACY_UNREPORTED")
+    )
+    artifact_delivery_complete = bool(
+        getattr(
+            result,
+            "artifact_delivery_complete",
+            False,
+        )
+    )
+    daily_review_delivery_complete = bool(
+        getattr(
+            result,
+            "daily_review_delivery_complete",
+            False,
+        )
+    )
+    return {
+        "ok": completed and daily_review_delivery_complete,
+        "notification_required": notification_required,
+        "notification_sent": notification_sent,
+        "notification_gaps": notification_gaps,
+        "text_notification_required": int(
+            getattr(result, "text_notification_required", notification_required)
+        ),
+        "text_notification_sent": int(
+            getattr(result, "text_notification_sent", notification_sent)
+        ),
+        "text_notification_gaps": int(
+            getattr(result, "text_notification_gaps", notification_gaps)
+        ),
+        "artifact_delivery_status": artifact_delivery_status,
+        "artifact_delivery_complete": artifact_delivery_complete,
+        "daily_review_delivery_complete": daily_review_delivery_complete,
+    }
+
+
+async def _ashare_paper_day(
+    action: str,
+    runtime_dir: str,
+    session_date: date | None,
+    account_id: str,
+    initial_cash: Decimal,
+    target_kind_value: str | None,
+    target_id: str | None,
+    base_url: str,
+    confirmation: str | None,
+    recover_after_abort: bool = False,
+    maximum_positions: int | None = None,
+    risk_policy_change_confirmation: str | None = None,
+    intraday_llm_enabled: bool = True,
+    intraday_llm_review_top_n: int = 6,
+    intraday_llm_review_ttl_minutes: int = 20,
+    intraday_llm_max_calls: int | None = None,
+    intraday_llm_events_db: str = "runtime/news/events.sqlite3",
+    intraday_llm_provider: str | None = "deepseek",
+    intraday_llm_model: str | None = DEFAULT_DEEPSEEK_MODEL,
+    report_artifact_recovery_action: str | None = None,
+    report_artifact_recovery_confirmation: str | None = None,
+    report_artifact_provider_identifier: str | None = None,
+    *,
+    now: datetime | None = None,
+    calendar_provider: AsyncTradingCalendar | None = None,
+) -> dict[str, object]:
+    """运行或检查一个隔离的单进程 A 股 PAPER 会话。
+
+    ``status`` 与 ``report`` 刻意只检查伴随文件；``summary`` 读取相同伴随文件，并以
+    原子方式写入增强 Markdown 投影。这些操作都不会打开实时日志、发件箱或账本数据库，
+    从而在受共享 WAL 重置竞态影响的 SQLite 运行时上保持其安全。
+    """
+
+    if action not in {"run", "status", "report", "summary"}:
+        raise ValueError("unsupported A-share PAPER-day action")
+    if not isinstance(recover_after_abort, bool):
+        raise TypeError("recover_after_abort must be bool")
+    if maximum_positions is not None and (
+        isinstance(maximum_positions, bool)
+        or not isinstance(maximum_positions, int)
+        or maximum_positions <= 0
+    ):
+        raise ValueError("maximum_positions must be a positive integer or None")
+    if risk_policy_change_confirmation not in {None, "PAPER_RISK_POLICY_CHANGE"}:
+        raise ValueError("unsupported risk-policy change confirmation")
+    artifact_recovery_values = (
+        report_artifact_recovery_action,
+        report_artifact_recovery_confirmation,
+        report_artifact_provider_identifier,
+    )
+    if action != "run" and any(value is not None for value in artifact_recovery_values):
+        raise ValueError("report-artifact recovery is only available for run")
+    if report_artifact_recovery_action not in {
+        None,
+        "MARK_SENT_AFTER_PROVIDER_VERIFICATION",
+        "RESEND_AFTER_PROVIDER_NON_RECEIPT_VERIFICATION",
+    }:
+        raise ValueError("unsupported report-artifact recovery action")
+    if report_artifact_recovery_action is None:
+        if any(value is not None for value in artifact_recovery_values[1:]):
+            raise ValueError("report-artifact recovery options require an action")
+    elif report_artifact_recovery_confirmation != "PAPER_REPORT_ARTIFACT_RECOVERY":
+        raise ValueError("report-artifact recovery requires explicit confirmation")
+    elif (
+        report_artifact_recovery_action == "MARK_SENT_AFTER_PROVIDER_VERIFICATION"
+        and not report_artifact_provider_identifier
+    ):
+        raise ValueError("mark-sent recovery requires a provider file ID")
+    elif (
+        report_artifact_recovery_action == "RESEND_AFTER_PROVIDER_NON_RECEIPT_VERIFICATION"
+        and report_artifact_provider_identifier is not None
+    ):
+        raise ValueError("resend recovery does not accept a provider file ID")
+    resolved_now = now or datetime.now(UTC)
+    if resolved_now.tzinfo is None or resolved_now.utcoffset() is None:
+        raise ValueError("now must be timezone-aware")
+    local_today = resolved_now.astimezone(ZoneInfo("Asia/Shanghai")).date()
+    resolved_session = session_date or local_today
+    session_root = Path(runtime_dir).resolve() / resolved_session.isoformat()
+
+    if action == "status":
+        return _ashare_paper_day_status(session_root, resolved_session)
+    if action == "report":
+        return _ashare_paper_day_report(session_root, resolved_session)
+    if action == "summary":
+        return _ashare_paper_day_summary(session_root, resolved_session)
+
+    if not isinstance(intraday_llm_enabled, bool):
+        raise TypeError("intraday_llm_enabled must be bool")
+    for name, value in (
+        ("intraday_llm_review_top_n", intraday_llm_review_top_n),
+        ("intraday_llm_review_ttl_minutes", intraday_llm_review_ttl_minutes),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+    if intraday_llm_max_calls is not None and (
+        isinstance(intraday_llm_max_calls, bool)
+        or not isinstance(intraday_llm_max_calls, int)
+        or intraday_llm_max_calls <= 0
+    ):
+        raise ValueError("intraday_llm_max_calls must be a positive integer or None")
+    if not isinstance(intraday_llm_events_db, str) or not intraday_llm_events_db.strip():
+        raise ValueError("intraday_llm_events_db must not be empty")
+    intraday_llm_provider = (intraday_llm_provider or "deepseek").strip().casefold()
+    if intraday_llm_provider not in {"deepseek", "openai"}:
+        raise ValueError("intraday_llm_provider must be deepseek or openai")
+    default_model = DEFAULT_DEEPSEEK_MODEL if intraday_llm_provider == "deepseek" else "gpt-5.6"
+    intraday_llm_model = validate_runtime_model_id(intraday_llm_model or default_model)
+
+    if confirmation != "PAPER_DAY":
+        return _ashare_paper_day_error(
+            action,
+            resolved_session,
+            session_root,
+            "PAPER_DAY_CONFIRMATION_REQUIRED",
+        )
+    if target_kind_value is None or target_id is None or not target_id.strip():
+        return _ashare_paper_day_error(
+            action,
+            resolved_session,
+            session_root,
+            "NOTIFICATION_TARGET_REQUIRED",
+        )
+    if resolved_session != local_today:
+        return _ashare_paper_day_error(
+            action,
+            resolved_session,
+            session_root,
+            "SESSION_DATE_NOT_TODAY",
+        )
+    if not account_id.strip():
+        return _ashare_paper_day_error(
+            action,
+            resolved_session,
+            session_root,
+            "ACCOUNT_ID_INVALID",
+        )
+
+    try:
+        (
+            latest_completed,
+            future_trading_sessions,
+            calendar_revision_sha256,
+        ) = await _load_ashare_paper_day_calendar_window(
+            resolved_session,
+            now=resolved_now,
+            calendar_provider=calendar_provider,
+        )
+    except _PaperDayCLIError as error:
+        return _ashare_paper_day_error(
+            action,
+            resolved_session,
+            session_root,
+            error.code,
+        )
+
+    try:
+        token = _required_local_secret(NAPCAT_ACCESS_TOKEN_SECRET)
+    except (RuntimeError, SecretProviderError):
+        return _ashare_paper_day_error(
+            action,
+            resolved_session,
+            session_root,
+            "NAPCAT_TOKEN_NOT_CONFIGURED",
+        )
+
+    llm_api_key: str | None = None
+    if intraday_llm_enabled:
+        try:
+            llm_api_key = _required_local_secret(
+                DEEPSEEK_API_KEY_SECRET
+                if intraday_llm_provider == "deepseek"
+                else OPENAI_API_KEY_SECRET
+            )
+        except (RuntimeError, SecretProviderError):
+            return _ashare_paper_day_error(
+                action,
+                resolved_session,
+                session_root,
+                "INTRADAY_LLM_API_KEY_NOT_CONFIGURED",
+            )
+
+    try:
+        return await _run_ashare_paper_day(
+            session_root=session_root,
+            session_date=resolved_session,
+            latest_completed_session=latest_completed,
+            future_trading_sessions=future_trading_sessions,
+            calendar_revision_sha256=calendar_revision_sha256,
+            account_id=account_id,
+            initial_cash=initial_cash,
+            target_kind_value=target_kind_value,
+            target_id=target_id.strip(),
+            base_url=base_url,
+            access_token=token,
+            started_at=resolved_now,
+            recover_after_abort=recover_after_abort,
+            maximum_positions=maximum_positions,
+            risk_policy_change_confirmation=risk_policy_change_confirmation,
+            intraday_llm_enabled=intraday_llm_enabled,
+            intraday_llm_review_top_n=intraday_llm_review_top_n,
+            intraday_llm_review_ttl_minutes=(intraday_llm_review_ttl_minutes),
+            intraday_llm_max_calls=intraday_llm_max_calls,
+            intraday_llm_events_db=intraday_llm_events_db,
+            intraday_llm_provider=intraday_llm_provider,
+            intraday_llm_model=intraday_llm_model,
+            intraday_llm_api_key=llm_api_key,
+            report_artifact_recovery_action=report_artifact_recovery_action,
+            report_artifact_recovery_confirmation=(
+                report_artifact_recovery_confirmation
+            ),
+            report_artifact_provider_identifier=(
+                report_artifact_provider_identifier
+            ),
+        )
+    except asyncio.CancelledError:
+        raise
+    except _PaperDayCLIError as error:
+        return _ashare_paper_day_error(
+            action,
+            resolved_session,
+            session_root,
+            error.code,
+        )
+    except Exception:
+        return _ashare_paper_day_error(
+            action,
+            resolved_session,
+            session_root,
+            "PAPER_DAY_RUN_FAILED",
+        )
+
+
+async def _verify_ashare_paper_day_calendar(
+    session_date: date,
+    *,
+    now: datetime,
+    calendar_provider: AsyncTradingCalendar | None = None,
+) -> date:
+    """从完整真实日历中返回相邻的上一交易日。"""
+
+    latest_completed, _, _ = await _load_ashare_paper_day_calendar_window(
+        session_date,
+        now=now,
+        calendar_provider=calendar_provider,
+    )
+    return latest_completed
+
+
+async def _load_ashare_paper_day_calendar_window(
+    session_date: date,
+    *,
+    now: datetime,
+    calendar_provider: AsyncTradingCalendar | None = None,
+) -> tuple[date, tuple[date, ...], str]:
+    """冻结前一交易日及未来退出时间门所需的真实 A 股交易日历。"""
+
+    from gribuki_trade.adapters.baostock import BaoStockDailyAdapter
+
+    provider = calendar_provider or BaoStockDailyAdapter(
+        max_attempts=1,
+        timeout_seconds=20.0,
+    )
+    start = session_date - timedelta(days=45)
+    end = session_date + timedelta(days=45)
+    try:
+        supplied = tuple(await provider.fetch_trade_calendar_async(start, end))
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        raise _PaperDayCLIError("TRADING_CALENDAR_UNAVAILABLE") from None
+    expected_dates = tuple(
+        start + timedelta(days=offset) for offset in range((end - start).days + 1)
+    )
+    supplied_dates = tuple(item.calendar_date for item in supplied)
+    if supplied_dates != expected_dates or any(
+        type(item.is_trading_day) is not bool for item in supplied
+    ):
+        raise _PaperDayCLIError("TRADING_CALENDAR_INVALID")
+    trading_dates = tuple(item.calendar_date for item in supplied if item.is_trading_day)
+    if session_date not in trading_dates:
+        raise _PaperDayCLIError("TODAY_NOT_TRADING_SESSION")
+    prior = tuple(item for item in trading_dates if item < session_date)
+    if not prior:
+        raise _PaperDayCLIError("PREVIOUS_TRADING_SESSION_MISSING")
+    future = tuple(item for item in trading_dates if item > session_date)
+    if len(future) < 5:
+        raise _PaperDayCLIError("FUTURE_TRADING_SESSIONS_MISSING")
+    local_now = now.astimezone(ZoneInfo("Asia/Shanghai"))
+    if local_now.date() != session_date:
+        raise _PaperDayCLIError("SESSION_DATE_NOT_TODAY")
+    calendar_revision_sha256 = hashlib.sha256(
+        json.dumps(
+            [
+                {
+                    "date": item.calendar_date.isoformat(),
+                    "is_trading_day": item.is_trading_day,
+                }
+                for item in supplied
+            ],
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return prior[-1], future, calendar_revision_sha256
+
+
+async def _run_ashare_paper_day(
+    *,
+    session_root: Path,
+    session_date: date,
+    latest_completed_session: date,
+    future_trading_sessions: tuple[date, ...] = (),
+    calendar_revision_sha256: str | None = None,
+    account_id: str,
+    initial_cash: Decimal,
+    target_kind_value: str,
+    target_id: str,
+    base_url: str,
+    access_token: str,
+    started_at: datetime,
+    recover_after_abort: bool = False,
+    maximum_positions: int | None = None,
+    risk_policy_change_confirmation: str | None = None,
+    intraday_llm_enabled: bool = True,
+    intraday_llm_review_top_n: int = 6,
+    intraday_llm_review_ttl_minutes: int = 20,
+    intraday_llm_max_calls: int | None = None,
+    intraday_llm_events_db: str = "runtime/news/events.sqlite3",
+    intraday_llm_provider: str = "deepseek",
+    intraday_llm_model: str = DEFAULT_DEEPSEEK_MODEL,
+    intraday_llm_api_key: str | None = None,
+    report_artifact_recovery_action: str | None = None,
+    report_artifact_recovery_confirmation: str | None = None,
+    report_artifact_provider_identifier: str | None = None,
+) -> dict[str, object]:
+    """冻结 LLM 证据、管理其共享客户端，再进入日内运行时。"""
+
+    import httpx
+
+    from gribuki_trade.adapters.llm import (
+        DeepSeekChatMacroAnalyzer,
+        OpenAIResponsesMacroAnalyzer,
+    )
+    from gribuki_trade.ports.llm_analyzer import MacroAnalyzer
+    from gribuki_trade.security.config import SecretValue
+    from gribuki_trade.services.ashare_intraday_llm import (
+        IntradayLLMConfig,
+    )
+    from gribuki_trade.services.llm_production import (
+        OwnedProductionDualTrackAnalyzer,
+        PaperDayDualTrackDeepExitAssessmentProvider,
+        ProductionLLMProfile,
+        build_production_dual_track_analyzer,
+        recommended_intraday_review_timeout,
+    )
+    from gribuki_trade.services.macro_research import MacroResearchService
+
+    if not isinstance(intraday_llm_enabled, bool):
+        raise TypeError("intraday_llm_enabled must be bool")
+    for name, value in (
+        ("intraday_llm_review_top_n", intraday_llm_review_top_n),
+        ("intraday_llm_review_ttl_minutes", intraday_llm_review_ttl_minutes),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+    if intraday_llm_max_calls is not None and (
+        isinstance(intraday_llm_max_calls, bool)
+        or not isinstance(intraday_llm_max_calls, int)
+        or intraday_llm_max_calls <= 0
+    ):
+        raise ValueError("intraday_llm_max_calls must be a positive integer or None")
+    if not isinstance(intraday_llm_events_db, str) or not (intraday_llm_events_db.strip()):
+        raise ValueError("intraday_llm_events_db must not be empty")
+    intraday_llm_provider = intraday_llm_provider.strip().casefold()
+    if intraday_llm_provider not in {"deepseek", "openai"}:
+        raise ValueError("intraday_llm_provider must be deepseek or openai")
+    intraday_llm_model = validate_runtime_model_id(intraday_llm_model)
+    if started_at.tzinfo is None or started_at.utcoffset() is None:
+        raise ValueError("started_at must be timezone-aware")
+
+    events_path = Path(intraday_llm_events_db).resolve()
+    if not intraday_llm_enabled:
+        return await _run_ashare_paper_day_owned(
+            session_root=session_root,
+            session_date=session_date,
+            latest_completed_session=latest_completed_session,
+            future_trading_sessions=future_trading_sessions,
+            calendar_revision_sha256=calendar_revision_sha256,
+            account_id=account_id,
+            initial_cash=initial_cash,
+            target_kind_value=target_kind_value,
+            target_id=target_id,
+            base_url=base_url,
+            access_token=access_token,
+            started_at=started_at,
+            recover_after_abort=recover_after_abort,
+            maximum_positions=maximum_positions,
+            risk_policy_change_confirmation=risk_policy_change_confirmation,
+            intraday_research=None,
+            intraday_llm_config=None,
+            intraday_events_path=events_path,
+            deep_exit_assessment_provider=None,
+            report_artifact_recovery_action=report_artifact_recovery_action,
+            report_artifact_recovery_confirmation=(
+                report_artifact_recovery_confirmation
+            ),
+            report_artifact_provider_identifier=(
+                report_artifact_provider_identifier
+            ),
+        )
+
+    if not isinstance(intraday_llm_api_key, str) or not intraday_llm_api_key.strip():
+        raise _PaperDayCLIError("INTRADAY_LLM_API_KEY_NOT_CONFIGURED")
+
+    shared_client = httpx.AsyncClient(
+        limits=httpx.Limits(max_connections=4, max_keepalive_connections=4),
+        timeout=httpx.Timeout(8.0),
+    )
+    owned_dual: OwnedProductionDualTrackAnalyzer | None = None
+    try:
+        baseline: MacroAnalyzer
+        if intraday_llm_provider == "deepseek":
+            baseline = DeepSeekChatMacroAnalyzer.for_intraday(
+                SecretValue(intraday_llm_api_key),
+                model=intraday_llm_model,
+                client=shared_client,
+            )
+        else:
+            baseline = OpenAIResponsesMacroAnalyzer(
+                SecretValue(intraday_llm_api_key),
+                model=intraday_llm_model,
+                timeout_seconds=15.0,
+                client=shared_client,
+            )
+        owned_dual = build_production_dual_track_analyzer(
+            baseline,
+            audit_path=session_root / "llm-adversarial.sqlite3",
+            profile=ProductionLLMProfile.INTRADAY,
+            maximum_calls_per_session=intraday_llm_max_calls,
+        )
+        research = MacroResearchService(owned_dual)
+        deep_exit_assessment_provider = PaperDayDualTrackDeepExitAssessmentProvider(owned_dual)
+        llm_config = IntradayLLMConfig(
+            enabled=True,
+            required_for_buy=True,
+            review_top_n=intraday_llm_review_top_n,
+            review_ttl=timedelta(minutes=intraday_llm_review_ttl_minutes),
+            per_review_timeout=recommended_intraday_review_timeout(),
+            maximum_reviews_per_session=intraday_llm_max_calls,
+        )
+        return await _run_ashare_paper_day_owned(
+            session_root=session_root,
+            session_date=session_date,
+            latest_completed_session=latest_completed_session,
+            future_trading_sessions=future_trading_sessions,
+            calendar_revision_sha256=calendar_revision_sha256,
+            account_id=account_id,
+            initial_cash=initial_cash,
+            target_kind_value=target_kind_value,
+            target_id=target_id,
+            base_url=base_url,
+            access_token=access_token,
+            started_at=started_at,
+            recover_after_abort=recover_after_abort,
+            maximum_positions=maximum_positions,
+            risk_policy_change_confirmation=risk_policy_change_confirmation,
+            intraday_research=research,
+            intraday_llm_config=llm_config,
+            intraday_events_path=events_path,
+            deep_exit_assessment_provider=deep_exit_assessment_provider,
+            report_artifact_recovery_action=report_artifact_recovery_action,
+            report_artifact_recovery_confirmation=(
+                report_artifact_recovery_confirmation
+            ),
+            report_artifact_provider_identifier=(
+                report_artifact_provider_identifier
+            ),
+        )
+    finally:
+        # 所拥有运行时会在返回前关闭/取消其协调器；之后才可拆除会话级传输池。
+        if owned_dual is not None:
+            owned_dual.close()
+        await shared_client.aclose()
+
+
+async def _run_ashare_paper_day_owned(
+    *,
+    session_root: Path,
+    session_date: date,
+    latest_completed_session: date,
+    future_trading_sessions: tuple[date, ...] = (),
+    calendar_revision_sha256: str | None = None,
+    account_id: str,
+    initial_cash: Decimal,
+    target_kind_value: str,
+    target_id: str,
+    base_url: str,
+    access_token: str,
+    started_at: datetime,
+    recover_after_abort: bool,
+    maximum_positions: int | None,
+    risk_policy_change_confirmation: str | None,
+    intraday_research: MacroResearchService | None,
+    intraday_llm_config: IntradayLLMConfig | None,
+    intraday_events_path: Path,
+    deep_exit_assessment_provider: PaperDayDeepExitAssessmentProvider | None,
+    report_artifact_recovery_action: str | None = None,
+    report_artifact_recovery_confirmation: str | None = None,
+    report_artifact_provider_identifier: str | None = None,
+) -> dict[str, object]:
+    """构造并管理阻塞式日内循环的每项可变依赖。"""
+
+    from gribuki_trade.adapters.akshare import AKShareMarketDataAdapter
+    from gribuki_trade.adapters.ashare_preopen_screening import (
+        AKSharePreopenScreeningAdapter,
+    )
+    from gribuki_trade.adapters.ashare_surveillance import (
+        AKShareAShareSurveillanceAdapter,
+    )
+    from gribuki_trade.adapters.notifiers import OneBotConfig, OneBotNotifier
+    from gribuki_trade.domain.paper_day import (
+        PaperDayRunManifest,
+        paper_day_target_hash,
+    )
+    from gribuki_trade.ports.notifier import NotificationTargetKind
+    from gribuki_trade.runtime import (
+        PaperAccountChainError,
+        SystemAwakeGuard,
+        prepare_paper_day_ledger,
+    )
+    from gribuki_trade.services.ashare_intraday_llm_plans import (
+        FrozenPITIntradayLLMPlanFactory,
+        ReplayGuardedIntradayLLMCoordinator,
+        build_preopen_context,
+        load_frozen_pit_event_snapshot,
+        replay_frozen_pit_event_snapshot,
+    )
+    from gribuki_trade.services.ashare_intraday_paper import IntradayPaperRiskConfig
+    from gribuki_trade.services.ashare_paper import ASharePaperTradingService
+    from gribuki_trade.services.ashare_paper_day import (
+        ASharePaperDayConfig,
+        ASharePaperDayRunner,
+        PaperDayAbortRecoveryRequiredError,
+        PaperDayEventPublisher,
+        PaperDayRiskPolicyChangeError,
+        intraday_llm_evidence_manifest_document,
+        intraday_llm_manifest_document,
+    )
+    from gribuki_trade.services.ashare_preopen_screening import (
+        ASharePreopenScreeningService,
+    )
+    from gribuki_trade.services.ashare_surveillance import (
+        AShareIntradaySurveillanceService,
+    )
+    from gribuki_trade.services.notification_dispatch import (
+        NotificationDispatchService,
+    )
+    from gribuki_trade.storage.outbox import SQLiteOutbox
+    from gribuki_trade.storage.paper_day import (
+        PaperDayStoreLeaseError,
+        SQLitePaperDayStore,
+    )
+    from gribuki_trade.storage.paper_ledger import SQLitePaperLedger
+
+    target_kind = NotificationTargetKind(target_kind_value)
+    session_root.mkdir(parents=True, exist_ok=True)
+    report_dir = (session_root / "reports").resolve()
+    report_dir.mkdir(parents=True, exist_ok=True)
+    status_path = session_root / "status.json"
+    llm_enabled = intraday_llm_config is not None
+    if llm_enabled != (intraday_research is not None):
+        raise ValueError("intraday LLM runtime dependencies must be supplied together")
+    config = ASharePaperDayConfig(
+        initial_cash=initial_cash,
+        intraday_llm_enabled=llm_enabled,
+        intraday_llm_required_for_buy=llm_enabled,
+        exit_plan_trading_sessions=future_trading_sessions,
+        exit_plan_calendar_sha256=calendar_revision_sha256,
+    )
+    risk_config = IntradayPaperRiskConfig(
+        initial_equity=initial_cash,
+        maximum_positions=maximum_positions,
+    )
+    base_manifest_config = {
+        **config.audit_document(),
+        "calendar_provider": "BaoStock",
+        "calendar_verified": True,
+        "latest_completed_session": latest_completed_session.isoformat(),
+        "notification_channel": "onebot",
+        "notification_preflight_policy": "GET_STATUS_GOOD_AND_ONLINE",
+        "notification_preflight_required": True,
+        "notification_target_kind": target_kind.value,
+        "intraday_risk_policy": risk_config.audit_document(),
+    }
+    target_hash = paper_day_target_hash(
+        channel="onebot",
+        target_kind=target_kind.value,
+        target_id=target_id,
+    )
+    owner_id = f"paper-day-{uuid4().hex}"
+    day_store_path = session_root / "journal.sqlite3"
+    outbox_path = session_root / "outbox.sqlite3"
+    ledger_path = session_root / "ledger.sqlite3"
+    ledger_lineage: dict[str, object] | None = None
+
+    notifier_config = OneBotConfig(
+        access_token=access_token,
+        base_url=base_url,
+        private_target_ids=(
+            frozenset({target_id}) if target_kind is NotificationTargetKind.PRIVATE else frozenset()
+        ),
+        group_target_ids=(
+            frozenset({target_id}) if target_kind is NotificationTargetKind.GROUP else frozenset()
+        ),
+        artifact_root=report_dir,
+    )
+
+    # 将主机的正常显示策略与所有外部凭据都留在领域代码之外。进程级防护会在每条退出路径
+    # 恢复 Windows 睡眠策略，并且绝不请求保持显示器唤醒。
+    with SystemAwakeGuard():
+        async with OneBotNotifier(notifier_config) as notifier:
+            try:
+                notification_status = await notifier.get_status()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                raise _PaperDayCLIError("PAPER_DAY_NOTIFICATION_PREFLIGHT_FAILED") from None
+            if not isinstance(notification_status, Mapping) or not (
+                notification_status.get("good") is True
+                and notification_status.get("online") is True
+            ):
+                raise _PaperDayCLIError("PAPER_DAY_NOTIFICATION_PREFLIGHT_FAILED")
+            try:
+                prepared_ledger = prepare_paper_day_ledger(
+                    session_root,
+                    session_date=session_date,
+                    account_id=account_id,
+                )
+            except PaperAccountChainError:
+                raise _PaperDayCLIError("PAPER_ACCOUNT_CONTINUITY_INVALID") from None
+            ledger_path = prepared_ledger.ledger_path
+            ledger_lineage = prepared_ledger.audit_document()
+            base_manifest_config["paper_account_continuity"] = ledger_lineage
+            with SQLitePaperDayStore(day_store_path) as day_store:
+                scoped = tuple(
+                    item
+                    for item in day_store.list_runs()
+                    if item.session_date == session_date and item.account_id == account_id
+                )
+                if len(scoped) > 1:
+                    raise _PaperDayCLIError("PAPER_DAY_RUN_SCOPE_CONFLICT")
+                retained = scoped[0] if scoped else None
+                if retained is not None and retained.target_hash != target_hash:
+                    raise _PaperDayCLIError("NOTIFICATION_TARGET_CONFLICT")
+
+                if llm_enabled:
+                    assert intraday_research is not None
+                    assert intraday_llm_config is not None
+                    retained_evidence_binding = (
+                        None
+                        if retained is None
+                        else retained.config.get("intraday_llm_evidence_snapshot")
+                    )
+                    if retained is None:
+                        evidence = load_frozen_pit_event_snapshot(
+                            intraday_events_path,
+                            as_of=started_at,
+                        )
+                        retained_factory_audit = None
+                    elif isinstance(retained_evidence_binding, dict):
+                        nested_audit = retained_evidence_binding.get("audit_document")
+                        retained_factory_audit = (
+                            cast(dict[str, object], nested_audit)
+                            if isinstance(nested_audit, dict)
+                            else cast(
+                                dict[str, object],
+                                retained_evidence_binding,
+                            )
+                        )
+                        evidence = replay_frozen_pit_event_snapshot(
+                            intraday_events_path,
+                            retained_audit=retained_factory_audit,
+                            fallback_as_of=started_at,
+                        )
+                    else:
+                        raise _PaperDayCLIError("PAPER_DAY_RUNTIME_POLICY_CONFLICT")
+                    intraday_llm = ReplayGuardedIntradayLLMCoordinator(
+                        intraday_research,
+                        config=intraday_llm_config,
+                        journal_restore_allowed=evidence.available,
+                    )
+                    intraday_plan_factory = FrozenPITIntradayLLMPlanFactory(
+                        intraday_research,
+                        evidence,
+                        retained_audit=retained_factory_audit,
+                    )
+                    manifest_evidence_audit = intraday_llm_evidence_manifest_document(
+                        intraday_plan_factory
+                    )
+                else:
+                    path_sha256 = hashlib.sha256(
+                        str(intraday_events_path.resolve()).encode("utf-8")
+                    ).hexdigest()
+                    retained_disabled_evidence = (
+                        None
+                        if retained is None
+                        else retained.config.get("intraday_llm_evidence_snapshot")
+                    )
+                    manifest_evidence_audit = (
+                        dict(retained_disabled_evidence)
+                        if isinstance(retained_disabled_evidence, dict)
+                        else {
+                            "as_of": started_at.astimezone(UTC),
+                            "database_path_sha256": path_sha256,
+                            "event_count": 0,
+                            "failure_code": "INTRADAY_LLM_OPERATOR_DISABLED",
+                            "operator_opt_out": True,
+                            "source": "OPERATOR_CLI",
+                            "status": "DISABLED",
+                        }
+                    )
+                    evidence = None
+                    intraday_llm = None
+                    intraday_plan_factory = None
+
+                manifest_config = {
+                    **base_manifest_config,
+                    "intraday_llm_policy": intraday_llm_manifest_document(intraday_llm),
+                    "intraday_llm_evidence_snapshot": manifest_evidence_audit,
+                }
+                proposed = PaperDayRunManifest.create(
+                    session_date=session_date,
+                    account_id=account_id,
+                    config=manifest_config,
+                    created_at=started_at,
+                    target_hash=target_hash,
+                    initial_cash=initial_cash,
+                )
+                created_new_run = retained is None
+                if retained is None:
+                    day_store.create_run(proposed)
+                    manifest = proposed
+                else:
+                    if (
+                        retained.initial_cash != initial_cash
+                        or not _paper_day_resume_config_compatible(
+                            retained=retained.config,
+                            proposed=proposed.config,
+                            intraday_llm_enabled=llm_enabled,
+                        )
+                    ):
+                        raise _PaperDayCLIError("PAPER_DAY_RUNTIME_POLICY_CONFLICT")
+                    manifest = retained
+
+                llm_preopen_context = None
+                retained_event_types = {
+                    item.event_type for item in day_store.events(manifest.run_id)
+                }
+                preopen_already_decided = bool(
+                    retained_event_types
+                    & {
+                        "LLM_PREOPEN_CONTEXT_FROZEN",
+                        "LLM_PREOPEN_CONTEXT_FAILED",
+                    }
+                )
+                if (
+                    intraday_llm is not None
+                    and intraday_plan_factory is not None
+                    and intraday_research is not None
+                    and created_new_run
+                    and not preopen_already_decided
+                    and evidence is not None
+                    and evidence.available
+                ):
+                    market_open_at = datetime.combine(
+                        session_date,
+                        config.market_open,
+                        tzinfo=ZoneInfo("Asia/Shanghai"),
+                    ).astimezone(UTC)
+                    if started_at.astimezone(UTC) < market_open_at:
+                        try:
+                            preopen_plan = intraday_plan_factory.prepare_preopen(
+                                session_date=session_date
+                            )
+                            if preopen_plan.eligible_for_analysis:
+                                preopen_run = await intraday_research.execute(preopen_plan)
+                                known_at = max(
+                                    datetime.now(UTC),
+                                    started_at.astimezone(UTC),
+                                )
+                                if known_at < market_open_at:
+                                    valid_until = datetime.combine(
+                                        session_date,
+                                        config.finalization_time,
+                                        tzinfo=ZoneInfo("Asia/Shanghai"),
+                                    ).astimezone(UTC)
+                                    llm_preopen_context = build_preopen_context(
+                                        preopen_plan,
+                                        preopen_run,
+                                        session_date=session_date,
+                                        known_at=known_at,
+                                        valid_until=valid_until,
+                                    )
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception:
+                            # 供应商与证据细节保持脱敏。运行器会记录缺失上下文，并且只关闭
+                            # 新买入，绝不关闭监控或卖出。
+                            llm_preopen_context = None
+                with (
+                    SQLiteOutbox(outbox_path) as outbox,
+                    SQLitePaperLedger(ledger_path) as ledger,
+                ):
+                    paper = ASharePaperTradingService(ledger)
+                    dispatcher = NotificationDispatchService(
+                        outbox,
+                        {notifier.channel: notifier},
+                        target_kind=target_kind,
+                        target_id=target_id,
+                    )
+                    publisher = PaperDayEventPublisher(
+                        manifest=manifest,
+                        store=day_store,
+                        outbox=outbox,
+                        dispatcher=dispatcher,
+                        target_kind=target_kind,
+                        target_id=target_id,
+                        owner_id=owner_id,
+                        clock=lambda: datetime.now(UTC),
+                        status_path=status_path,
+                    )
+                    preopen = ASharePreopenScreeningService(
+                        AKSharePreopenScreeningAdapter(
+                            latest_completed_session,
+                            timeout_seconds=35.0,
+                            history_timeout_seconds=18.0,
+                            history_concurrency=4,
+                        )
+                    )
+                    surveillance = AShareIntradaySurveillanceService(
+                        AKShareAShareSurveillanceAdapter(
+                            timeout_seconds=35.0,
+                        )
+                    )
+                    market_data = AKShareMarketDataAdapter(
+                        timeout_seconds=10.0,
+                        max_attempts=1,
+                        intraday_stale_after_seconds=180.0,
+                    )
+                    runner = ASharePaperDayRunner(
+                        manifest=manifest,
+                        latest_completed_session=latest_completed_session,
+                        owner_id=owner_id,
+                        store=day_store,
+                        publisher=publisher,
+                        preopen_screening=preopen,
+                        surveillance=surveillance,
+                        market_data=market_data,
+                        paper=paper,
+                        outbox=outbox,
+                        report_dir=report_dir,
+                        config=config,
+                        risk_config=risk_config,
+                        intraday_llm=intraday_llm,
+                        intraday_llm_plan_factory=cast(
+                            "PaperDayIntradayLLMPlanFactory | None",
+                            intraday_plan_factory,
+                        ),
+                        llm_preopen_context=llm_preopen_context,
+                        deep_exit_assessment_provider=deep_exit_assessment_provider,
+                        artifact_notifier=notifier,
+                        artifact_target_kind=target_kind,
+                        artifact_target_id=target_id,
+                        report_artifact_recovery_action=(
+                            report_artifact_recovery_action
+                        ),
+                        report_artifact_recovery_confirmation=(
+                            report_artifact_recovery_confirmation
+                        ),
+                        report_artifact_provider_identifier=(
+                            report_artifact_provider_identifier
+                        ),
+                        preopen_recovery_path=(session_root / "preopen-recovery-seed.json"),
+                        recover_after_abort=recover_after_abort,
+                        risk_policy_change_confirmation=(risk_policy_change_confirmation),
+                    )
+                    try:
+                        result = await runner.run()
+                    except PaperDayAbortRecoveryRequiredError:
+                        raise _PaperDayCLIError("DAY_ABORTED_OPERATOR_RECOVERY_REQUIRED") from None
+                    except PaperDayRiskPolicyChangeError as error:
+                        raise _PaperDayCLIError(error.code) from None
+                    except PaperDayStoreLeaseError:
+                        raise _PaperDayCLIError("PAPER_DAY_WRITER_LEASE_UNAVAILABLE") from None
+                    finally:
+                        if intraday_llm is not None:
+                            await intraday_llm.close()
+    delivery_projection = _paper_day_delivery_projection(result)
+    return {
+        **delivery_projection,
+        "action": "run",
+        "run_id": result.run_id,
+        "session_date": result.session_date.isoformat(),
+        "completed": result.completed,
+        "event_count": result.event_count,
+        "account": _paper_snapshot_json(result.final_snapshot),
+        "report_path": str(result.report_path),
+        "runtime_dir": str(session_root),
+        "execution_mode": "PAPER_ONLY_NO_BROKER",
+        "system_awake": "PROCESS_SCOPED_SYSTEM_ONLY",
+        "intraday_llm": {
+            "enabled": llm_enabled,
+            "required_for_buy": llm_enabled,
+            "runtime_evidence_failure_code": (None if evidence is None else evidence.failure_code),
+            "runtime_evidence_status": ("DISABLED" if evidence is None else evidence.status),
+        },
+        "paper_account_continuity": ledger_lineage,
+    }
+
+
+def _paper_day_resume_config_compatible(
+    *,
+    retained: Mapping[str, object],
+    proposed: Mapping[str, object],
+    intraday_llm_enabled: bool,
+) -> bool:
+    """比较不可变运行时策略，同时委托风险迁移。"""
+
+    from gribuki_trade.services.ashare_paper_day import (
+        intraday_llm_manifest_compatible,
+    )
+
+    old = dict(retained)
+    new = dict(proposed)
+    old.pop("intraday_risk_policy", None)
+    new.pop("intraday_risk_policy", None)
+    old_policy = old.pop("intraday_llm_policy", None)
+    new_policy = new.pop("intraday_llm_policy", None)
+    old_evidence = old.pop("intraday_llm_evidence_snapshot", None)
+    new_evidence = new.pop("intraday_llm_evidence_snapshot", None)
+    old_continuity = old.pop("paper_account_continuity", None)
+    new_continuity = new.pop("paper_account_continuity", None)
+    if old_continuity is None:
+        # 引入跨交易日血缘前创建的运行已经拥有日期本地账本。它们只能通过由同一不可变
+        # 数据库合成的显式旧版来源恢复。
+        if not (
+            isinstance(new_continuity, dict)
+            and new_continuity.get("origin")
+            in {
+                "LEGACY_SESSION_LOCAL",
+                "LEGACY_EMPTY_SESSION_LEDGER",
+                "NEW_ACCOUNT",
+            }
+        ):
+            return False
+    elif old_continuity != new_continuity:
+        return False
+    if intraday_llm_enabled:
+        if (
+            not isinstance(new_policy, Mapping)
+            or not intraday_llm_manifest_compatible(old_policy, new_policy)
+            or old_evidence != new_evidence
+        ):
+            return False
+    else:
+        if old_policy is not None and (
+            not isinstance(new_policy, Mapping)
+            or not intraday_llm_manifest_compatible(old_policy, new_policy)
+        ):
+            return False
+        if old_evidence is not None and old_evidence != new_evidence:
+            return False
+        # LLM 门控出现前创建的运行隐式将两个值都设为 false。显式选择退出时可以恢复这些
+        # 不可变日志；运行器会在恢复检查后追加可审计的运维禁用事件，且不重写旧版清单。
+        for key in (
+            "intraday_llm_enabled",
+            "intraday_llm_required_for_buy",
+        ):
+            if key not in old and new.get(key) is False:
+                new.pop(key, None)
+    return old == new
+
+
+def _ashare_paper_day_status(
+    session_root: Path,
+    session_date: date,
+) -> dict[str, object]:
+    status_path = session_root / "status.json"
+    if not status_path.is_file():
+        return _ashare_paper_day_error(
+            "status",
+            session_date,
+            session_root,
+            "STATUS_NOT_AVAILABLE",
+        )
+    try:
+        payload = json.loads(status_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return _ashare_paper_day_error(
+            "status",
+            session_date,
+            session_root,
+            "STATUS_FILE_INVALID",
+        )
+    if not isinstance(payload, dict):
+        return _ashare_paper_day_error(
+            "status",
+            session_date,
+            session_root,
+            "STATUS_FILE_INVALID",
+        )
+    delivery = _paper_day_delivery_sidecar_projection(session_root, payload)
+    return {
+        "ok": True,
+        "action": "status",
+        "artifact_delivery_status": delivery["artifact_delivery_status"],
+        "daily_review_delivery_complete": delivery[
+            "daily_review_delivery_complete"
+        ],
+        "delivery": delivery,
+        "operationally_complete": delivery["daily_review_delivery_complete"],
+        "read_only_sidecar": True,
+        "runtime_dir": str(session_root),
+        "status_path": str(status_path),
+        "status": payload,
+    }
+
+
+def _paper_day_delivery_sidecar_projection(
+    session_root: Path,
+    status: Mapping[str, object],
+) -> dict[str, object]:
+    """只读投影 PAPER 日报的文本与附件交付状态，不打开 SQLite。"""
+
+    allowed_statuses = {"PENDING", "SENT", "AMBIGUOUS", "NOT_CONFIGURED"}
+    artifact_status = status.get("artifact_delivery_status")
+    if isinstance(artifact_status, str) and artifact_status in allowed_statuses:
+        artifact_complete = status.get("artifact_delivery_complete") is True
+        daily_complete = status.get("daily_review_delivery_complete") is True
+        return {
+            "artifact_delivery_complete": artifact_complete,
+            "artifact_delivery_status": artifact_status,
+            "daily_review_delivery_complete": daily_complete,
+            "notification_gaps": _non_negative_int_or_none(
+                status.get("notification_gaps")
+            ),
+            "notification_required": _non_negative_int_or_none(
+                status.get("notification_required")
+            ),
+            "notification_sent": _non_negative_int_or_none(
+                status.get("notification_sent")
+            ),
+            "projection_exact": all(
+                (
+                    isinstance(status.get("artifact_delivery_complete"), bool),
+                    isinstance(status.get("daily_review_delivery_complete"), bool),
+                    _non_negative_int_or_none(status.get("notification_required"))
+                    is not None,
+                    _non_negative_int_or_none(status.get("notification_sent"))
+                    is not None,
+                    _non_negative_int_or_none(status.get("notification_gaps"))
+                    is not None,
+                    _non_negative_int_or_none(status.get("text_notification_required"))
+                    is not None,
+                    _non_negative_int_or_none(status.get("text_notification_sent"))
+                    is not None,
+                    _non_negative_int_or_none(status.get("text_notification_gaps"))
+                    is not None,
+                )
+            ),
+            "projection_source": "status.json",
+            "text_notification_gaps": _non_negative_int_or_none(
+                status.get("text_notification_gaps")
+            ),
+            "text_notification_required": _non_negative_int_or_none(
+                status.get("text_notification_required")
+            ),
+            "text_notification_sent": _non_negative_int_or_none(
+                status.get("text_notification_sent")
+            ),
+        }
+
+    event_status = _latest_paper_day_artifact_event_status(
+        session_root / "session.log.jsonl"
+    )
+    return {
+        "artifact_delivery_complete": event_status == "SENT",
+        "artifact_delivery_status": event_status,
+        "daily_review_delivery_complete": False,
+        "notification_gaps": None,
+        "notification_required": None,
+        "notification_sent": None,
+        "projection_exact": False,
+        "projection_source": (
+            "session.log.jsonl" if event_status != "NOT_REPORTED" else "unavailable"
+        ),
+        "text_notification_gaps": None,
+        "text_notification_required": None,
+        "text_notification_sent": None,
+    }
+
+
+def _latest_paper_day_artifact_event_status(event_log_path: Path) -> str:
+    """从追加式 sidecar 中读取最后一个完整附件状态；未知时失败关闭。"""
+
+    try:
+        lines = event_log_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return "NOT_REPORTED"
+    event_status = "NOT_REPORTED"
+    by_type = {
+        "REPORT_ARTIFACT_DELIVERY_AMBIGUOUS": "AMBIGUOUS",
+        "REPORT_ARTIFACT_DELIVERY_NOT_CONFIGURED": "NOT_CONFIGURED",
+        "REPORT_ARTIFACT_DELIVERY_PENDING": "PENDING",
+        "REPORT_ARTIFACT_DELIVERY_SENT": "SENT",
+        "REPORT_ARTIFACT_LEGACY_FAILURE_AMBIGUOUS": "AMBIGUOUS",
+    }
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            document = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(document, dict):
+            continue
+        event_type = document.get("event_type")
+        if isinstance(event_type, str) and event_type in by_type:
+            event_status = by_type[event_type]
+            continue
+        if event_type == "REPORT_UPLOADED":
+            payload = document.get("payload")
+            if isinstance(payload, dict) and payload.get("delivered") is True:
+                event_status = "SENT"
+        elif event_type == "REPORT_UPLOAD_FAILED":
+            event_status = "AMBIGUOUS"
+    return event_status
+
+
+def _non_negative_int_or_none(value: object) -> int | None:
+    """只接受不是布尔值的非负整数。"""
+
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _ashare_paper_day_report(
+    session_root: Path,
+    session_date: date,
+) -> dict[str, object]:
+    report_dir = session_root / "reports"
+    reports = (
+        tuple(
+            sorted(
+                report_dir.glob(f"ashare-paper-day-{session_date.isoformat()}-*.md"),
+                key=lambda item: item.name,
+            )
+        )
+        if report_dir.is_dir()
+        else ()
+    )
+    if not reports:
+        return _ashare_paper_day_error(
+            "report",
+            session_date,
+            session_root,
+            "REPORT_NOT_AVAILABLE",
+        )
+    report_path = reports[-1].resolve()
+    try:
+        content = report_path.read_bytes()
+        text_content = content.decode("utf-8")
+        modified_at = datetime.fromtimestamp(report_path.stat().st_mtime, UTC)
+    except (OSError, UnicodeError):
+        return _ashare_paper_day_error(
+            "report",
+            session_date,
+            session_root,
+            "REPORT_FILE_INVALID",
+        )
+    return {
+        "ok": True,
+        "action": "report",
+        "read_only_sidecar": True,
+        "runtime_dir": str(session_root),
+        "report": {
+            "path": str(report_path),
+            "name": report_path.name,
+            "bytes": len(content),
+            "line_count": len(text_content.splitlines()),
+            "modified_at": modified_at.isoformat(),
+            "sha256": hashlib.sha256(content).hexdigest(),
+        },
+    }
+
+
+def _ashare_paper_day_summary(
+    session_root: Path,
+    session_date: date,
+) -> dict[str, object]:
+    """从伴随文件重新生成增强报告，且不打开 SQLite。"""
+
+    from gribuki_trade.reporting.paper_day_summary import (
+        PaperDaySidecarError,
+        project_paper_day_sidecars,
+        write_paper_day_summary,
+    )
+
+    try:
+        projection = project_paper_day_sidecars(session_root)
+    except PaperDaySidecarError as error:
+        return _ashare_paper_day_error(
+            "summary",
+            session_date,
+            session_root,
+            error.code,
+        )
+    if projection.session_date != session_date:
+        return _ashare_paper_day_error(
+            "summary",
+            session_date,
+            session_root,
+            "SUMMARY_SESSION_CONFLICT",
+        )
+    try:
+        summary_path = write_paper_day_summary(projection)
+        content = summary_path.read_bytes()
+        modified_at = datetime.fromtimestamp(summary_path.stat().st_mtime, UTC)
+    except OSError:
+        return _ashare_paper_day_error(
+            "summary",
+            session_date,
+            session_root,
+            "SUMMARY_WRITE_FAILED",
+        )
+    return {
+        "ok": True,
+        "action": "summary",
+        "sidecar_only": True,
+        "sqlite_opened": False,
+        "runtime_dir": str(session_root),
+        "summary": {
+            "path": str(summary_path),
+            "name": summary_path.name,
+            "bytes": len(content),
+            "line_count": len(content.decode("utf-8").splitlines()),
+            "modified_at": modified_at.isoformat(),
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "lifecycle": projection.lifecycle,
+            "coverage": projection.coverage,
+            "event_count": projection.sidecar_event_count,
+            "warning_count": len(projection.warnings),
+        },
+    }
+
+
+class _PostCloseCLIError(RuntimeError):
+    """不含供应商或凭据细节的稳定盘后 CLI 失败。"""
+
+    def __init__(self, code: str, *, retryable: bool = False) -> None:
+        self.code = code
+        self.retryable = retryable
+        super().__init__(f"A-share post-close command failed ({code})")
+
+
+class _FixedPostCloseSessions:
+    """在单次运行中复用一份已经核验的日历结果。"""
+
+    def __init__(self, sessions: CloseSessionResolution) -> None:
+        self._sessions = sessions
+
+    async def resolve(self, now: datetime) -> CloseSessionResolution:
+        del now
+        return self._sessions
+
+
+class _CLIExistingCloseResearch:
+    """将生产收盘研究辅助器适配到 PAPER 持仓。"""
+
+    def __init__(
+        self,
+        *,
+        profiles: Mapping[str, ResearchInstrumentProfile],
+        history_days: int,
+        news_runtime_dir: str,
+        research_db: str,
+        market_evidence_dir: str,
+        analysis_outbox_db: str,
+        news_feeds: Sequence[str] | None,
+        refresh_news: bool,
+        search_discovery: bool,
+        searxng_url: str | None,
+        macro_enabled: bool,
+        macro_provider: str,
+        model: str | None,
+        macro_weight: Decimal,
+    ) -> None:
+        self._profiles = dict(profiles)
+        self._history_days = history_days
+        self._news_runtime_dir = news_runtime_dir
+        self._research_db = research_db
+        self._market_evidence_dir = market_evidence_dir
+        self._analysis_outbox_db = analysis_outbox_db
+        self._news_feeds = news_feeds
+        self._refresh_news = refresh_news
+        self._search_discovery = search_discovery
+        self._searxng_url = searxng_url
+        self._macro_enabled = macro_enabled
+        self._macro_provider = macro_provider
+        self._model = model
+        self._macro_weight = macro_weight
+        # 除日线适配器外，AKShare 还包含嵌入式 V8 路由。生产进程中必须串行执行每个持仓的
+        # 完整研究调用；更窄的供应商锁不足以保证安全。
+        self._research_lock = asyncio.Lock()
+
+    async def research(
+        self,
+        position: PaperPosition,
+        *,
+        sessions: CloseSessionResolution,
+    ) -> PostCloseInstrumentResearch:
+        async with self._research_lock:
+            return await self._research_serial(position, sessions=sessions)
+
+    async def _research_serial(
+        self,
+        position: PaperPosition,
+        *,
+        sessions: CloseSessionResolution,
+    ) -> PostCloseInstrumentResearch:
+        from gribuki_trade.domain.post_close import (
+            PostCloseInstrumentResearch,
+            PostCloseResearchStatus,
+        )
+
+        profile = self._profiles.get(position.symbol)
+        if profile is None:
+            return PostCloseInstrumentResearch(
+                symbol=position.symbol,
+                status=PostCloseResearchStatus.FAILED,
+                failure_code="PAPER_PROFILE_NOT_AVAILABLE",
+            )
+        try:
+            result = await _ashare_close_research_once(
+                position.symbol,
+                self._history_days,
+                sessions.latest_completed_session,
+                sessions.next_session,
+                self._news_runtime_dir,
+                self._research_db,
+                self._market_evidence_dir,
+                self._analysis_outbox_db,
+                self._news_feeds,
+                self._refresh_news,
+                self._search_discovery,
+                self._searxng_url,
+                self._macro_enabled,
+                self._macro_provider,
+                self._model,
+                self._macro_weight,
+                True,
+                None,
+                None,
+                None,
+                profile,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return PostCloseInstrumentResearch(
+                symbol=position.symbol,
+                status=PostCloseResearchStatus.FAILED,
+                failure_code="CLOSE_RESEARCH_FAILED",
+            )
+        if result.get("ok") is not True:
+            code = result.get("error_code")
+            return PostCloseInstrumentResearch(
+                symbol=position.symbol,
+                status=PostCloseResearchStatus.FAILED,
+                failure_code=(
+                    str(code) if isinstance(code, str) and code.strip() else "CLOSE_RESEARCH_FAILED"
+                ),
+            )
+        decision = result.get("decision")
+        if not isinstance(decision, str) or not decision.strip():
+            return PostCloseInstrumentResearch(
+                symbol=position.symbol,
+                status=PostCloseResearchStatus.FAILED,
+                failure_code="CLOSE_RESEARCH_RESULT_INVALID",
+            )
+        dual_track = _post_close_mapping(result.get("macro_dual_track"))
+        baseline_track = _post_close_mapping(dual_track.get("baseline"))
+        adversarial_track = _post_close_mapping(dual_track.get("adversarial"))
+        return PostCloseInstrumentResearch(
+            symbol=position.symbol,
+            status=PostCloseResearchStatus.COMPLETED,
+            decision=decision,
+            technical_score=_post_close_optional_decimal(result.get("technical_score")),
+            reference_price=_post_close_optional_decimal(result.get("reference_price")),
+            invalidation_price=_post_close_optional_decimal(result.get("invalidation_price")),
+            reason_codes=_post_close_string_tuple(result.get("reason_codes")),
+            uncertainties=_post_close_string_tuple(result.get("uncertainties")),
+            daily_bar_count=_post_close_optional_integer(result.get("daily_bar_count")),
+            technical_decision=_post_close_optional_string(result.get("technical_decision")),
+            combined_score=_post_close_optional_decimal(result.get("combined_score")),
+            macro_score=_post_close_optional_decimal(result.get("macro_score")),
+            macro_evidence_coverage=_post_close_optional_decimal(
+                result.get("macro_evidence_coverage")
+            ),
+            macro_provider=_post_close_optional_string(result.get("macro_provider")),
+            macro_model=_post_close_optional_string(result.get("macro_model")),
+            macro_failure_code=_post_close_optional_string(result.get("macro_failure_code")),
+            market_data_failure_code=_post_close_optional_string(
+                result.get("market_data_failure_code")
+            ),
+            macro_analysis_id=_post_close_optional_string(dual_track.get("analysis_id")),
+            macro_selected_track=_post_close_optional_string(dual_track.get("selected_track")),
+            macro_audit_record_sha256=_post_close_optional_string(
+                dual_track.get("audit_record_sha256")
+            ),
+            baseline_macro_decision=_post_close_optional_string(baseline_track.get("decision")),
+            baseline_macro_regime=_post_close_optional_string(baseline_track.get("regime")),
+            baseline_macro_score=_post_close_optional_decimal(baseline_track.get("macro_impact")),
+            baseline_macro_evidence_coverage=_post_close_optional_decimal(
+                baseline_track.get("evidence_coverage")
+            ),
+            baseline_macro_model=_post_close_optional_string(baseline_track.get("model_version")),
+            adversarial_macro_decision=_post_close_optional_string(
+                adversarial_track.get("decision")
+            ),
+            adversarial_macro_regime=_post_close_optional_string(adversarial_track.get("regime")),
+            adversarial_macro_score=_post_close_optional_decimal(
+                adversarial_track.get("macro_impact")
+            ),
+            adversarial_macro_evidence_coverage=_post_close_optional_decimal(
+                adversarial_track.get("evidence_coverage")
+            ),
+            adversarial_macro_model=_post_close_optional_string(
+                adversarial_track.get("model_version")
+            ),
+        )
+
+
+def _post_close_optional_decimal(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        resolved = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    return resolved if resolved.is_finite() else None
+
+
+def _post_close_optional_integer(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        resolved = int(str(value))
+    except (TypeError, ValueError):
+        return None
+    return resolved if resolved >= 0 else None
+
+
+def _post_close_optional_string(value: object) -> str | None:
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _post_close_mapping(value: object) -> Mapping[str, object]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _post_close_string_tuple(value: object) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(item for item in value if isinstance(item, str) and item.strip())
+
+
+def _post_close_analysis_outcome(
+    *,
+    held_count: int,
+    research_completed: int,
+    research_failed: int,
+) -> str:
+    if min(held_count, research_completed, research_failed) < 0:
+        raise _PostCloseCLIError("POST_CLOSE_RESEARCH_RESULT_INVALID")
+    if research_completed + research_failed != held_count:
+        raise _PostCloseCLIError("POST_CLOSE_RESEARCH_RESULT_INVALID")
+    if held_count == 0:
+        return "NOT_APPLICABLE"
+    if research_completed == 0:
+        return "FAILED"
+    return "PARTIAL" if research_failed else "COMPLETE"
+
+
+def _paper_session_instrument_profiles(
+    projection: PaperDayExecutiveProjection,
+    instrument_types: Mapping[str, str],
+) -> dict[str, ResearchInstrumentProfile]:
+    """只构建在不可变 PAPER 伴随文件中明确归档的档案。"""
+
+    names: dict[str, set[str]] = {}
+    boards: dict[str, set[str]] = {}
+    archived_instrument_types: dict[str, set[str]] = {}
+    for event in projection.events:
+        payload = event.payload
+        collections: list[object] = []
+        if event.event_type in {
+            "PREOPEN_SCREEN_COMPLETED",
+            "PREOPEN_SCREEN_RECOVERED",
+            "SURVEILLANCE_SCAN_COMPLETED",
+        }:
+            collections.append(payload.get("candidates"))
+        elif event.event_type == "WATCHLIST_UPDATED":
+            collections.append(payload.get("watchlist"))
+        elif event.event_type == "FILL_STARTED":
+            raw_fill = payload.get("fill")
+            if isinstance(raw_fill, dict):
+                raw_symbol = raw_fill.get("symbol")
+                raw_instrument_type = raw_fill.get("instrument_type")
+                if isinstance(raw_symbol, str) and isinstance(raw_instrument_type, str):
+                    canonical = raw_symbol.strip().upper()
+                    archived_type = raw_instrument_type.strip().lower()
+                    if canonical and archived_type in {"stock", "etf"}:
+                        archived_instrument_types.setdefault(canonical, set()).add(archived_type)
+        for collection in collections:
+            if not isinstance(collection, list):
+                continue
+            for raw in collection:
+                if not isinstance(raw, dict):
+                    continue
+                symbol = raw.get("symbol")
+                if not isinstance(symbol, str):
+                    continue
+                canonical = symbol.strip().upper()
+                if not canonical:
+                    continue
+                name = raw.get("name")
+                board = raw.get("board")
+                if isinstance(name, str) and name.strip():
+                    names.setdefault(canonical, set()).add(name.strip())
+                if isinstance(board, str) and board.strip():
+                    boards.setdefault(canonical, set()).add(board.strip().upper())
+
+    profiles: dict[str, ResearchInstrumentProfile] = {}
+    board_values = {
+        "SSE_MAIN": ("sse", "sse_main"),
+        "SZSE_MAIN": ("szse", "szse_main"),
+        "CHINEXT": ("szse", "chinext"),
+        "STAR": ("sse", "star"),
+        "BSE": ("bse", "bse"),
+    }
+    for symbol in sorted(set(names) | set(boards)):
+        retained_names = names.get(symbol, set())
+        retained_boards = boards.get(symbol, set())
+        if len(retained_names) != 1 or len(retained_boards) != 1:
+            continue
+        board = next(iter(retained_boards))
+        exchange_and_board = board_values.get(board)
+        if exchange_and_board is None:
+            continue
+        asset_type = instrument_types.get(symbol)
+        if asset_type not in {"stock", "etf"}:
+            continue
+        archived_types = archived_instrument_types.get(symbol, set())
+        if len(archived_types) > 1 or (archived_types and archived_types != {asset_type}):
+            continue
+        profiles[symbol] = ResearchInstrumentProfile(
+            symbol=symbol,
+            name=next(iter(retained_names)),
+            market="A-share",
+            asset_type=asset_type,
+            exchange=exchange_and_board[0],
+            board=exchange_and_board[1],
+            size_tier="unknown-not-provided",
+            industry="unknown-not-provided",
+            styles=("paper-session-archive", "degraded-profile"),
+            research_role="held-position-post-close-review",
+            risk_tags=(
+                "DEGRADED_PROFILE",
+                "INDUSTRY_NOT_PROVIDED",
+                "SIZE_NOT_PROVIDED",
+            ),
+            source_id="PAPER_SESSION_ARCHIVE",
+            verified_on=projection.session_date,
+            background_facts=(
+                f"PAPER archived name: {next(iter(retained_names))}",
+                f"PAPER archived board: {board}",
+                "Industry and size were not provided by the PAPER session archive.",
+            ),
+        )
+    return profiles
+
+
+@contextmanager
+def _post_close_process_lock(path: Path) -> Iterator[None]:
+    """获取进程级非阻塞锁，并在进程终止时释放。"""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stream = path.open("a+b")
+    try:
+        if stream.seek(0, os.SEEK_END) == 0:
+            stream.write(b"0")
+            stream.flush()
+        stream.seek(0)
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            else:  # pragma: no cover - Windows 下采用原子替换的兼容分支
+                import fcntl
+
+                fcntl.flock(  # type: ignore[attr-defined]
+                    stream.fileno(),
+                    fcntl.LOCK_EX | fcntl.LOCK_NB,  # type: ignore[attr-defined]
+                )
+        except (OSError, BlockingIOError):
+            raise _PostCloseCLIError("POST_CLOSE_ALREADY_RUNNING", retryable=True) from None
+        try:
+            yield
+        finally:
+            stream.seek(0)
+            if os.name == "nt":
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+            else:  # pragma: no cover
+                fcntl.flock(  # type: ignore[attr-defined]
+                    stream.fileno(),
+                    fcntl.LOCK_UN,  # type: ignore[attr-defined]
+                )
+    finally:
+        stream.close()
+
+
+def _read_post_close_json(path: Path, code: str) -> dict[str, object]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        raise _PostCloseCLIError(code) from None
+    if not isinstance(value, dict):
+        raise _PostCloseCLIError(code)
+    return cast(dict[str, object], value)
+
+
+def _post_close_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _append_post_close_audit(
+    path: Path,
+    *,
+    event: str,
+    run_id: str,
+    target_hash: str,
+    details: Mapping[str, object] | None = None,
+) -> None:
+    document = {
+        "event": event,
+        "occurred_at": datetime.now(UTC).isoformat(),
+        "run_id": run_id,
+        "target_hash": target_hash,
+        **dict(details or {}),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", newline="\n") as stream:
+        stream.write(json.dumps(document, ensure_ascii=False, sort_keys=True, allow_nan=False))
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+async def _ashare_post_close(
+    action: str,
+    runtime_dir: str,
+    session_date: date | None,
+    account_id: str,
+    target_kind_value: str | None,
+    target_id: str | None,
+    base_url: str,
+    candidate_db: str,
+    history_days: int,
+    news_runtime_dir: str,
+    research_db: str,
+    market_evidence_dir: str,
+    news_feeds: Sequence[str] | None,
+    refresh_news: bool,
+    search_discovery: bool,
+    searxng_url: str | None,
+    macro_enabled: bool,
+    macro_provider: str,
+    model: str | None,
+    macro_weight: Decimal,
+    dispatch_cycles: int,
+    dispatch_poll_interval: float,
+    confirmation: str | None,
+    recover_analysis: bool = False,
+    recover_delivery: bool = False,
+    *,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    """一次幂等盘后复核与交付的生产边界。"""
+
+    if action not in {"run", "status", "report"}:
+        raise ValueError("unsupported A-share post-close action")
+    resolved_now = now or datetime.now(UTC)
+    if resolved_now.tzinfo is None or resolved_now.utcoffset() is None:
+        raise ValueError("now must be timezone-aware")
+    local_today = resolved_now.astimezone(ZoneInfo("Asia/Shanghai")).date()
+    resolved_session = session_date or local_today
+    session_root = Path(runtime_dir).resolve() / resolved_session.isoformat()
+    post_root = session_root / "post-close"
+
+    if action == "status":
+        return _ashare_post_close_status(post_root, resolved_session)
+    if action == "report":
+        return _ashare_post_close_report(post_root, resolved_session)
+    if confirmation != "POST_CLOSE":
+        return _post_close_error(
+            action,
+            resolved_session,
+            post_root,
+            "POST_CLOSE_CONFIRMATION_REQUIRED",
+        )
+    if target_kind_value is None or target_id is None or not target_id.strip():
+        return _post_close_error(
+            action,
+            resolved_session,
+            post_root,
+            "NOTIFICATION_TARGET_REQUIRED",
+        )
+    try:
+        return await _ashare_post_close_run(
+            session_root=session_root,
+            session_date=resolved_session,
+            account_id=account_id,
+            target_kind_value=target_kind_value,
+            target_id=target_id.strip(),
+            base_url=base_url,
+            candidate_db=candidate_db,
+            history_days=history_days,
+            news_runtime_dir=news_runtime_dir,
+            research_db=research_db,
+            market_evidence_dir=market_evidence_dir,
+            news_feeds=news_feeds,
+            refresh_news=refresh_news,
+            search_discovery=search_discovery,
+            searxng_url=searxng_url,
+            macro_enabled=macro_enabled,
+            macro_provider=macro_provider,
+            model=model,
+            macro_weight=macro_weight,
+            dispatch_cycles=dispatch_cycles,
+            dispatch_poll_interval=dispatch_poll_interval,
+            recover_analysis=recover_analysis,
+            recover_delivery=recover_delivery,
+            now=resolved_now,
+        )
+    except asyncio.CancelledError:
+        raise
+    except _PostCloseCLIError as error:
+        return _post_close_error(
+            action,
+            resolved_session,
+            post_root,
+            error.code,
+            retryable=error.retryable,
+        )
+    except Exception:
+        return _post_close_error(
+            action,
+            resolved_session,
+            post_root,
+            "POST_CLOSE_RUN_FAILED",
+            retryable=True,
+        )
+
+
+async def _ashare_post_close_run(
+    *,
+    session_root: Path,
+    session_date: date,
+    account_id: str,
+    target_kind_value: str,
+    target_id: str,
+    base_url: str,
+    candidate_db: str,
+    history_days: int,
+    news_runtime_dir: str,
+    research_db: str,
+    market_evidence_dir: str,
+    news_feeds: Sequence[str] | None,
+    refresh_news: bool,
+    search_discovery: bool,
+    searxng_url: str | None,
+    macro_enabled: bool,
+    macro_provider: str,
+    model: str | None,
+    macro_weight: Decimal,
+    dispatch_cycles: int,
+    dispatch_poll_interval: float,
+    recover_analysis: bool,
+    recover_delivery: bool,
+    now: datetime,
+) -> dict[str, object]:
+    try:
+        validated_searxng_url = validate_post_close_searxng_url(searxng_url)
+    except PostCloseSearxngURLValidationError:
+        raise _PostCloseCLIError("SEARXNG_URL_INVALID") from None
+
+    from gribuki_trade.adapters.baostock import BaoStockDailyAdapter
+    from gribuki_trade.domain.paper_day import paper_day_target_hash
+    from gribuki_trade.ports.notifier import NotificationTargetKind
+    from gribuki_trade.reporting.paper_day_summary import (
+        PaperDaySidecarError,
+        project_paper_day_sidecars,
+    )
+    from gribuki_trade.services.ashare_close_sessions import (
+        AShareCloseSessionResolver,
+        CloseAnalysisMode,
+        CloseSessionResolutionError,
+    )
+    from gribuki_trade.services.ashare_paper import ASharePaperTradingService
+    from gribuki_trade.services.ashare_post_close import PostCloseOrchestrationError
+    from gribuki_trade.storage.candidate_store import SQLiteCandidateStore
+    from gribuki_trade.storage.paper_day import SQLitePaperDayStore
+    from gribuki_trade.storage.paper_ledger import SQLitePaperLedger
+
+    local_now = now.astimezone(ZoneInfo("Asia/Shanghai"))
+    if session_date != local_now.date():
+        raise _PostCloseCLIError("SESSION_DATE_NOT_TODAY")
+    if local_now.time().replace(tzinfo=None) < datetime_time(15, 5):
+        return _post_close_skipped(session_date, session_root / "post-close", "BEFORE_1505")
+    if not account_id.strip():
+        raise _PostCloseCLIError("ACCOUNT_ID_INVALID")
+    if dispatch_cycles < 1 or not 0 <= dispatch_poll_interval < float("inf"):
+        raise ValueError("dispatch policy is invalid")
+
+    target_kind = NotificationTargetKind(target_kind_value)
+    _validate_post_close_target(base_url, target_kind, target_id)
+    calendar = BaoStockDailyAdapter(max_attempts=3, timeout_seconds=20.0)
+    try:
+        sessions = await AShareCloseSessionResolver(calendar).resolve(now)
+    except CloseSessionResolutionError as error:
+        if error.code == "MARKET_SESSION_NOT_CLOSED":
+            return _post_close_skipped(session_date, session_root / "post-close", error.code)
+        raise _PostCloseCLIError(error.code, retryable=True) from None
+    if (
+        sessions.analysis_mode is not CloseAnalysisMode.POST_CLOSE
+        or sessions.latest_completed_session != session_date
+    ):
+        return _post_close_skipped(
+            session_date,
+            session_root / "post-close",
+            "CURRENT_DATE_NOT_TRADING_SESSION",
+        )
+
+    try:
+        projection = project_paper_day_sidecars(session_root)
+    except PaperDaySidecarError as error:
+        raise _PostCloseCLIError(error.code, retryable=True) from None
+    if projection.session_date != session_date or projection.lifecycle != "COMPLETED":
+        raise _PostCloseCLIError("PAPER_DAY_NOT_COMPLETED", retryable=True)
+
+    target_hash = paper_day_target_hash(
+        channel="onebot",
+        target_kind=target_kind.value,
+        target_id=target_id,
+    )
+    journal_path = session_root / "journal.sqlite3"
+    if not journal_path.is_file():
+        raise _PostCloseCLIError("PAPER_DAY_JOURNAL_NOT_AVAILABLE", retryable=True)
+    with SQLitePaperDayStore(journal_path) as day_store:
+        scoped = tuple(
+            run
+            for run in day_store.list_runs()
+            if run.session_date == session_date and run.account_id == account_id.strip()
+        )
+    if len(scoped) != 1:
+        raise _PostCloseCLIError("PAPER_DAY_RUN_SCOPE_CONFLICT")
+    if scoped[0].target_hash != target_hash:
+        raise _PostCloseCLIError("NOTIFICATION_TARGET_CONFLICT")
+
+    config = {
+        "account_id": account_id.strip(),
+        "base_url": base_url,
+        "candidate_db": str(Path(candidate_db).resolve()),
+        "history_days": history_days,
+        "macro_enabled": macro_enabled,
+        "macro_provider": macro_provider,
+        "macro_weight": format(macro_weight, "f"),
+        "market_evidence_dir": str(Path(market_evidence_dir).resolve()),
+        "model": model,
+        "news_feeds": list(news_feeds or ()),
+        "news_runtime_dir": str(Path(news_runtime_dir).resolve()),
+        "refresh_news": refresh_news,
+        "research_db": str(Path(research_db).resolve()),
+        "schema_version": 1,
+        "search_discovery": search_discovery,
+        "searxng_url": (
+            None if validated_searxng_url is None else validated_searxng_url.manifest_document
+        ),
+        "session_date": session_date.isoformat(),
+        "target_hash": target_hash,
+        "target_kind": target_kind.value,
+    }
+    config_json = json.dumps(
+        config,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    config_sha256 = hashlib.sha256(config_json.encode("utf-8")).hexdigest()
+    run_id = hashlib.sha256(
+        f"ashare-post-close@1\0{session_date.isoformat()}\0{config_sha256}".encode()
+    ).hexdigest()
+    post_root = session_root / "post-close"
+    manifest_path = post_root / "manifest.json"
+    status_path = post_root / "status.json"
+    audit_path = post_root / "audit.jsonl"
+    expected_manifest: dict[str, object] = {
+        "config": config,
+        "config_sha256": config_sha256,
+        "run_id": run_id,
+        "schema_version": 1,
+    }
+
+    post_root.mkdir(parents=True, exist_ok=True)
+    with _post_close_process_lock(post_root / "run.lock"):
+        if manifest_path.is_file():
+            retained_manifest = _read_post_close_json(
+                manifest_path,
+                "POST_CLOSE_MANIFEST_INVALID",
+            )
+            if retained_manifest != expected_manifest:
+                raise _PostCloseCLIError("POST_CLOSE_MANIFEST_CONFLICT")
+        else:
+            _atomic_write_cli_json(manifest_path, expected_manifest)
+        status = (
+            _read_post_close_json(status_path, "POST_CLOSE_STATUS_INVALID")
+            if status_path.is_file()
+            else {
+                "attempt": 0,
+                "phase": "NEW",
+                "run_id": run_id,
+                "schema_version": 1,
+                "session_date": session_date.isoformat(),
+                "target_hash": target_hash,
+            }
+        )
+        if status.get("run_id") != run_id or status.get("target_hash") != target_hash:
+            raise _PostCloseCLIError("POST_CLOSE_STATUS_CONFLICT")
+        phase = status.get("phase")
+        if phase == "COMPLETE":
+            return _post_close_completed_result(post_root, status, idempotent_replay=True)
+        if phase in {"ANALYSIS_IN_PROGRESS", "ANALYSIS_AMBIGUOUS"}:
+            if not recover_analysis:
+                raise _PostCloseCLIError("POST_CLOSE_ANALYSIS_RECOVERY_REQUIRES_OPERATOR")
+            _append_post_close_audit(
+                audit_path,
+                event="ANALYSIS_RECOVERY_AUTHORIZED",
+                run_id=run_id,
+                target_hash=target_hash,
+                details={
+                    "authorization": "EXPLICIT_RECOVER_ANALYSIS_FLAG",
+                    "prior_phase": phase,
+                },
+            )
+            status.update(
+                {
+                    "error_code": None,
+                    "phase": "NEW",
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            for key in (
+                "analysis_outcome",
+                "artifact_path",
+                "artifact_sha256",
+                "held_count",
+                "next_session",
+                "paper_run_id",
+                "research_completed",
+                "research_failed",
+            ):
+                status.pop(key, None)
+            _atomic_write_cli_json(status_path, status)
+            phase = "NEW"
+        if phase in {"DELIVERY_IN_PROGRESS", "DELIVERY_AMBIGUOUS"}:
+            if not recover_delivery:
+                raise _PostCloseCLIError("POST_CLOSE_DELIVERY_RECOVERY_REQUIRES_OPERATOR")
+            _append_post_close_audit(
+                audit_path,
+                event="DELIVERY_RECOVERY_AUTHORIZED",
+                run_id=run_id,
+                target_hash=target_hash,
+                details={
+                    "authorization": "EXPLICIT_RECOVER_DELIVERY_FLAG",
+                    "prior_phase": phase,
+                },
+            )
+            status.update(
+                {
+                    "artifact_delivery": "PENDING",
+                    "delivery_recovery_authorized": True,
+                    "error_code": None,
+                    "phase": "DELIVERY_PENDING",
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            _atomic_write_cli_json(status_path, status)
+            phase = "DELIVERY_PENDING"
+        if phase == "DELIVERY_FAILED":
+            raise _PostCloseCLIError("POST_CLOSE_TEXT_DELIVERY_FAILED")
+        if phase not in {
+            "NEW",
+            "ANALYSIS_FAILED",
+            "ANALYSIS_FAILED_RETRYABLE",
+            "ANALYSIS_COMPLETE",
+            "DELIVERY_PENDING",
+        }:
+            raise _PostCloseCLIError("POST_CLOSE_STATUS_INVALID")
+
+        artifact_path: Path | None = None
+        if phase in {"ANALYSIS_COMPLETE", "DELIVERY_PENDING"}:
+            artifact_value = status.get("artifact_path")
+            artifact_sha256 = status.get("artifact_sha256")
+            if not isinstance(artifact_value, str) or not isinstance(artifact_sha256, str):
+                raise _PostCloseCLIError("POST_CLOSE_STATUS_INVALID")
+            artifact_path = _validated_post_close_artifact(
+                session_root,
+                Path(artifact_value),
+                artifact_sha256,
+            )
+        else:
+            status.update(
+                {
+                    "attempt": (_post_close_optional_integer(status.get("attempt")) or 0) + 1,
+                    "phase": "ANALYSIS_IN_PROGRESS",
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            _atomic_write_cli_json(status_path, status)
+            _append_post_close_audit(
+                audit_path,
+                event="ANALYSIS_STARTED",
+                run_id=run_id,
+                target_hash=target_hash,
+            )
+            ledger_path = session_root / "ledger.sqlite3"
+            if not ledger_path.is_file():
+                status.update(
+                    {
+                        "error_code": "PAPER_LEDGER_NOT_AVAILABLE",
+                        "phase": "ANALYSIS_FAILED_RETRYABLE",
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                )
+                _atomic_write_cli_json(status_path, status)
+                raise _PostCloseCLIError(
+                    "PAPER_LEDGER_NOT_AVAILABLE",
+                    retryable=True,
+                )
+            try:
+                with SQLitePaperLedger(ledger_path) as ledger:
+                    paper = ASharePaperTradingService(ledger)
+                    account = paper.snapshot(account_id.strip())
+                    instrument_types = {
+                        position.symbol: position.instrument_type.value.lower()
+                        for position in account.positions
+                        if position.quantity > 0
+                    }
+                    profiles = _paper_session_instrument_profiles(
+                        projection,
+                        instrument_types,
+                    )
+                    candidate_path = Path(candidate_db).resolve()
+                    if candidate_path.is_file():
+                        with SQLiteCandidateStore(candidate_path) as candidates:
+                            result = await _run_post_close_orchestrator(
+                                sessions=sessions,
+                                projection=projection,
+                                paper=paper,
+                                candidates=candidates,
+                                profiles=profiles,
+                                session_root=session_root,
+                                account_id=account_id.strip(),
+                                history_days=history_days,
+                                news_runtime_dir=news_runtime_dir,
+                                research_db=research_db,
+                                market_evidence_dir=market_evidence_dir,
+                                analysis_outbox_db=str(post_root / "analysis-outbox.sqlite3"),
+                                news_feeds=news_feeds,
+                                refresh_news=refresh_news,
+                                search_discovery=search_discovery,
+                                searxng_url=(
+                                    None
+                                    if validated_searxng_url is None
+                                    else validated_searxng_url.runtime_url
+                                ),
+                                macro_enabled=macro_enabled,
+                                macro_provider=macro_provider,
+                                model=model,
+                                macro_weight=macro_weight,
+                                now=now,
+                            )
+                    else:
+                        result = await _run_post_close_orchestrator(
+                            sessions=sessions,
+                            projection=projection,
+                            paper=paper,
+                            candidates=None,
+                            profiles=profiles,
+                            session_root=session_root,
+                            account_id=account_id.strip(),
+                            history_days=history_days,
+                            news_runtime_dir=news_runtime_dir,
+                            research_db=research_db,
+                            market_evidence_dir=market_evidence_dir,
+                            analysis_outbox_db=str(post_root / "analysis-outbox.sqlite3"),
+                            news_feeds=news_feeds,
+                            refresh_news=refresh_news,
+                            search_discovery=search_discovery,
+                            searxng_url=(
+                                None
+                                if validated_searxng_url is None
+                                else validated_searxng_url.runtime_url
+                            ),
+                            macro_enabled=macro_enabled,
+                            macro_provider=macro_provider,
+                            model=model,
+                            macro_weight=macro_weight,
+                            now=now,
+                        )
+            except asyncio.CancelledError:
+                raise
+            except PostCloseOrchestrationError as error:
+                status.update(
+                    {
+                        "error_code": error.code,
+                        "phase": "ANALYSIS_FAILED",
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                )
+                _atomic_write_cli_json(status_path, status)
+                raise _PostCloseCLIError(error.code) from None
+            except _PostCloseCLIError:
+                raise
+            except Exception:
+                status.update(
+                    {
+                        "error_code": "POST_CLOSE_ANALYSIS_FAILED",
+                        "phase": "ANALYSIS_AMBIGUOUS",
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                )
+                _atomic_write_cli_json(status_path, status)
+                raise _PostCloseCLIError("POST_CLOSE_ANALYSIS_FAILED") from None
+
+            artifact_path = _validated_post_close_artifact(
+                session_root,
+                result.artifact_path,
+                _post_close_sha256(result.artifact_path),
+            )
+            artifact_digest = _post_close_sha256(artifact_path)
+            held_count = len(result.review.held_symbols)
+            research_completed = sum(
+                item.status.value == "COMPLETED" for item in result.review.research
+            )
+            research_failed = sum(item.status.value == "FAILED" for item in result.review.research)
+            try:
+                analysis_outcome = _post_close_analysis_outcome(
+                    held_count=held_count,
+                    research_completed=research_completed,
+                    research_failed=research_failed,
+                )
+            except _PostCloseCLIError as error:
+                status.update(
+                    {
+                        "error_code": error.code,
+                        "phase": "ANALYSIS_FAILED",
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                )
+                _atomic_write_cli_json(status_path, status)
+                raise
+            if analysis_outcome == "FAILED":
+                status.update(
+                    {
+                        "analysis_outcome": "FAILED",
+                        "artifact_path": str(artifact_path),
+                        "artifact_sha256": artifact_digest,
+                        "error_code": "ALL_HELD_RESEARCH_FAILED",
+                        "held_count": held_count,
+                        "next_session": result.review.next_session.isoformat(),
+                        "paper_run_id": result.review.paper_run_id,
+                        "phase": "ANALYSIS_FAILED_RETRYABLE",
+                        "research_completed": research_completed,
+                        "research_failed": research_failed,
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                )
+                _atomic_write_cli_json(status_path, status)
+                _append_post_close_audit(
+                    audit_path,
+                    event="ANALYSIS_FAILED",
+                    run_id=run_id,
+                    target_hash=target_hash,
+                    details={
+                        "error_code": "ALL_HELD_RESEARCH_FAILED",
+                        "held_count": held_count,
+                        "research_failed": research_failed,
+                    },
+                )
+                raise _PostCloseCLIError(
+                    "ALL_HELD_RESEARCH_FAILED",
+                    retryable=True,
+                )
+            status.update(
+                {
+                    "analysis_outcome": analysis_outcome,
+                    "artifact_path": str(artifact_path),
+                    "artifact_sha256": artifact_digest,
+                    "held_count": held_count,
+                    "next_session": result.review.next_session.isoformat(),
+                    "paper_run_id": result.review.paper_run_id,
+                    "phase": "ANALYSIS_COMPLETE",
+                    "research_completed": research_completed,
+                    "research_failed": research_failed,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            _atomic_write_cli_json(status_path, status)
+            _append_post_close_audit(
+                audit_path,
+                event="ANALYSIS_COMPLETED",
+                run_id=run_id,
+                target_hash=target_hash,
+                details={
+                    "analysis_outcome": analysis_outcome,
+                    "artifact_sha256": artifact_digest,
+                    "research_completed": research_completed,
+                    "research_failed": research_failed,
+                },
+            )
+
+        assert artifact_path is not None
+        delivered = await _deliver_post_close_artifact(
+            post_root=post_root,
+            status=status,
+            status_path=status_path,
+            audit_path=audit_path,
+            run_id=run_id,
+            target_hash=target_hash,
+            target_kind=target_kind,
+            target_id=target_id,
+            base_url=base_url,
+            artifact_path=artifact_path,
+            dispatch_cycles=dispatch_cycles,
+            dispatch_poll_interval=dispatch_poll_interval,
+        )
+        if not delivered:
+            raise _PostCloseCLIError("POST_CLOSE_DELIVERY_PENDING", retryable=True)
+        return _post_close_completed_result(post_root, status, idempotent_replay=False)
+
+
+async def _run_post_close_orchestrator(
+    *,
+    sessions: CloseSessionResolution,
+    projection: PaperDayExecutiveProjection,
+    paper: ASharePaperTradingService,
+    candidates: SQLiteCandidateStore | None,
+    profiles: Mapping[str, ResearchInstrumentProfile],
+    session_root: Path,
+    account_id: str,
+    history_days: int,
+    news_runtime_dir: str,
+    research_db: str,
+    market_evidence_dir: str,
+    analysis_outbox_db: str,
+    news_feeds: Sequence[str] | None,
+    refresh_news: bool,
+    search_discovery: bool,
+    searxng_url: str | None,
+    macro_enabled: bool,
+    macro_provider: str,
+    model: str | None,
+    macro_weight: Decimal,
+    now: datetime,
+) -> PostCloseOrchestrationResult:
+    from gribuki_trade.services.ashare_post_close import (
+        ASharePostCloseOrchestrator,
+        PostCloseOrchestrationRequest,
+    )
+
+    close_research = _CLIExistingCloseResearch(
+        profiles=profiles,
+        history_days=history_days,
+        news_runtime_dir=news_runtime_dir,
+        research_db=research_db,
+        market_evidence_dir=market_evidence_dir,
+        analysis_outbox_db=analysis_outbox_db,
+        news_feeds=news_feeds,
+        refresh_news=refresh_news,
+        search_discovery=search_discovery,
+        searxng_url=searxng_url,
+        macro_enabled=macro_enabled,
+        macro_provider=macro_provider,
+        model=model,
+        macro_weight=macro_weight,
+    )
+    orchestrator = ASharePostCloseOrchestrator(
+        session_resolver=_FixedPostCloseSessions(sessions),
+        paper_account=paper,
+        close_research=close_research,
+        candidate_reader=candidates,
+        sidecar_loader=lambda _path: projection,
+        research_timeout_seconds=600.0,
+    )
+    return await orchestrator.run_once(
+        PostCloseOrchestrationRequest(
+            session_root=session_root,
+            account_id=account_id,
+            now=now,
+        )
+    )
+
+
+def _validate_post_close_target(
+    base_url: str,
+    target_kind: object,
+    target_id: str,
+) -> None:
+    from gribuki_trade.adapters.notifiers import OneBotConfig
+    from gribuki_trade.ports.notifier import NotificationTargetKind
+
+    if not isinstance(target_kind, NotificationTargetKind):
+        raise TypeError("target_kind must be a NotificationTargetKind")
+    allowlist = frozenset({target_id})
+    try:
+        OneBotConfig(
+            access_token="validation-only-not-a-credential",
+            base_url=base_url,
+            private_target_ids=(
+                allowlist if target_kind is NotificationTargetKind.PRIVATE else frozenset()
+            ),
+            group_target_ids=(
+                allowlist if target_kind is NotificationTargetKind.GROUP else frozenset()
+            ),
+        )
+    except (TypeError, ValueError):
+        raise _PostCloseCLIError("NOTIFICATION_TARGET_INVALID") from None
+
+
+def _validated_post_close_artifact(
+    session_root: Path,
+    artifact_path: Path,
+    expected_sha256: str,
+) -> Path:
+    report_root_input = session_root / "reports"
+    try:
+        if report_root_input.is_symlink() or artifact_path.is_symlink():
+            raise ValueError
+        report_root = report_root_input.resolve(strict=True)
+        resolved = artifact_path.resolve(strict=True)
+        resolved.relative_to(report_root)
+    except (OSError, RuntimeError, ValueError):
+        raise _PostCloseCLIError("POST_CLOSE_ARTIFACT_INVALID") from None
+    if not resolved.is_file() or resolved.suffix.casefold() != ".md":
+        raise _PostCloseCLIError("POST_CLOSE_ARTIFACT_INVALID")
+    if _post_close_sha256(resolved) != expected_sha256:
+        raise _PostCloseCLIError("POST_CLOSE_ARTIFACT_DIGEST_MISMATCH")
+    return resolved
+
+
+def _post_close_delivery_summary(
+    text: str,
+    *,
+    artifact_name: str,
+    artifact_sha256: str,
+    run_id: str,
+) -> str:
+    """从已验约的盘后日报提取短摘要；长文始终以 Markdown 文件交付。"""
+
+    from gribuki_trade.reporting.contracts import (
+        ReportKind,
+        render_stable_text_report,
+        report_contract,
+        validate_markdown_report_contract,
+    )
+
+    try:
+        validate_markdown_report_contract(ReportKind.DAILY_REVIEW, text)
+    except (TypeError, ValueError):
+        raise _PostCloseCLIError("POST_CLOSE_ARTIFACT_INVALID") from None
+    contract = report_contract(ReportKind.DAILY_REVIEW)
+    sections = {
+        name: _post_close_section_excerpt(text, name) for name in contract.required_sections
+    }
+    sections["执行摘要"] = (
+        f"{sections['执行摘要']}\n完整报告文件：{artifact_name}；"
+        f"内容摘要：{artifact_sha256[:12]}；运行标识：{run_id[-12:]}。"
+    )
+    summary = render_stable_text_report(
+        ReportKind.DAILY_REVIEW,
+        title="A股盘后日报交付摘要",
+        sections=sections,
+    )
+    if len(summary) > 7_000:
+        raise _PostCloseCLIError("POST_CLOSE_ARTIFACT_INVALID")
+    return summary
+
+
+def _post_close_section_excerpt(text: str, name: str, limit: int = 850) -> str:
+    """提取一个必需二级章节的开头，避免 QQ 摘要复制整份长报告。"""
+
+    marker = f"\n## {name}\n"
+    start = text.find(marker)
+    if start < 0:
+        raise _PostCloseCLIError("POST_CLOSE_ARTIFACT_INVALID")
+    content_start = start + len(marker)
+    next_heading = text.find("\n## ", content_start)
+    content_end = len(text) if next_heading < 0 else next_heading
+    meaningful = tuple(
+        line.strip() for line in text[content_start:content_end].splitlines() if line.strip()
+    )
+    if not meaningful:
+        raise _PostCloseCLIError("POST_CLOSE_ARTIFACT_INVALID")
+    excerpt = "\n".join(meaningful)
+    if len(excerpt) <= limit:
+        return excerpt
+    shortened = excerpt[: limit - 1]
+    last_break = shortened.rfind("\n")
+    if last_break >= limit // 2:
+        shortened = shortened[:last_break]
+    return shortened.rstrip() + "…"
+
+
+async def _deliver_post_close_artifact(
+    *,
+    post_root: Path,
+    status: dict[str, object],
+    status_path: Path,
+    audit_path: Path,
+    run_id: str,
+    target_hash: str,
+    target_kind: object,
+    target_id: str,
+    base_url: str,
+    artifact_path: Path,
+    dispatch_cycles: int,
+    dispatch_poll_interval: float,
+) -> bool:
+    from gribuki_trade.adapters.notifiers import OneBotConfig, OneBotNotifier
+    from gribuki_trade.ports.notifier import (
+        NotificationTargetKind,
+        OutboundNotification,
+    )
+    from gribuki_trade.services.notification_dispatch import NotificationDispatchService
+    from gribuki_trade.storage.outbox import OutboxStatus, SQLiteOutbox
+
+    if not isinstance(target_kind, NotificationTargetKind):
+        raise TypeError("target_kind must be a NotificationTargetKind")
+    if status.get("artifact_delivery") == "IN_PROGRESS":
+        raise _PostCloseCLIError("POST_CLOSE_RECOVERY_REQUIRES_OPERATOR")
+    try:
+        report_text = artifact_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        raise _PostCloseCLIError("POST_CLOSE_ARTIFACT_INVALID") from None
+    artifact_sha256 = _post_close_sha256(artifact_path)
+    summary = _post_close_delivery_summary(
+        report_text,
+        artifact_name=artifact_path.name,
+        artifact_sha256=artifact_sha256,
+        run_id=run_id,
+    )
+    messages = (summary,)
+    created_value = status.get("delivery_created_at")
+    if isinstance(created_value, str):
+        try:
+            created_at = datetime.fromisoformat(created_value).astimezone(UTC)
+        except ValueError:
+            raise _PostCloseCLIError("POST_CLOSE_STATUS_INVALID") from None
+    else:
+        created_at = datetime.now(UTC)
+        status["delivery_created_at"] = created_at.isoformat()
+    expires_at = created_at + timedelta(hours=24)
+    outbox_path = post_root / "delivery-outbox.sqlite3"
+    keys = tuple(
+        f"post-close:{run_id}:summary:{index:02d}-of-{len(messages):02d}"
+        for index in range(1, len(messages) + 1)
+    )
+    with SQLiteOutbox(outbox_path) as outbox:
+        for key, message in zip(keys, messages, strict=True):
+            outbox.enqueue(
+                OutboundNotification(
+                    idempotency_key=key,
+                    channel="onebot",
+                    target_kind=target_kind,
+                    target_id=target_id,
+                    text=message,
+                    created_at=created_at,
+                    expires_at=expires_at,
+                )
+            )
+        status.update(
+            {
+                "phase": "DELIVERY_PENDING",
+                "text_part_count": len(messages),
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+        )
+        _atomic_write_cli_json(status_path, status)
+        retained_before_dispatch = tuple(outbox.get_by_key(key) for key in keys)
+        if any(item is None for item in retained_before_dispatch):
+            raise _PostCloseCLIError("POST_CLOSE_OUTBOX_INTEGRITY_ERROR")
+        if (
+            any(
+                item is not None and item.status is OutboxStatus.IN_FLIGHT
+                for item in retained_before_dispatch
+            )
+            and status.get("delivery_recovery_authorized") is not True
+        ):
+            status.update(
+                {
+                    "error_code": "POST_CLOSE_TEXT_DELIVERY_AMBIGUOUS",
+                    "phase": "DELIVERY_AMBIGUOUS",
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            _atomic_write_cli_json(status_path, status)
+            _append_post_close_audit(
+                audit_path,
+                event="DELIVERY_AMBIGUOUS",
+                run_id=run_id,
+                target_hash=target_hash,
+                details={"error_code": "POST_CLOSE_TEXT_DELIVERY_AMBIGUOUS"},
+            )
+            raise _PostCloseCLIError("POST_CLOSE_TEXT_DELIVERY_AMBIGUOUS")
+        try:
+            access_token = _required_local_secret(NAPCAT_ACCESS_TOKEN_SECRET)
+        except (RuntimeError, SecretProviderError):
+            _append_post_close_audit(
+                audit_path,
+                event="DELIVERY_DEFERRED",
+                run_id=run_id,
+                target_hash=target_hash,
+                details={"error_code": "NAPCAT_TOKEN_NOT_CONFIGURED"},
+            )
+            return False
+        allowlist = frozenset({target_id})
+        config = OneBotConfig(
+            access_token=access_token,
+            base_url=base_url,
+            private_target_ids=(
+                allowlist if target_kind is NotificationTargetKind.PRIVATE else frozenset()
+            ),
+            group_target_ids=(
+                allowlist if target_kind is NotificationTargetKind.GROUP else frozenset()
+            ),
+            artifact_root=artifact_path.parent,
+        )
+        async with OneBotNotifier(config) as notifier:
+            if not await _post_close_napcat_ready(notifier):
+                # NapCat 的启动和登录必须由 GUI 显式完成。盘后流程只观察
+                # 健康状态并保留 durable outbox，绝不偷偷启动 OS 侧车。
+                _append_post_close_audit(
+                    audit_path,
+                    event="DELIVERY_DEFERRED",
+                    run_id=run_id,
+                    target_hash=target_hash,
+                    details={"error_code": "NAPCAT_NOT_READY_GUI_ACTION_REQUIRED"},
+                )
+                return False
+            service = NotificationDispatchService(
+                outbox,
+                {notifier.channel: notifier},
+                target_kind=target_kind,
+                target_id=target_id,
+            )
+            try:
+                await service.poll(
+                    max_cycles=dispatch_cycles,
+                    poll_interval=dispatch_poll_interval,
+                )
+            except asyncio.CancelledError:
+                status.update(
+                    {
+                        "error_code": "POST_CLOSE_TEXT_DELIVERY_AMBIGUOUS",
+                        "phase": "DELIVERY_AMBIGUOUS",
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                )
+                _atomic_write_cli_json(status_path, status)
+                raise
+            except Exception:
+                status.update(
+                    {
+                        "error_code": "POST_CLOSE_TEXT_DELIVERY_AMBIGUOUS",
+                        "phase": "DELIVERY_AMBIGUOUS",
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                )
+                _atomic_write_cli_json(status_path, status)
+                raise _PostCloseCLIError("POST_CLOSE_TEXT_DELIVERY_AMBIGUOUS") from None
+            retained = tuple(outbox.get_by_key(key) for key in keys)
+            if any(item is None for item in retained):
+                raise _PostCloseCLIError("POST_CLOSE_OUTBOX_INTEGRITY_ERROR")
+            statuses = tuple(item.status for item in retained if item is not None)
+            if any(item in {OutboxStatus.DEAD, OutboxStatus.EXPIRED} for item in statuses):
+                status.update(
+                    {
+                        "error_code": "POST_CLOSE_TEXT_DELIVERY_FAILED",
+                        "phase": "DELIVERY_FAILED",
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                )
+                _atomic_write_cli_json(status_path, status)
+                raise _PostCloseCLIError("POST_CLOSE_TEXT_DELIVERY_FAILED")
+            if any(item is not OutboxStatus.SENT for item in statuses):
+                return False
+
+            if status.get("artifact_delivery") != "SENT":
+                status.update(
+                    {
+                        "artifact_delivery": "IN_PROGRESS",
+                        "phase": "DELIVERY_IN_PROGRESS",
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                )
+                _atomic_write_cli_json(status_path, status)
+                _append_post_close_audit(
+                    audit_path,
+                    event="ARTIFACT_DELIVERY_STARTED",
+                    run_id=run_id,
+                    target_hash=target_hash,
+                    details={"artifact_sha256": artifact_sha256},
+                )
+                try:
+                    receipt = (
+                        await notifier.upload_private_file(target_id, artifact_path.name)
+                        if target_kind is NotificationTargetKind.PRIVATE
+                        else await notifier.upload_group_file(target_id, artifact_path.name)
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    status.update(
+                        {
+                            "artifact_delivery": "AMBIGUOUS",
+                            "error_code": "POST_CLOSE_ARTIFACT_DELIVERY_AMBIGUOUS",
+                            "phase": "DELIVERY_AMBIGUOUS",
+                            "updated_at": datetime.now(UTC).isoformat(),
+                        }
+                    )
+                    _atomic_write_cli_json(status_path, status)
+                    raise _PostCloseCLIError("POST_CLOSE_ARTIFACT_DELIVERY_AMBIGUOUS") from None
+                status.update(
+                    {
+                        "artifact_delivery": "SENT",
+                        "artifact_provider_file_id": receipt.provider_file_id,
+                    }
+                )
+
+    status.update(
+        {
+            "completed_at": datetime.now(UTC).isoformat(),
+            "error_code": None,
+            "phase": "COMPLETE",
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+    )
+    _atomic_write_cli_json(status_path, status)
+    _append_post_close_audit(
+        audit_path,
+        event="DELIVERY_COMPLETED",
+        run_id=run_id,
+        target_hash=target_hash,
+        details={"text_part_count": len(messages)},
+    )
+    return True
+
+
+async def _post_close_napcat_ready(notifier: object) -> bool:
+    try:
+        status = await notifier.get_status()  # type: ignore[attr-defined]
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        return False
+    return (
+        isinstance(status, Mapping) and status.get("good") is True and status.get("online") is True
+    )
+
+
+def _ashare_post_close_status(
+    post_root: Path,
+    session_date: date,
+) -> dict[str, object]:
+    status_path = post_root / "status.json"
+    if not status_path.is_file():
+        return _post_close_error(
+            "status",
+            session_date,
+            post_root,
+            "POST_CLOSE_STATUS_NOT_AVAILABLE",
+        )
+    try:
+        status = _read_post_close_json(status_path, "POST_CLOSE_STATUS_INVALID")
+    except _PostCloseCLIError as error:
+        return _post_close_error("status", session_date, post_root, error.code)
+    return {
+        "action": "status",
+        "ok": True,
+        "read_only_sidecar": True,
+        "runtime_dir": str(post_root),
+        "status": status,
+        "status_path": str(status_path.resolve()),
+    }
+
+
+def _ashare_post_close_report(
+    post_root: Path,
+    session_date: date,
+) -> dict[str, object]:
+    status_path = post_root / "status.json"
+    if not status_path.is_file():
+        return _post_close_error(
+            "report",
+            session_date,
+            post_root,
+            "POST_CLOSE_REPORT_NOT_AVAILABLE",
+        )
+    try:
+        status = _read_post_close_json(status_path, "POST_CLOSE_STATUS_INVALID")
+        path_value = status.get("artifact_path")
+        digest = status.get("artifact_sha256")
+        if not isinstance(path_value, str) or not isinstance(digest, str):
+            raise _PostCloseCLIError("POST_CLOSE_REPORT_NOT_AVAILABLE")
+        report_path = _validated_post_close_artifact(
+            post_root.parent,
+            Path(path_value),
+            digest,
+        )
+        content = report_path.read_bytes()
+        content.decode("utf-8")
+    except (_PostCloseCLIError, OSError, UnicodeError) as error:
+        code = (
+            error.code if isinstance(error, _PostCloseCLIError) else "POST_CLOSE_ARTIFACT_INVALID"
+        )
+        return _post_close_error("report", session_date, post_root, code)
+    return {
+        "action": "report",
+        "ok": True,
+        "read_only_sidecar": True,
+        "report": {
+            "bytes": len(content),
+            "name": report_path.name,
+            "path": str(report_path),
+            "sha256": digest,
+        },
+        "runtime_dir": str(post_root),
+    }
+
+
+def _post_close_completed_result(
+    post_root: Path,
+    status: Mapping[str, object],
+    *,
+    idempotent_replay: bool,
+) -> dict[str, object]:
+    retained = {
+        key: status.get(key)
+        for key in (
+            "artifact_path",
+            "artifact_sha256",
+            "analysis_outcome",
+            "completed_at",
+            "held_count",
+            "next_session",
+            "paper_run_id",
+            "phase",
+            "research_completed",
+            "research_failed",
+            "run_id",
+            "session_date",
+            "target_hash",
+            "text_part_count",
+        )
+    }
+    return {
+        "action": "run",
+        "idempotent_replay": idempotent_replay,
+        "ok": True,
+        "runtime_dir": str(post_root),
+        **retained,
+    }
+
+
+def _post_close_skipped(
+    session_date: date,
+    post_root: Path,
+    code: str,
+) -> dict[str, object]:
+    return {
+        "action": "run",
+        "error_code": code,
+        "ok": True,
+        "runtime_dir": str(post_root),
+        "session_date": session_date.isoformat(),
+        "skipped": True,
+    }
+
+
+def _post_close_error(
+    action: str,
+    session_date: date,
+    post_root: Path,
+    code: str,
+    *,
+    retryable: bool = False,
+) -> dict[str, object]:
+    return {
+        "action": action,
+        "error_code": code,
+        "ok": False,
+        "retryable": retryable,
+        "runtime_dir": str(post_root),
+        "session_date": session_date.isoformat(),
+    }
+
+
+def _ashare_paper_day_error(
+    action: str,
+    session_date: date,
+    session_root: Path,
+    error_code: str,
+) -> dict[str, object]:
+    return {
+        "ok": False,
+        "action": action,
+        "error_code": error_code,
+        "session_date": session_date.isoformat(),
+        "runtime_dir": str(session_root),
+    }
 
 
 def _paper_snapshot_json(snapshot: object) -> dict[str, object]:
@@ -3328,7 +7688,9 @@ async def _ashare_research_once(
         AShareResearchRequest,
         AShareResearchService,
         MacroResearchService,
+        ProductionLLMProfile,
         ResearchNotificationTarget,
+        build_production_dual_track_analyzer,
         select_macro_evidence,
     )
     from gribuki_trade.storage import (
@@ -3356,11 +7718,7 @@ async def _ashare_research_once(
         with SQLiteEventStore(event_path) as event_store:
             events = event_store.latest(limit=1_000)
 
-    interval = (
-        MinuteInterval.ONE_MINUTE
-        if interval_value == "1m"
-        else MinuteInterval.FIVE_MINUTES
-    )
+    interval = MinuteInterval.ONE_MINUTE if interval_value == "1m" else MinuteInterval.FIVE_MINUTES
     market_data = AKShareMarketDataAdapter()
     collection_request = AShareResearchRequest(
         symbol=symbol,
@@ -3369,44 +7727,52 @@ async def _ashare_research_once(
         interval=interval,
         horizon=RecommendationHorizon.SHORT_1_TO_5_DAYS,
     )
-    collection = await AShareResearchService(market_data).collect_market_data(
-        collection_request
-    )
-    # The decision boundary must be after the provider response.  Freezing it
-    # before network I/O makes every real fetched_at look like future data.
+    collection = await AShareResearchService(market_data).collect_market_data(collection_request)
+    # 决策边界必须位于供应商响应之后。在网络 I/O 前冻结会使每个真实 fetched_at
+    # 看起来都像未来数据。
     decision_time = datetime.now(UTC)
 
+    research_path = Path(research_db).resolve()
     macro = None
+    baseline_macro = None
+    adversarial_macro = None
+    macro_selected_track = None
+    macro_audit_record_sha256 = None
     if macro_enabled and collection.failure_code is None:
-        analyzer: MacroAnalyzer
+        baseline_analyzer: MacroAnalyzer
         if macro_provider == "deepseek":
-            analyzer = DeepSeekChatMacroAnalyzer(
+            baseline_analyzer = DeepSeekChatMacroAnalyzer(
                 SecretValue(_required_local_secret(DEEPSEEK_API_KEY_SECRET)),
                 model=resolved_model,
             )
         else:
-            analyzer = OpenAIResponsesMacroAnalyzer(
+            baseline_analyzer = OpenAIResponsesMacroAnalyzer(
                 SecretValue(_required_local_secret(OPENAI_API_KEY_SECRET)),
                 model=resolved_model,
             )
-        macro_run = await MacroResearchService(analyzer).analyze(
-            symbol=symbol,
-            as_of=decision_time,
-            horizon=RecommendationHorizon.SHORT_1_TO_5_DAYS.value,
-            technical_summary=("deterministic completed-bar breakout analysis",),
-            events=events,
-        )
+        with build_production_dual_track_analyzer(
+            baseline_analyzer,
+            audit_path=research_path.with_name("llm-adversarial.sqlite3"),
+            profile=ProductionLLMProfile.STANDARD,
+            maximum_calls_per_session=None,
+        ) as dual_analyzer:
+            macro_run = await MacroResearchService(dual_analyzer).analyze(
+                symbol=symbol,
+                as_of=decision_time,
+                horizon=RecommendationHorizon.SHORT_1_TO_5_DAYS.value,
+                technical_summary=("基于已完成分钟线的确定性突破分析",),
+                events=events,
+            )
         macro = macro_run.analysis
+        baseline_macro = macro_run.baseline_analysis
+        adversarial_macro = macro_run.adversarial_analysis
+        macro_selected_track = macro_run.selected_track
+        macro_audit_record_sha256 = macro_run.dual_audit_record_sha256
         selection = macro_run.selection
         macro_failure_code = macro_run.failure_code
     else:
         selection = select_macro_evidence(symbol, decision_time, events)
-        macro_failure_code = (
-            "SKIPPED_MARKET_DATA_UNAVAILABLE"
-            if macro_enabled
-            else None
-        )
-    research_path = Path(research_db).resolve()
+        macro_failure_code = "SKIPPED_MARKET_DATA_UNAVAILABLE" if macro_enabled else None
     outbox_path = Path(outbox_db).resolve()
     research_path.parent.mkdir(parents=True, exist_ok=True)
     outbox_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3433,6 +7799,10 @@ async def _ashare_research_once(
                 horizon=RecommendationHorizon.SHORT_1_TO_5_DAYS,
                 evidence=selection.references,
                 macro=macro,
+                baseline_macro=baseline_macro,
+                adversarial_macro=adversarial_macro,
+                macro_selected_track=macro_selected_track,
+                macro_audit_record_sha256=macro_audit_record_sha256,
             ),
             collection,
             notification_target=notification_target,
@@ -3447,9 +7817,7 @@ async def _ashare_research_once(
         "combined_score": _three_decimal_text(
             getattr(recommendation, "combined_score", recommendation.technical_score)
         ),
-        "fusion_reason_codes": list(
-            getattr(recommendation, "fusion_reason_codes", ())
-        ),
+        "fusion_reason_codes": list(getattr(recommendation, "fusion_reason_codes", ())),
         "fusion_version": getattr(recommendation, "fusion_version", None),
         "technical_fusion_weight": _three_decimal_text(
             getattr(recommendation, "technical_fusion_weight", None)
@@ -3474,6 +7842,14 @@ async def _ashare_research_once(
         "macro_model": resolved_model if macro_enabled else None,
         "macro_provider": macro_provider if macro_enabled else None,
         "macro_score": _decimal_text(recommendation.macro_score),
+        "macro_dual_track": {
+            "selected_track": macro_selected_track,
+            "audit_record_sha256": macro_audit_record_sha256,
+            "baseline": _macro_analysis_document(baseline_macro),
+            "adversarial": _macro_analysis_document(adversarial_macro),
+        }
+        if baseline_macro is not None and adversarial_macro is not None
+        else None,
         "market_data_failure_code": run.failure_code,
         "notification_enqueued": run.notification_enqueued,
         "reason_codes": list(recommendation.reason_codes),
@@ -3511,11 +7887,10 @@ async def _ashare_close_research_batch(
     notify_target_id: str | None,
     report_dir: str | None,
 ) -> dict[str, object]:
-    """Run a bounded, failure-isolated close-analysis batch sequentially.
+    """顺序运行有界且故障隔离的收盘分析批次。
 
-    Sequential execution is intentional: the current public providers are not
-    documented for high fan-out, while BaoStock also owns process-global
-    session state.  The batch is a research callback and has no order path.
+    顺序执行是有意设计：当前公共供应商未声明支持高扇出，而 BaoStock 还拥有进程全局
+    会话状态。该批次是研究回调，不包含订单路径。
     """
 
     from gribuki_trade.domain.candidates import (
@@ -3561,9 +7936,7 @@ async def _ashare_close_research_batch(
             "results": [],
         }
 
-    held = {
-        canonical_ashare_symbol(symbol) for symbol in (held_symbols or ())
-    }
+    held = {canonical_ashare_symbol(symbol) for symbol in (held_symbols or ())}
     selected = requested[:limit]
     deferred = requested[limit:]
     results: list[dict[str, object]] = []
@@ -3602,9 +7975,7 @@ async def _ashare_close_research_batch(
     succeeded = sum(item.get("ok") is True for item in results)
     return {
         "candidate_db": (
-            None
-            if candidate_store_path is None
-            else str(Path(candidate_store_path).resolve())
+            None if candidate_store_path is None else str(Path(candidate_store_path).resolve())
         ),
         "deferred_symbols": deferred,
         "failed_count": len(results) - succeeded,
@@ -3620,7 +7991,7 @@ def _close_batch_result_summary(
     symbol: str,
     result: dict[str, object],
 ) -> dict[str, object]:
-    """Keep batch stdout bounded while retaining each durable result identity."""
+    """限制批次标准输出大小，同时保留每个持久化结果标识。"""
 
     retained_fields = (
         "analysis_mode",
@@ -3665,8 +8036,9 @@ async def _ashare_close_research_once(
     notify_target_kind: str | None,
     notify_target_id: str | None,
     report_dir: str | None = None,
+    instrument_profile_override: ResearchInstrumentProfile | None = None,
 ) -> dict[str, object]:
-    """Run one calendar-verified after-close analysis without any order path."""
+    """运行一次经日历核验且不含任何订单路径的盘后分析。"""
 
     from gribuki_trade.adapters import (
         AKShareAShareBreadthAdapter,
@@ -3721,11 +8093,14 @@ async def _ashare_close_research_once(
         AShareCloseAnalysisService,
         AShareCloseSessionResolver,
         CloseSessionResolutionError,
+        OwnedProductionDualTrackAnalyzer,
+        ProductionLLMProfile,
         ResearchNotificationTarget,
         build_ashare_breadth_evidence,
         build_ashare_context_evidence,
         build_ashare_derivatives_evidence,
         build_official_rates_evidence,
+        build_production_dual_track_analyzer,
         build_vix_evidence,
         format_close_analysis_notification,
     )
@@ -3762,9 +8137,20 @@ async def _ashare_close_research_once(
 
     history_start = sessions.latest_completed_session - timedelta(days=history_days)
     instrument_type = _infer_close_instrument_type(symbol)
-    instrument_profile, instrument_profile_failure_code = (
-        await _resolve_close_instrument_profile_for_run(symbol)
-    )
+    if instrument_profile_override is None:
+        (
+            instrument_profile,
+            instrument_profile_failure_code,
+        ) = await _resolve_close_instrument_profile_for_run(symbol)
+    else:
+        requested_symbol = symbol.strip().upper()
+        if instrument_profile_override.symbol != requested_symbol:
+            raise ValueError("instrument profile override must match the requested symbol")
+        expected_asset_type = instrument_type.value
+        if instrument_profile_override.asset_type != expected_asset_type:
+            raise ValueError("instrument profile override asset type does not match the symbol")
+        instrument_profile = instrument_profile_override
+        instrument_profile_failure_code = None
     if instrument_profile is None:
         return {
             "error_code": "INSTRUMENT_PROFILE_UNAVAILABLE",
@@ -3776,9 +8162,7 @@ async def _ashare_close_research_once(
     network_daily_provider = HistoricalDailyFallbackRouter(
         calendar_provider,
         AKShareHistoricalDailyAdapter(
-            asset_types={
-                canonical_symbol: AKShareDailyAssetType(instrument_profile.asset_type)
-            },
+            asset_types={canonical_symbol: AKShareDailyAssetType(instrument_profile.asset_type)},
             timeout_seconds=20.0,
             minimum_source_bars=201,
         ),
@@ -3831,9 +8215,7 @@ async def _ashare_close_research_once(
                     f"{initial_request.canonical_symbol} through "
                     f"{sessions.latest_completed_session.isoformat()}"
                 ),
-                canonical_url=(
-                    f"local://market-evidence/{retained.document_id}"
-                ),
+                canonical_url=(f"local://market-evidence/{retained.document_id}"),
                 published_at=datetime.combine(
                     sessions.latest_completed_session,
                     datetime_time(15, 5),
@@ -3875,9 +8257,7 @@ async def _ashare_close_research_once(
             lookback_end=datetime.now(ZoneInfo("Asia/Shanghai")).date(),
             search_discovery=search_discovery,
             tavily_api_key=(
-                _optional_local_secret(TAVILY_API_KEY_SECRET)
-                if search_discovery
-                else None
+                _optional_local_secret(TAVILY_API_KEY_SECRET) if search_discovery else None
             ),
             searxng_base_url=searxng_url if search_discovery else None,
             searxng_bearer_token=(
@@ -3919,17 +8299,15 @@ async def _ashare_close_research_once(
             return context_id, None, f"{context_id}_UNAVAILABLE"
         return context_id, result, None
 
-    context_jobs = [
-        collect_context(
+    context_results = [
+        await collect_context(
             "LIQUIDITY_CONTEXT",
-            AKShareLiquidityContextAdapter(
-                timeout_seconds=15.0
-            ).fetch_liquidity_context_async(
+            AKShareLiquidityContextAdapter(timeout_seconds=15.0).fetch_liquidity_context_async(
                 start_date=sessions.latest_completed_session - timedelta(days=14),
                 end_date=sessions.latest_completed_session,
             ),
         ),
-        collect_context(
+        await collect_context(
             "IF_CONTEXT",
             AKShareIFContextAdapter(timeout_seconds=20.0).fetch_if_daily_context_async(
                 sessions.latest_completed_session
@@ -3937,22 +8315,17 @@ async def _ashare_close_research_once(
         ),
     ]
     if instrument_type is CloseInstrumentType.ETF:
-        context_jobs.append(
-            collect_context(
+        context_results.append(
+            await collect_context(
                 "ETF_CONTEXT",
-                AKShareETFContextAdapter(
-                    timeout_seconds=30.0
-                ).fetch_etf_context_async(canonical_symbol),
+                AKShareETFContextAdapter(timeout_seconds=30.0).fetch_etf_context_async(
+                    canonical_symbol
+                ),
             )
         )
-    context_results = await asyncio.gather(*context_jobs)
-    context_values = {
-        context_id: value for context_id, value, _failure in context_results
-    }
+    context_values = {context_id: value for context_id, value, _failure in context_results}
     ashare_context_failure_codes = tuple(
-        failure
-        for _context_id, _value, failure in context_results
-        if failure is not None
+        failure for _context_id, _value, failure in context_results if failure is not None
     )
     etf_context = cast(
         ETFContextSnapshot | None,
@@ -3980,9 +8353,9 @@ async def _ashare_close_research_once(
     global_risk_failure_codes: tuple[str, ...] = ()
     vix_visibility_cutoff = datetime.now(UTC)
     try:
-        vix_history = await CboeVIXDailyAdapter(
-            timeout_seconds=15.0
-        ).fetch_vix_daily_history(as_of=vix_visibility_cutoff)
+        vix_history = await CboeVIXDailyAdapter(timeout_seconds=15.0).fetch_vix_daily_history(
+            as_of=vix_visibility_cutoff
+        )
         global_risk = build_vix_evidence(
             vix_history,
             as_of=datetime.now(UTC),
@@ -3997,9 +8370,7 @@ async def _ashare_close_research_once(
     shibor_history = None
     rate_start = sessions.latest_completed_session - timedelta(days=14)
     try:
-        safe_history = await SafeCentralParityAdapter(
-            timeout_seconds=15.0
-        ).fetch_usd_cny_history(
+        safe_history = await SafeCentralParityAdapter(timeout_seconds=15.0).fetch_usd_cny_history(
             start_date=rate_start,
             end_date=sessions.latest_completed_session,
             as_of=official_rates_cutoff,
@@ -4007,9 +8378,7 @@ async def _ashare_close_research_once(
     except OfficialRatesDataError:
         official_rates_failure_codes.append("SAFE_USD_CNY_UNAVAILABLE")
     try:
-        shibor_history = await OfficialShiborAdapter(
-            timeout_seconds=15.0
-        ).fetch_shibor_history(
+        shibor_history = await OfficialShiborAdapter(timeout_seconds=15.0).fetch_shibor_history(
             start_date=rate_start,
             end_date=sessions.latest_completed_session,
             as_of=official_rates_cutoff,
@@ -4025,23 +8394,16 @@ async def _ashare_close_research_once(
     etf_share_observation: SSEETFShareObservation | None = None
     option_risk_snapshot: SSEOptionRiskSnapshot | None = None
     ashare_derivatives_failure_codes: list[str] = []
-    if (
-        instrument_type is CloseInstrumentType.ETF
-        and instrument_profile.exchange == "sse"
-    ):
+    if instrument_type is CloseInstrumentType.ETF and instrument_profile.exchange == "sse":
         local_symbol = canonical_symbol.split(".", maxsplit=1)[0]
         try:
-            etf_share_observation = await SSEETFShareAdapter(
-                timeout_seconds=15.0
-            ).fetch_etf_shares(
+            etf_share_observation = await SSEETFShareAdapter(timeout_seconds=15.0).fetch_etf_shares(
                 local_symbol,
                 sessions.latest_completed_session,
                 allow_latest_available=True,
             )
         except SSEETFShareDataError:
-            ashare_derivatives_failure_codes.append(
-                "SSE_ETF_OFFICIAL_SHARES_UNAVAILABLE"
-            )
+            ashare_derivatives_failure_codes.append("SSE_ETF_OFFICIAL_SHARES_UNAVAILABLE")
         try:
             option_risk_snapshot = await SSEOptionRiskAdapter(
                 timeout_seconds=15.0
@@ -4051,19 +8413,15 @@ async def _ashare_close_research_once(
                 allow_latest_available=True,
             )
         except SSEOptionRiskDataError:
-            ashare_derivatives_failure_codes.append(
-                "SSE_OPTION_OFFICIAL_RISK_UNAVAILABLE"
-            )
+            ashare_derivatives_failure_codes.append("SSE_OPTION_OFFICIAL_RISK_UNAVAILABLE")
 
-    # The report decision timestamp must be captured after every network fetch.
-    # Otherwise a source fetched a few milliseconds later than the earlier
-    # timestamp is correctly rejected by the PIT evidence gate as "future".
+    # 报告决策时间戳必须在所有网络拉取完成后捕获，否则比先前时间戳晚几毫秒拉取的来源
+    # 会被时点证据门控正确地拒绝为“未来”数据。
     decision_time = datetime.now(UTC)
     local_decision_time = decision_time.astimezone(ZoneInfo("Asia/Shanghai"))
-    if (
-        sessions.next_session == local_decision_time.date()
-        and local_decision_time.time().replace(tzinfo=None) >= datetime_time(9, 30)
-    ):
+    if sessions.next_session == local_decision_time.date() and local_decision_time.time().replace(
+        tzinfo=None
+    ) >= datetime_time(9, 30):
         return {
             "error_code": "NEXT_SESSION_ALREADY_OPENED",
             "ok": False,
@@ -4087,21 +8445,35 @@ async def _ashare_close_research_once(
         as_of=decision_time,
     )
 
+    research_path = Path(research_db).resolve()
+    outbox_path = Path(outbox_db).resolve()
+    research_path.parent.mkdir(parents=True, exist_ok=True)
+    outbox_path.parent.mkdir(parents=True, exist_ok=True)
+
     analyzer: MacroAnalyzer | None = None
+    owned_dual: OwnedProductionDualTrackAnalyzer | None = None
     resolved_model = model or (
         DEFAULT_DEEPSEEK_MODEL if macro_provider == "deepseek" else "gpt-5.6"
     )
     if macro_enabled and preliminary.decision is not RecommendationDecision.ABSTAIN:
+        baseline_analyzer: MacroAnalyzer
         if macro_provider == "deepseek":
-            analyzer = DeepSeekChatMacroAnalyzer(
+            baseline_analyzer = DeepSeekChatMacroAnalyzer(
                 SecretValue(_required_local_secret(DEEPSEEK_API_KEY_SECRET)),
                 model=resolved_model,
             )
         else:
-            analyzer = OpenAIResponsesMacroAnalyzer(
+            baseline_analyzer = OpenAIResponsesMacroAnalyzer(
                 SecretValue(_required_local_secret(OPENAI_API_KEY_SECRET)),
                 model=resolved_model,
             )
+        owned_dual = build_production_dual_track_analyzer(
+            baseline_analyzer,
+            audit_path=research_path.with_name("llm-adversarial.sqlite3"),
+            profile=ProductionLLMProfile.DEEP,
+            maximum_calls_per_session=None,
+        )
+        analyzer = owned_dual
 
     final_request = AShareCloseAnalysisRequest(
         symbol=initial_request.canonical_symbol,
@@ -4124,9 +8496,7 @@ async def _ashare_close_research_once(
         official_rates=official_rates,
         official_rates_failure_codes=tuple(official_rates_failure_codes),
         ashare_derivatives=ashare_derivatives,
-        ashare_derivatives_failure_codes=tuple(
-            ashare_derivatives_failure_codes
-        ),
+        ashare_derivatives_failure_codes=tuple(ashare_derivatives_failure_codes),
         cross_market_snapshot=cross_market_snapshot,
         cross_market_failure_code=cross_market_failure_code,
         cross_market_history=cross_market_history,
@@ -4143,25 +8513,25 @@ async def _ashare_close_research_once(
             max_characters=7_500,
         )
     )
-    research_path = Path(research_db).resolve()
-    outbox_path = Path(outbox_db).resolve()
-    research_path.parent.mkdir(parents=True, exist_ok=True)
-    outbox_path.parent.mkdir(parents=True, exist_ok=True)
-    with SQLiteOutbox(outbox_path) as outbox:
-        service = AShareCloseAnalysisService(
-            daily_provider,
-            macro_analyzer=analyzer,
-            gate_config=RecommendationGateConfig(
-                technical_weight=Decimal("1") - macro_weight,
-                macro_weight=macro_weight,
-            ),
-            outbox=outbox,
-        )
-        run = await service.evaluate_collection(
-            final_request,
-            collection,
-            notification_target=target,
-        )
+    try:
+        with SQLiteOutbox(outbox_path) as outbox:
+            service = AShareCloseAnalysisService(
+                daily_provider,
+                macro_analyzer=analyzer,
+                gate_config=RecommendationGateConfig(
+                    technical_weight=Decimal("1") - macro_weight,
+                    macro_weight=macro_weight,
+                ),
+                outbox=outbox,
+            )
+            run = await service.evaluate_collection(
+                final_request,
+                collection,
+                notification_target=target,
+            )
+    finally:
+        if owned_dual is not None:
+            owned_dual.close()
     with SQLiteResearchStore(research_path) as research_store:
         stored = research_store.append_recommendation(run.recommendation)
 
@@ -4192,17 +8562,17 @@ async def _ashare_close_research_once(
             global_risk_failure_codes=run.global_risk_failure_codes,
             official_rates_report_lines=run.official_rates_report_lines,
             official_rates_failure_codes=run.official_rates_failure_codes,
-            ashare_derivatives_report_lines=(
-                run.ashare_derivatives_report_lines
-            ),
-            ashare_derivatives_failure_codes=(
-                run.ashare_derivatives_failure_codes
-            ),
+            ashare_derivatives_report_lines=(run.ashare_derivatives_report_lines),
+            ashare_derivatives_failure_codes=(run.ashare_derivatives_failure_codes),
             cross_market_report_lines=run.cross_market_report_lines,
             cross_market_failure_code=run.cross_market_failure_code,
             cross_market_relation_report_lines=run.cross_market_relation_report_lines,
             cross_market_history_failure_code=run.cross_market_history_failure_code,
             evidence_selection=run.evidence_selection,
+            baseline_macro=run.baseline_macro,
+            adversarial_macro=run.adversarial_macro,
+            selected_track=run.macro_selected_track,
+            audit_record_sha256=run.macro_audit_record_sha256,
         )
         report_root = Path(report_dir).resolve()
         report_stem = (
@@ -4235,15 +8605,9 @@ async def _ashare_close_research_once(
         "combined_score": _three_decimal_text(recommendation.combined_score),
         "fusion_reason_codes": list(recommendation.fusion_reason_codes),
         "fusion_version": recommendation.fusion_version,
-        "technical_fusion_weight": _three_decimal_text(
-            recommendation.technical_fusion_weight
-        ),
-        "macro_fusion_weight": _three_decimal_text(
-            recommendation.macro_fusion_weight
-        ),
-        "macro_evidence_coverage": _three_decimal_text(
-            recommendation.macro_evidence_coverage
-        ),
+        "technical_fusion_weight": _three_decimal_text(recommendation.technical_fusion_weight),
+        "macro_fusion_weight": _three_decimal_text(recommendation.macro_fusion_weight),
+        "macro_evidence_coverage": _three_decimal_text(recommendation.macro_evidence_coverage),
         "ashare_context_evidence": len(ashare_context.items),
         "ashare_context_failure_codes": list(run.ashare_context_failure_codes),
         "ashare_breadth_evidence": len(ashare_breadth.items),
@@ -4254,9 +8618,7 @@ async def _ashare_close_research_once(
         "official_rates_evidence": len(official_rates.items),
         "official_rates_failure_codes": list(run.official_rates_failure_codes),
         "ashare_derivatives_evidence": len(ashare_derivatives.items),
-        "ashare_derivatives_failure_codes": list(
-            run.ashare_derivatives_failure_codes
-        ),
+        "ashare_derivatives_failure_codes": list(run.ashare_derivatives_failure_codes),
         "cross_market_history_failure_code": run.cross_market_history_failure_code,
         "cross_market_history_missing": (
             0 if cross_market_history is None else len(cross_market_history.missing)
@@ -4279,11 +8641,30 @@ async def _ashare_close_research_once(
         "instrument_type": instrument_type.value,
         "instrument_profile": _instrument_profile_document(instrument_profile),
         "instrument_profile_failure_code": instrument_profile_failure_code,
+        "invalidation_price": _three_decimal_text(recommendation.invalidation_price),
         "latest_completed_session": sessions.latest_completed_session.isoformat(),
         "macro": _macro_analysis_document(run.macro),
         "macro_enabled": macro_enabled,
         "macro_failure_code": run.macro_failure_code,
         "macro_score": _three_decimal_text(recommendation.macro_score),
+        "macro_dual_track": {
+            "analysis_id": _macro_dual_analysis_id(
+                run.baseline_macro,
+                run.adversarial_macro,
+            ),
+            "selected_track": run.macro_selected_track,
+            "audit_record_sha256": run.macro_audit_record_sha256,
+            "baseline": _macro_track_document(
+                run.baseline_macro,
+                recommendation.evidence,
+            ),
+            "adversarial": _macro_track_document(
+                run.adversarial_macro,
+                recommendation.evidence,
+            ),
+        }
+        if run.baseline_macro is not None or run.adversarial_macro is not None
+        else None,
         "macro_model": resolved_model if macro_enabled else None,
         "macro_provider": macro_provider if macro_enabled else None,
         "macro_weight": _three_decimal_text(macro_weight),
@@ -4323,7 +8704,7 @@ async def _ashare_close_research_once(
 
 
 def _infer_close_instrument_type(symbol: str) -> CloseInstrumentType:
-    """Resolve stock/ETF semantics from the validated watchlist, then code family."""
+    """先从已校验观察列表、再从代码族解析股票/ETF 语义。"""
 
     from gribuki_trade.watchlists import WatchlistAssetType, load_research_watchlist
 
@@ -4353,7 +8734,7 @@ def _infer_close_instrument_type(symbol: str) -> CloseInstrumentType:
 def _resolve_close_instrument_profile(
     symbol: str,
 ) -> ResearchInstrumentProfile | None:
-    """Return the retained watchlist profile without making it an order input."""
+    """返回已保留观察列表档案，且不将其变为订单输入。"""
 
     from gribuki_trade.watchlists import load_research_watchlist
 
@@ -4367,11 +8748,10 @@ def _resolve_close_instrument_profile(
 async def _resolve_close_instrument_profile_for_run(
     symbol: str,
 ) -> tuple[ResearchInstrumentProfile | None, str | None]:
-    """Prefer the retained profile, then fetch a current dynamic snapshot.
+    """优先使用已保留档案，否则拉取当前动态快照。
 
-    The live fallback is intentionally unsuitable for historical replay.  Its
-    adapter enforces a near-current point-in-time cutoff and the resulting
-    profile is persisted with the recommendation for later reproduction.
+    实时回退刻意不适合历史回放。其适配器强制执行接近当前时刻的时点截点，所得档案
+    会随推荐一同持久化，供日后复现。
     """
 
     retained = _resolve_close_instrument_profile(symbol)
@@ -4385,9 +8765,9 @@ async def _resolve_close_instrument_profile_for_run(
 
     try:
         profile_cutoff = datetime.now(UTC)
-        profile = await AKShareInstrumentProfileAdapter(
-            timeout_seconds=20.0
-        ).fetch(symbol, known_at=profile_cutoff)
+        profile = await AKShareInstrumentProfileAdapter(timeout_seconds=20.0).fetch(
+            symbol, known_at=profile_cutoff
+        )
     except InstrumentProfileDataError as error:
         return None, error.code
     except ValueError:
@@ -4419,7 +8799,7 @@ def _instrument_profile_document(
 
 
 def _daily_evidence_provider_id(source_name: str | None) -> str:
-    """Map retained route diagnostics to a stable, non-URL source identifier."""
+    """将已保留路由诊断映射为稳定且不含 URL 的来源标识。"""
 
     if source_name is None or source_name == "BaoStock":
         return "baostock.daily"
@@ -4507,9 +8887,7 @@ async def _collect_close_research_news(
         transport = HttpxNewsTransport()
         search_providers: list[NewsSearchProvider] = []
         if tavily_api_key is not None:
-            search_providers.append(
-                TavilySearchProvider(transport, api_key=tavily_api_key)
-            )
+            search_providers.append(TavilySearchProvider(transport, api_key=tavily_api_key))
         if searxng_base_url is not None:
             search_providers.append(
                 SearXNGSearchProvider(
@@ -4520,9 +8898,7 @@ async def _collect_close_research_news(
             )
         if search_providers:
             instrument_name = entity_aliases[0] if entity_aliases else symbol
-            query_aliases = tuple(
-                alias for alias in entity_aliases[1:] if alias != instrument_name
-            )
+            query_aliases = tuple(alias for alias in entity_aliases[1:] if alias != instrument_name)
             discovery_queries = [
                 DiscoveryQuery.for_stock(
                     symbol=symbol,
@@ -4555,9 +8931,7 @@ async def _collect_close_research_news(
                         max_results=8,
                     )
                 )
-            discovery_source_id = (
-                f"discovery.search.{symbol.split('.', maxsplit=1)[0]}"
-            )
+            discovery_source_id = f"discovery.search.{symbol.split('.', maxsplit=1)[0]}"
             if discovery_source_id in sources:
                 raise ValueError(f"duplicate news source ID: {discovery_source_id}")
             sources[discovery_source_id] = MultiProviderDiscoverySource(
@@ -4574,7 +8948,9 @@ async def _collect_close_research_news(
             sources,
             raw_store=FileRawDocumentStore(root / "raw"),
             event_store=event_store,
-            max_concurrency=4,
+            # 多条 AKShare 路由会实例化嵌入式 V8 运行时，因此 Windows 生产路径中即使只有
+            # 一个持仓标的研究调用，也必须串行采集所有来源。
+            max_concurrency=1,
         )
         results = await service.run_once()
         events = event_store.latest(limit=2_000)
@@ -4648,6 +9024,50 @@ def _macro_analysis_document(value: object | None) -> dict[str, object] | None:
     }
 
 
+def _macro_track_document(
+    value: object | None,
+    evidence: Sequence[object],
+) -> dict[str, object] | None:
+    """投影一条 LLM 轨道，并独立计算它实际引用的冻结证据比例。"""
+
+    from gribuki_trade.analysis.schemas import MacroAnalysis
+
+    if not isinstance(value, MacroAnalysis):
+        return None
+    document = _macro_analysis_document(value)
+    if document is None:  # pragma: no cover - 由上方类型检查保证
+        return None
+    available = {
+        evidence_id
+        for item in evidence
+        if isinstance((evidence_id := getattr(item, "evidence_id", None)), str) and evidence_id
+    }
+    referenced = {evidence_id for claim in value.claims for evidence_id in claim.evidence_ids}
+    referenced.update(
+        evidence_id for scenario in value.scenarios for evidence_id in scenario.evidence_ids
+    )
+    coverage = (
+        Decimal("0")
+        if not available
+        else Decimal(len(referenced & available)) / Decimal(len(available))
+    )
+    return {
+        **document,
+        "analysis_id": value.analysis_id,
+        "evidence_coverage": _three_decimal_text(coverage),
+        "model_version": value.model_version,
+    }
+
+
+def _macro_dual_analysis_id(baseline: object | None, adversarial: object | None) -> str | None:
+    from gribuki_trade.analysis.schemas import MacroAnalysis
+
+    for analysis in (baseline, adversarial):
+        if isinstance(analysis, MacroAnalysis) and analysis.analysis_id.strip():
+            return analysis.analysis_id
+    return None
+
+
 async def _ashare_research_watch(
     symbols: Sequence[str] | None,
     watchlist_path: str,
@@ -4667,7 +9087,7 @@ async def _ashare_research_watch(
     candidate_store_path: str | None = None,
     candidates_only: bool = False,
 ) -> dict[str, object]:
-    """Run bounded research cycles with per-symbol failure isolation."""
+    """运行有界研究周期，并按标的隔离失败。"""
 
     from gribuki_trade.services import ResearchWatchService
 
@@ -4847,24 +9267,19 @@ async def _napcat_status(base_url: str) -> dict[str, object]:
             "retryable": False,
         }
     try:
-        async with OneBotNotifier(
-            OneBotConfig(access_token=token, base_url=base_url)
-        ) as notifier:
+        async with OneBotNotifier(OneBotConfig(access_token=token, base_url=base_url)) as notifier:
             status = await notifier.get_status()
             version = await notifier.get_version_info()
     except OneBotError as error:
         if error.code == "transport_error":
-            next_action = (
-                "powershell.exe -NoProfile -ExecutionPolicy Bypass -File "
-                ".\\scripts\\start_napcat.ps1"
-            )
+            next_action = "在 GUI 的‘集成管理’页显式启动 NapCat 并完成 QQ 登录"
         elif error.code == "authentication_rejected":
             next_action = (
                 ".\\.venv\\Scripts\\python.exe -m gribuki_trade "
                 "secret-set napcat.onebot.access_token"
             )
         else:
-            next_action = "inspect the local NapCat console and WebUI"
+            next_action = "在 GUI 的‘集成管理’页检查 NapCat 状态和本机 WebUI"
         return {
             "app_name": "unknown",
             "base_url": base_url,
@@ -4895,7 +9310,7 @@ async def _napcat_dispatch(
     cycles: int,
     poll_interval: float,
 ) -> dict[str, object]:
-    """Run a finite outbound-only OneBot outbox worker."""
+    """运行有限且仅出站的 OneBot 发件箱工作器。"""
 
     if cycles < 1:
         raise ValueError("cycles must be positive")
@@ -4927,6 +9342,8 @@ async def _napcat_dispatch(
             service = NotificationDispatchService(
                 outbox,
                 {notifier.channel: notifier},
+                target_kind=target_kind,
+                target_id=target_id,
             )
             statistics = await service.poll(
                 max_cycles=cycles,
@@ -4959,6 +9376,10 @@ async def _napcat_send_test(
         NotificationTargetKind,
         OutboundNotification,
     )
+    from gribuki_trade.reporting.contracts import (
+        ReportKind,
+        render_stable_text_report,
+    )
 
     target_kind = NotificationTargetKind(target_kind_value)
     token = _required_local_secret(NAPCAT_ACCESS_TOKEN_SECRET)
@@ -4974,12 +9395,28 @@ async def _napcat_send_test(
         ),
     )
     created_at = datetime.now(UTC)
+    target_label = "私聊" if target_kind is NotificationTargetKind.PRIVATE else "群聊"
+    health_text = render_stable_text_report(
+        ReportKind.SYSTEM_HEALTH,
+        title="Gribuki Trade｜NapCat 通知链路测试",
+        sections={
+            "总体状态": "正在执行一次显式、只读的通知链路测试；不包含交易指令。",
+            "数据源": "本测试不读取行情、新闻或账户数据。",
+            "模型与通知": (
+                f"仅验证本地 NapCat/OneBot 到{target_label}目标的出站消息；不调用 LLM。"
+            ),
+            "缺口与恢复动作": (
+                f"测试发起时点：{created_at.isoformat(timespec='seconds')}；"
+                "若未收到，请在 GUI 集成管理页检查 NapCat 与 QQ 登录状态。"
+            ),
+        },
+    )
     notification = OutboundNotification(
         idempotency_key=f"manual-health-test:{target_kind.value}:{int(created_at.timestamp())}",
         channel="onebot",
         target_kind=target_kind,
         target_id=target_id,
-        text="Gribuki Trade 通知链路测试：仅验证 NapCat/OneBot 出站消息，不包含交易指令。",
+        text=health_text,
         created_at=created_at,
         expires_at=created_at + timedelta(minutes=5),
     )
@@ -4998,52 +9435,224 @@ async def _napcat_send_artifact(
     target_kind_value: str,
     target_id: str,
     artifact_kind: str,
+    report_kind_value: str,
     artifact_root: str,
     artifact: str,
+    receipt_database: str,
 ) -> dict[str, object]:
-    """Explicitly send one locally generated report artifact through NapCat."""
+    """经报告契约和持久交付边界显式发送一份 Markdown 报告。"""
 
     from gribuki_trade.adapters.notifiers import OneBotConfig, OneBotNotifier
     from gribuki_trade.ports.notifier import NotificationTargetKind
+    from gribuki_trade.reporting.contracts import (
+        ReportKind,
+        validate_markdown_report_contract,
+    )
+    from gribuki_trade.storage.report_artifact_outbox import (
+        ReportArtifactOutboxError,
+        ReportArtifactStatus,
+        SQLiteReportArtifactOutbox,
+    )
 
     target_kind = NotificationTargetKind(target_kind_value)
-    if artifact_kind not in {"image", "file"}:
-        raise ValueError("artifact_kind must be image or file")
-    token = _required_local_secret(NAPCAT_ACCESS_TOKEN_SECRET)
-    allowlist = frozenset({target_id})
-    root = Path(artifact_root).resolve()
-    config = OneBotConfig(
-        access_token=token,
-        base_url=base_url,
-        private_target_ids=(
-            allowlist if target_kind is NotificationTargetKind.PRIVATE else frozenset()
-        ),
-        group_target_ids=(
-            allowlist if target_kind is NotificationTargetKind.GROUP else frozenset()
-        ),
-        artifact_root=root,
+    if artifact_kind != "file":
+        raise ValueError("napcat-send-artifact only accepts Markdown report files")
+    report_kind = ReportKind(report_kind_value)
+    root, resolved = _validated_markdown_report_artifact(artifact_root, artifact)
+    report_bytes = resolved.read_bytes()
+    report_text = report_bytes.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    validate_markdown_report_contract(report_kind, report_text)
+    artifact_sha256 = hashlib.sha256(report_bytes).hexdigest()
+    key_material = "\0".join(
+        (
+            "napcat-report-artifact@1",
+            report_kind.value,
+            target_kind.value,
+            target_id,
+            artifact_sha256,
+        )
     )
-    async with OneBotNotifier(config) as notifier:
-        if artifact_kind == "image":
-            receipt = (
-                await notifier.send_private_image(target_id, artifact)
-                if target_kind is NotificationTargetKind.PRIVATE
-                else await notifier.send_group_image(target_id, artifact)
+    idempotency_key = "report-artifact:" + hashlib.sha256(key_material.encode("utf-8")).hexdigest()
+    receipt_path = Path(receipt_database).expanduser().resolve()
+    created_at = datetime.now(UTC)
+    claimed = False
+
+    try:
+        with SQLiteReportArtifactOutbox(receipt_path) as outbox:
+            delivery = outbox.enqueue(
+                idempotency_key=idempotency_key,
+                report_kind=report_kind.value,
+                target_kind=target_kind,
+                target_id=target_id,
+                artifact_name=resolved.name,
+                artifact_sha256=artifact_sha256,
+                created_at=created_at,
             )
-            provider_identifier = receipt.provider_message_id
-        else:
-            file_receipt = (
-                await notifier.upload_private_file(target_id, artifact)
-                if target_kind is NotificationTargetKind.PRIVATE
-                else await notifier.upload_group_file(target_id, artifact)
+            if delivery.status is ReportArtifactStatus.SENT:
+                return _report_artifact_delivery_result(
+                    delivery.provider_identifier,
+                    artifact_sha256=artifact_sha256,
+                    artifact_kind=artifact_kind,
+                    report_kind=report_kind.value,
+                    target_kind=target_kind.value,
+                    already_sent=True,
+                )
+
+            token = _required_local_secret(NAPCAT_ACCESS_TOKEN_SECRET)
+            allowlist = frozenset({target_id})
+            config = OneBotConfig(
+                access_token=token,
+                base_url=base_url,
+                private_target_ids=(
+                    allowlist if target_kind is NotificationTargetKind.PRIVATE else frozenset()
+                ),
+                group_target_ids=(
+                    allowlist if target_kind is NotificationTargetKind.GROUP else frozenset()
+                ),
+                artifact_root=root,
             )
-            provider_identifier = file_receipt.provider_file_id
+            async with OneBotNotifier(config) as notifier:
+                delivery = outbox.claim(idempotency_key, claimed_at=datetime.now(UTC))
+                if delivery.status is ReportArtifactStatus.SENT:
+                    return _report_artifact_delivery_result(
+                        delivery.provider_identifier,
+                        artifact_sha256=artifact_sha256,
+                        artifact_kind=artifact_kind,
+                        report_kind=report_kind.value,
+                        target_kind=target_kind.value,
+                        already_sent=True,
+                    )
+                claimed = True
+                if _post_close_sha256(resolved) != artifact_sha256:
+                    outbox.mark_ambiguous(idempotency_key)
+                    raise ReportArtifactOutboxError("REPORT_ARTIFACT_CHANGED")
+                try:
+                    file_receipt = (
+                        await notifier.upload_private_file(target_id, str(resolved))
+                        if target_kind is NotificationTargetKind.PRIVATE
+                        else await notifier.upload_group_file(target_id, str(resolved))
+                    )
+                    provider_identifier = file_receipt.provider_file_id
+                    if provider_identifier is None:
+                        raise ReportArtifactOutboxError("REPORT_ARTIFACT_PROVIDER_RECEIPT_MISSING")
+                    delivery = outbox.mark_sent(
+                        idempotency_key,
+                        provider_identifier=provider_identifier,
+                        sent_at=datetime.now(UTC),
+                    )
+                except BaseException:
+                    with suppress(Exception):
+                        outbox.mark_ambiguous(idempotency_key)
+                    raise
+    except asyncio.CancelledError:
+        raise
+    except ReportArtifactOutboxError as error:
+        return _report_artifact_failure_result(
+            error.code,
+            artifact_sha256=artifact_sha256,
+            artifact_kind=artifact_kind,
+            report_kind=report_kind.value,
+            target_kind=target_kind.value,
+        )
+    except Exception:
+        return _report_artifact_failure_result(
+            (
+                "REPORT_ARTIFACT_DELIVERY_AMBIGUOUS"
+                if claimed
+                else "REPORT_ARTIFACT_DELIVERY_FAILED"
+            ),
+            artifact_sha256=artifact_sha256,
+            artifact_kind=artifact_kind,
+            report_kind=report_kind.value,
+            target_kind=target_kind.value,
+        )
+
+    return _report_artifact_delivery_result(
+        delivery.provider_identifier,
+        artifact_sha256=artifact_sha256,
+        artifact_kind=artifact_kind,
+        report_kind=report_kind.value,
+        target_kind=target_kind.value,
+        already_sent=False,
+    )
+
+
+def _validated_markdown_report_artifact(
+    artifact_root: str,
+    artifact: str,
+) -> tuple[Path, Path]:
+    root_input = Path(artifact_root).expanduser()
+    if root_input.is_symlink():
+        raise ValueError("artifact_root must not be a symbolic link")
+    try:
+        root = root_input.resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise ValueError("artifact_root must be an existing directory") from None
+    if not root.is_dir():
+        raise ValueError("artifact_root must be an existing directory")
+    supplied = Path(artifact).expanduser()
+    candidate = supplied if supplied.is_absolute() else root / supplied
+    lexical = Path(os.path.abspath(candidate))
+    try:
+        relative = lexical.relative_to(root)
+    except ValueError:
+        raise ValueError("artifact must remain inside artifact_root") from None
+    current = root
+    try:
+        for part in relative.parts:
+            current /= part
+            if current.is_symlink():
+                raise ValueError("artifact path must not contain symbolic links")
+        resolved = lexical.resolve(strict=True)
+        resolved.relative_to(root)
+    except ValueError:
+        raise
+    except (OSError, RuntimeError):
+        raise ValueError("artifact must be an existing regular file") from None
+    if not resolved.is_file() or resolved.suffix.casefold() not in {".md", ".markdown"}:
+        raise ValueError("artifact must be an existing Markdown file")
+    return root, resolved
+
+
+def _report_artifact_delivery_result(
+    provider_identifier: str | None,
+    *,
+    artifact_sha256: str,
+    artifact_kind: str,
+    report_kind: str,
+    target_kind: str,
+    already_sent: bool,
+) -> dict[str, object]:
     return {
+        "already_sent": already_sent,
         "artifact_kind": artifact_kind,
+        "artifact_sha256": artifact_sha256,
         "channel": "onebot",
         "delivered": True,
+        "ok": True,
         "provider_identifier": provider_identifier,
-        "target_kind": target_kind.value,
+        "report_kind": report_kind,
+        "target_kind": target_kind,
+    }
+
+
+def _report_artifact_failure_result(
+    error_code: str,
+    *,
+    artifact_sha256: str,
+    artifact_kind: str,
+    report_kind: str,
+    target_kind: str,
+) -> dict[str, object]:
+    return {
+        "artifact_kind": artifact_kind,
+        "artifact_sha256": artifact_sha256,
+        "channel": "onebot",
+        "delivered": False,
+        "error_code": error_code,
+        "ok": False,
+        "report_kind": report_kind,
+        "target_kind": target_kind,
     }
 
 
@@ -5063,7 +9672,7 @@ async def _binance_history_sync(
     environment_value: str,
     database: str,
 ) -> dict[str, object]:
-    """Collect only completed public Spot bars into the immutable archive."""
+    """仅将已完成公共现货行情柱采集到不可变归档。"""
 
     from gribuki_trade.adapters.binance import (
         BinanceKlineArchive,
@@ -5124,7 +9733,7 @@ def _binance_backtest(
     taker_fee: Decimal,
     slippage: Decimal,
 ) -> dict[str, object]:
-    """Run one reproducible baseline replay over the immutable archive."""
+    """在不可变归档上运行一次可复现基线回放。"""
 
     from gribuki_trade.adapters.binance import BinanceKlineArchive
     from gribuki_trade.backtest import CryptoFeeConfig
@@ -5182,7 +9791,7 @@ async def _binance_shadow_run(
     rebalance_band: Decimal,
     maximum_order_notional: Decimal,
 ) -> dict[str, object]:
-    """Run public Binance data through the local-only PAPER shadow engine."""
+    """通过纯本地 PAPER 影子引擎运行 Binance 公共数据。"""
 
     from gribuki_trade.adapters.binance import BinanceSpotGateway
     from gribuki_trade.services import BinanceShadowConfig, BinanceShadowSession
@@ -5217,8 +9826,7 @@ async def _binance_shadow_run(
         symbol=symbol,
         interval=interval,
         account_id=(
-            f"binance-shadow-{environment.value.lower()}-"
-            f"{symbol.lower()}-{interval.lower()}"
+            f"binance-shadow-{environment.value.lower()}-{symbol.lower()}-{interval.lower()}"
         ),
         initial_balances={"BTC": "0", "ETH": "0", "USDT": initial_quote},
         maximum_order_notional=maximum_order_notional,
@@ -5236,9 +9844,7 @@ async def _binance_shadow_run(
     database_path.parent.mkdir(parents=True, exist_ok=True)
 
     def exchange_clock() -> datetime:
-        return datetime.now(UTC) + timedelta(
-            milliseconds=history_gateway.server_time_offset_ms
-        )
+        return datetime.now(UTC) + timedelta(milliseconds=history_gateway.server_time_offset_ms)
 
     store = SQLiteOrderManagementStore(database_path)
     try:
@@ -5310,7 +9916,7 @@ async def _binance_futures_demo_status(
     quantity: Decimal | None = None,
     side: str = "BUY",
 ) -> dict[str, object]:
-    """Probe Futures Demo, optionally using isolated credentials for safe checks."""
+    """探测期货模拟环境，并可选使用隔离凭据进行安全检查。"""
 
     from gribuki_trade.adapters.binance import (
         BinanceFuturesRestClient,
@@ -5322,20 +9928,14 @@ async def _binance_futures_demo_status(
         "BTCUSDT" if product is BinanceProduct.USDS_FUTURES else "BTCUSD_PERP"
     )
     if validate_order_test and confirm != "FUTURES_DEMO_TEST":
-        raise RuntimeError(
-            "--validate-order-test requires --confirm FUTURES_DEMO_TEST"
-        )
+        raise RuntimeError("--validate-order-test requires --confirm FUTURES_DEMO_TEST")
     if not validate_order_test and confirm is not None:
         raise RuntimeError("--confirm is accepted only with --validate-order-test")
 
     resolved_quantity = (
         quantity
         if quantity is not None
-        else (
-            Decimal("0.001")
-            if product is BinanceProduct.USDS_FUTURES
-            else Decimal("1")
-        )
+        else (Decimal("0.001") if product is BinanceProduct.USDS_FUTURES else Decimal("1"))
     )
     if (
         product is BinanceProduct.COIN_FUTURES
@@ -5409,9 +10009,7 @@ async def _binance_futures_demo_status(
             "order_type": "MARKET" if order_test_validated else None,
             "quantity": format(resolved_quantity, "f") if order_test_validated else None,
             "quantity_unit": (
-                "base_asset"
-                if product is BinanceProduct.USDS_FUTURES
-                else "contracts"
+                "base_asset" if product is BinanceProduct.USDS_FUTURES else "contracts"
             ),
             "side": side if order_test_validated else None,
         },
@@ -5431,9 +10029,7 @@ async def _binance_testnet_status(symbol: str) -> dict[str, object]:
     await gateway.synchronize_time()
     account = await gateway.account()
     ticker = await gateway.ticker_price(symbol)
-    nonzero_assets = sum(
-        balance.free != 0 or balance.locked != 0 for balance in account.balances
-    )
+    nonzero_assets = sum(balance.free != 0 or balance.locked != 0 for balance in account.balances)
     return {
         "account_type": account.account_type,
         "can_trade": account.can_trade,
@@ -5462,16 +10058,14 @@ async def _build_test_order(
         raw_price = book.bids[0].price * Decimal("0.95")
     else:
         raw_price = (await gateway.ticker_price(symbol)).price
-    price = (
-        raw_price / rules.tick_size
-    ).to_integral_value(rounding=ROUND_FLOOR) * rules.tick_size
+    price = (raw_price / rules.tick_size).to_integral_value(rounding=ROUND_FLOOR) * rules.tick_size
     notional = max(
         target_notional,
         (rules.min_notional or Decimal("0")) * Decimal("2"),
     )
-    quantity = (
-        notional / price / rules.step_size
-    ).to_integral_value(rounding=ROUND_CEILING) * rules.step_size
+    quantity = (notional / price / rules.step_size).to_integral_value(
+        rounding=ROUND_CEILING
+    ) * rules.step_size
     return OrderIntent(
         client_order_id=f"gri-cli-{time.time_ns():x}-{uuid4().hex[:8]}",
         account_id=DEFAULT_TESTNET_ACCOUNT,
@@ -5489,7 +10083,7 @@ async def _build_marketable_test_order(
     symbol: str,
     target_notional: Decimal,
 ) -> OrderIntent:
-    """Build a small TESTNET BUY with a bounded marketable limit price."""
+    """构建一张限价有界且可成交的小额测试网买单。"""
 
     if gateway.environment is not BinanceEnvironment.TESTNET:
         raise RuntimeError("marketable smoke orders are restricted to Binance TESTNET")
@@ -5499,16 +10093,16 @@ async def _build_marketable_test_order(
         raise RuntimeError("Binance Testnet returned an empty ask book")
     best_ask = book.asks[0].price
     raw_limit_price = best_ask * Decimal("1.005")
-    limit_price = (
-        raw_limit_price / rules.tick_size
-    ).to_integral_value(rounding=ROUND_CEILING) * rules.tick_size
+    limit_price = (raw_limit_price / rules.tick_size).to_integral_value(
+        rounding=ROUND_CEILING
+    ) * rules.tick_size
     notional = max(
         target_notional,
         (rules.min_notional or Decimal("0")) * Decimal("1.10"),
     )
-    quantity = (
-        notional / limit_price / rules.step_size
-    ).to_integral_value(rounding=ROUND_CEILING) * rules.step_size
+    quantity = (notional / limit_price / rules.step_size).to_integral_value(
+        rounding=ROUND_CEILING
+    ) * rules.step_size
     quantity = max(quantity, rules.min_quantity)
     rules.validate_limit_order(
         quantity=quantity,
@@ -5582,9 +10176,7 @@ async def _binance_testnet_cycle(
         )
         user_stream = BinanceSpotUserDataStream(
             credentials,
-            clock_ms=lambda: (
-                time.time_ns() // 1_000_000 + gateway.server_time_offset_ms
-            ),
+            clock_ms=lambda: time.time_ns() // 1_000_000 + gateway.server_time_offset_ms,
         )
         reports: asyncio.Queue[BinanceExecutionReport] = asyncio.Queue()
 
@@ -5650,11 +10242,10 @@ async def _binance_testnet_oms_cycle(
     target_notional: Decimal,
     database: str,
 ) -> dict[str, object]:
-    """Run one durable Spot Testnet submit/cancel/reconciliation cycle.
+    """运行一次持久化现货测试网提交/撤单/对账周期。
 
-    The function deliberately has no environment parameter.  The REST gateway,
-    private stream, and execution service are all constructed for TESTNET, while
-    the durable outbox is opened before any order is sent to Binance.
+    本函数刻意不设环境参数。REST 网关、私有数据流与执行服务全部为测试网构造，
+    并且在向 Binance 发送任何订单前先打开持久化发件箱。
     """
 
     database_path = Path(database).expanduser().resolve()
@@ -5685,9 +10276,7 @@ async def _binance_testnet_oms_cycle(
         )
         user_stream = BinanceSpotUserDataStream(
             credentials,
-            clock_ms=lambda: (
-                time.time_ns() // 1_000_000 + gateway.server_time_offset_ms
-            ),
+            clock_ms=lambda: time.time_ns() // 1_000_000 + gateway.server_time_offset_ms,
         )
         service = BinanceSpotTestnetExecutionService(
             gateway,
@@ -5735,9 +10324,7 @@ async def _binance_testnet_oms_cycle(
             execution_type="CANCELED",
             timeout_seconds=15,
         )
-        reconciliation, reconciliation_attempts = (
-            await _retry_testnet_reconciliation(service)
-        )
+        reconciliation, reconciliation_attempts = await _retry_testnet_reconciliation(service)
         final = store.require_order(order.client_order_id)
         commands = tuple(
             command
@@ -5804,7 +10391,7 @@ async def _binance_testnet_oms_cycle(
 
 
 def _assert_testnet_oms_database_idle(store: SQLiteOrderManagementStore) -> None:
-    """Fail closed instead of dispatching work left by another CLI process."""
+    """按失败关闭处理，而不分发其他 CLI 进程遗留的工作。"""
 
     open_ids = {
         snapshot.order.client_order_id
@@ -5818,8 +10405,7 @@ def _assert_testnet_oms_database_idle(store: SQLiteOrderManagementStore) -> None
     conflicts = sorted(open_ids | blocking_commands)
     if conflicts:
         raise RuntimeError(
-            "Testnet OMS database contains active or unresolved work: "
-            + ", ".join(conflicts)
+            "Testnet OMS database contains active or unresolved work: " + ", ".join(conflicts)
         )
 
 
@@ -5829,7 +10415,7 @@ async def _wait_for_testnet_fill_reports(
     *,
     timeout_seconds: float,
 ) -> tuple[BinanceExecutionReport, ...]:
-    """Accept either NEW->TRADE or a direct terminal TRADE execution sequence."""
+    """接受 NEW→TRADE 或直接进入终态 TRADE 的成交序列。"""
 
     received: list[BinanceExecutionReport] = []
     async with asyncio.timeout(timeout_seconds):
@@ -5851,8 +10437,7 @@ async def _wait_for_testnet_fill_reports(
                 OrderStatus.EXPIRED,
             }:
                 raise RuntimeError(
-                    "Binance Testnet order became terminal before filling: "
-                    f"{report.status.value}"
+                    f"Binance Testnet order became terminal before filling: {report.status.value}"
                 )
 
 
@@ -5864,12 +10449,8 @@ def _testnet_balance_diff(
     after_values = {item.asset: (item.free, item.locked) for item in after.balances}
     changed: list[dict[str, str]] = []
     for asset in sorted(before_values.keys() | after_values.keys()):
-        before_free, before_locked = before_values.get(
-            asset, (Decimal("0"), Decimal("0"))
-        )
-        after_free, after_locked = after_values.get(
-            asset, (Decimal("0"), Decimal("0"))
-        )
+        before_free, before_locked = before_values.get(asset, (Decimal("0"), Decimal("0")))
+        after_free, after_locked = after_values.get(asset, (Decimal("0"), Decimal("0")))
         if (before_free, before_locked) == (after_free, after_locked):
             continue
         changed.append(
@@ -5895,7 +10476,7 @@ async def _binance_testnet_oms_fill(
     target_notional: Decimal,
     database: str,
 ) -> dict[str, object]:
-    """Execute one real virtual fill through a Testnet-only durable OMS path."""
+    """通过仅限测试网的持久化 OMS 路径执行一笔真实虚拟成交。"""
 
     gateway = _testnet_gateway()
     if gateway.environment is not BinanceEnvironment.TESTNET:
@@ -5921,9 +10502,7 @@ async def _binance_testnet_oms_fill(
         )
         user_stream = BinanceSpotUserDataStream(
             credentials,
-            clock_ms=lambda: (
-                time.time_ns() // 1_000_000 + gateway.server_time_offset_ms
-            ),
+            clock_ms=lambda: time.time_ns() // 1_000_000 + gateway.server_time_offset_ms,
         )
         service = BinanceSpotTestnetExecutionService(
             gateway,
@@ -5968,14 +10547,11 @@ async def _binance_testnet_oms_fill(
             consumer,
             timeout_seconds=30,
         )
-        reconciliation, reconciliation_attempts = (
-            await _retry_testnet_reconciliation(service)
-        )
+        reconciliation, reconciliation_attempts = await _retry_testnet_reconciliation(service)
         final = store.require_order(order.client_order_id)
         if final.status is not OrderStatus.FILLED:
             raise RuntimeError(
-                "Binance Testnet order did not reconcile to FILLED: "
-                f"{final.status.value}"
+                f"Binance Testnet order did not reconcile to FILLED: {final.status.value}"
             )
         fills = store.fills(client_order_id=order.client_order_id)
         if not fills:
@@ -6072,7 +10648,7 @@ async def _wait_for_testnet_execution(
     execution_type: str,
     timeout_seconds: float,
 ) -> BinanceExecutionReport:
-    """Wait for one matching private execution without accepting stale reports."""
+    """等待一笔匹配的私有成交，且不接受过期报告。"""
 
     async with asyncio.timeout(timeout_seconds):
         while True:
@@ -6102,7 +10678,7 @@ async def _retry_testnet_reconciliation(
     *,
     attempts: int = 3,
 ) -> tuple[BinanceStartupReconciliation, int]:
-    """Retry read-only final reconciliation after transient HTTP failures."""
+    """在瞬时 HTTP 失败后重试只读最终对账。"""
 
     if attempts <= 0:
         raise ValueError("attempts must be positive")

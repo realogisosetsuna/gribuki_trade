@@ -1,8 +1,7 @@
-"""Independent AKShare/Sina daily histories for cross-market factor research.
+"""供跨市场因子研究使用的独立 AKShare/新浪日线历史。
 
-Each configured market uses an audited exact index endpoint and symbol.  Calls
-have separate deadlines and failures; an unavailable index remains missing
-instead of being replaced by an ETF, future, or similarly named proxy.
+每个已配置市场都使用经过审计的精确指数端点和代码。各次调用具有独立截止时间
+和失败状态；不可用的指数保持缺失，而不会被 ETF、期货或名称相似的代理替代。
 """
 
 from __future__ import annotations
@@ -10,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from decimal import Decimal, InvalidOperation
@@ -19,6 +17,7 @@ from queue import Empty, Queue
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from gribuki_trade.adapters.ashare_screening import _SINA_HISTORY_LOCK
 from gribuki_trade.ports.cross_market_history import (
     MINIMUM_CROSS_MARKET_HISTORY,
     CrossMarketHistoryDataError,
@@ -35,7 +34,7 @@ from gribuki_trade.ports.cross_market_history import (
 
 @dataclass(frozen=True, slots=True)
 class CrossMarketHistorySpec:
-    """One exact AKShare method/symbol plus its regular close-time semantics."""
+    """一个精确 AKShare 方法/代码及其常规收盘时间语义。"""
 
     market_id: str
     display_name: str
@@ -141,7 +140,7 @@ class _InsufficientHistoryError(CrossMarketHistoryDataError):
 
 
 class AKShareCrossMarketHistoryAdapter:
-    """Collect exact index histories with PIT visibility and failure isolation."""
+    """采集具有时点可见性和失败隔离的精确指数历史。"""
 
     def __init__(
         self,
@@ -166,7 +165,7 @@ class AKShareCrossMarketHistoryAdapter:
         as_of: datetime,
         minimum_observations: int = MINIMUM_CROSS_MARKET_HISTORY,
     ) -> CrossMarketHistorySnapshot:
-        """Return only closes whose configured session-close anchor is visible."""
+        """只返回已到配置交易日收盘锚点的收盘记录。"""
 
         _require_aware(as_of, "as_of")
         if minimum_observations < MINIMUM_CROSS_MARKET_HISTORY:
@@ -177,39 +176,26 @@ class AKShareCrossMarketHistoryAdapter:
         fetched_at = _aware_now(self._now)
         resolved: list[CrossMarketHistorySeries] = []
         missing: list[CrossMarketHistoryMissingSeries] = []
-        if self._universe:
-            # The task submitted for every market itself uses a daemon-bounded
-            # upstream call.  Therefore a disconnected series cannot hold the
-            # executor context open after its own deadline.
-            with ThreadPoolExecutor(
-                max_workers=len(self._universe),
-                thread_name_prefix="cross-market-history",
-            ) as executor:
-                futures = [
-                    executor.submit(
-                        self._fetch_series,
+        # 新浪历史解码器内嵌 MiniRacer/V8。按确定顺序处理配置的股票池，而不是
+        # 同时调用多个原生解码器；每个序列仍拥有自身截止时间和隔离失败结果。
+        for spec in self._universe:
+            try:
+                resolved.append(
+                    self._fetch_series(spec, as_of, minimum_observations)
+                )
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except CrossMarketHistoryDataError as exc:
+                missing.append(_missing_from_error(spec, exc))
+            except Exception:  # 隔离异常的数据提供者对象。
+                missing.append(
+                    _missing_from_error(
                         spec,
-                        as_of,
-                        minimum_observations,
-                    )
-                    for spec in self._universe
-                ]
-                for spec, future in zip(self._universe, futures, strict=True):
-                    try:
-                        resolved.append(future.result())
-                    except (KeyboardInterrupt, SystemExit):
-                        raise
-                    except CrossMarketHistoryDataError as exc:
-                        missing.append(_missing_from_error(spec, exc))
-                    except Exception:  # isolate an anomalous provider object
-                        missing.append(
-                            _missing_from_error(
-                                spec,
-                                CrossMarketHistoryDataError(
-                                    f"{spec.source} failed unexpectedly"
-                                ),
-                            )
+                        CrossMarketHistoryDataError(
+                            f"{spec.source} failed unexpectedly"
                         )
+                    )
+                )
 
         warnings = [
             "daily closes use configured regular-session close anchors for PIT visibility",
@@ -237,8 +223,11 @@ class AKShareCrossMarketHistoryAdapter:
         as_of: datetime,
         minimum_observations: int = MINIMUM_CROSS_MARKET_HISTORY,
     ) -> CrossMarketHistorySnapshot:
-        """Async facade with a bounded orchestration deadline."""
+        """受所有独立串行序列截止时间限制的异步外观。"""
 
+        orchestration_timeout = (
+            self._timeout_seconds * max(1, len(self._universe)) + 1.0
+        )
         try:
             return await asyncio.wait_for(
                 asyncio.to_thread(
@@ -248,12 +237,12 @@ class AKShareCrossMarketHistoryAdapter:
                         minimum_observations=minimum_observations,
                     )
                 ),
-                timeout=self._timeout_seconds + 1.0,
+                timeout=orchestration_timeout,
             )
         except TimeoutError as exc:  # pragma: no cover - defensive outer deadline
             raise CrossMarketHistoryTimeoutError(
                 "cross-market history orchestration exceeded "
-                f"{self._timeout_seconds + 1.0:g}s"
+                f"{orchestration_timeout:g}s"
             ) from exc
 
     def _fetch_series(
@@ -270,7 +259,10 @@ class AKShareCrossMarketHistoryAdapter:
             )
         try:
             frame = _run_with_timeout(
-                partial(method, symbol=spec.symbol),
+                partial(
+                    _run_sina_history_call,
+                    partial(method, symbol=spec.symbol),
+                ),
                 self._timeout_seconds,
                 spec.source,
             )
@@ -320,8 +312,8 @@ def _parse_history_frame(
             spec.regular_close,
             tzinfo=local_zone,
         )
-        # A not-yet-visible row must have no influence on a PIT request, even
-        # if the current provider payload later contains a malformed revision.
+        # 尚不可见的记录不得影响时点请求，即使当前提供者载荷后来包含格式错误的
+        # 修订也不例外。
         if available_at > as_of:
             continue
         close = _parse_close(row.get(columns["close"]), spec.source, session_date)
@@ -424,6 +416,13 @@ def _run_with_timeout(call: Callable[[], Any], timeout_seconds: float, label: st
     if isinstance(value, BaseException):
         raise value
     raise CrossMarketHistoryDataError(f"{label} returned an invalid thread result")
+
+
+def _run_sina_history_call(call: Callable[[], Any]) -> Any:
+    """在进程级锁内运行实际由 MiniRacer 支持的方法。"""
+
+    with _SINA_HISTORY_LOCK:
+        return call()
 
 
 def _missing_from_error(

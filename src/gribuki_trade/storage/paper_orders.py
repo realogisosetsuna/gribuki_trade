@@ -1,4 +1,4 @@
-"""Append-only order and daily-bar saga storage for A-share PAPER matching."""
+"""用于 A 股模拟撮合的仅追加订单及日线事务编排存储。"""
 
 from __future__ import annotations
 
@@ -16,19 +16,19 @@ from typing import Any, cast
 
 
 class PaperOrderStoreError(RuntimeError):
-    """Base class for durable paper-order failures."""
+    """持久化模拟订单故障的基类。"""
 
 
 class PaperOrderStoreConflictError(PaperOrderStoreError):
-    """An idempotency key or run identity was reused with different content."""
+    """幂等键或运行标识被用于不同内容。"""
 
 
 class PaperOrderStoreLeaseError(PaperOrderStoreError):
-    """A live writer owns the unfinished run."""
+    """尚未完成的运行正由存活写入者持有。"""
 
 
 class PaperOrderStoreIntegrityError(PaperOrderStoreError):
-    """The immutable event stream failed validation."""
+    """不可变事件流未通过校验。"""
 
 
 class PaperOrderEventType(StrEnum):
@@ -73,11 +73,10 @@ class PaperRunRecord:
 
 
 class SQLitePaperOrderStore:
-    """Single-node WAL event store with an operational writer lease.
+    """带运行写入租约的单节点 WAL 事件存储。
 
-    Domain events and run identities are immutable.  The separate lease table
-    is deliberately mutable and contains no business state; it only prevents
-    two processes from applying the same cross-database saga concurrently.
+    领域事件与运行标识均不可变。独立租约表有意保持可变，但不包含业务
+    状态；它仅用于防止两个进程并发应用同一跨数据库事务编排。
     """
 
     def __init__(self, path: str | PathLike[str]) -> None:
@@ -162,7 +161,7 @@ class SQLitePaperOrderStore:
         now: datetime,
         lease_duration: timedelta,
     ) -> None:
-        """Acquire or renew the sole durable-wrapper writer lease."""
+        """获取或续期持久化包装层唯一的写入者租约。"""
 
         owner_id = _identifier(owner_id, "owner_id")
         now = _aware_utc(now)
@@ -232,7 +231,7 @@ class SQLitePaperOrderStore:
         owner_id: str,
         lease_duration: timedelta = timedelta(minutes=2),
     ) -> tuple[PaperRunRecord, bool]:
-        """Persist RUN_STARTED and acquire the only live writer lease."""
+        """持久化 RUN_STARTED，并获取唯一的存活写入者租约。"""
 
         if lease_duration <= timedelta(0):
             raise ValueError("lease_duration must be positive")
@@ -377,7 +376,7 @@ class SQLitePaperOrderStore:
         trade_date: date,
         config_document: Mapping[str, object],
     ) -> PaperRunRecord | None:
-        """Return the immutable run bound to symbol/date/config, if any."""
+        """返回与标的、日期和配置绑定的不可变运行（若存在）。"""
 
         config_sha256 = _sha(_canonical_document(config_document))
         with self._lock:

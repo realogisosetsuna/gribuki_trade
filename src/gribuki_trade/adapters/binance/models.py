@@ -1,4 +1,4 @@
-"""Public value objects returned by the Binance Spot REST gateway."""
+"""Binance 现货 REST 网关返回的公开值对象。"""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ class BinanceEnvironment(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class BinanceCredentials:
-    """HMAC credentials whose values cannot leak through ``repr``."""
+    """不会通过 ``repr`` 泄露真实值的 HMAC 凭据。"""
 
     api_key: str = field(repr=False)
     secret_key: str = field(repr=False)
@@ -118,7 +118,7 @@ class BinanceOrderSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class BinanceTrade:
-    """One immutable Spot account trade returned by ``/api/v3/myTrades``."""
+    """由 ``/api/v3/myTrades`` 返回的一条不可变现货账户成交。"""
 
     symbol: str
     trade_id: int
@@ -152,7 +152,7 @@ class BinanceCommissionDiscount:
 
 @dataclass(frozen=True, slots=True)
 class BinanceCommissionRate:
-    """Current account-specific Spot commission configuration for a symbol."""
+    """某个标的当前账户专属的现货费率配置。"""
 
     symbol: str
     standard: BinanceCommissionComponent
@@ -163,7 +163,7 @@ class BinanceCommissionRate:
 
 @dataclass(frozen=True, slots=True)
 class BinanceRateLimitUsage:
-    """Latest rate-limit headers observed by the REST adapter."""
+    """REST 适配器最近一次观察到的限频头信息。"""
 
     used_weight_1m: int | None = None
     order_count_10s: int | None = None
@@ -173,7 +173,7 @@ class BinanceRateLimitUsage:
 
 @dataclass(frozen=True, slots=True)
 class BinanceOrderUpdate:
-    """Broker-event payload for a locally submitted Binance order."""
+    """本地提交的 Binance 订单所对应的券商事件载荷。"""
 
     order: OrderIntent
     status: OrderStatus

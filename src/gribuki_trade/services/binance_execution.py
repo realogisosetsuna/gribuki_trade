@@ -1,10 +1,8 @@
-"""Recoverable Binance Spot Testnet execution orchestration.
+"""可恢复的 Binance 现货测试网执行编排。
 
-This service is intentionally Testnet-only.  It joins the Binance REST and
-user-data adapters to the durable SQLite OMS without adding a LIVE switch or
-an endpoint fallback.  Every submit is stored and leased before the adapter is
-called; an outcome that cannot be proved becomes ``UNKNOWN`` and is only
-resolved by an authoritative exchange event or REST reconciliation.
+本服务刻意只允许测试网。它将 Binance REST 与用户数据适配器连接到持久化 SQLite OMS，
+不增加实盘开关或端点回退。每次提交都在调用适配器前存储并获取租约；无法证明的结果
+会成为 ``UNKNOWN``，只能由权威交易所事件或 REST 对账解决。
 """
 
 from __future__ import annotations
@@ -44,7 +42,7 @@ from gribuki_trade.trading import (
 
 
 class BinanceSpotExecutionGateway(Protocol):
-    """REST surface needed by the recoverable Testnet service."""
+    """可恢复测试网服务所需的 REST 接口面。"""
 
     @property
     def environment(self) -> BinanceEnvironment: ...
@@ -100,7 +98,7 @@ class BinanceSpotExecutionGateway(Protocol):
 
 
 class BinanceUserDataSource(Protocol):
-    """Private stream surface used by the execution service."""
+    """执行服务使用的私有数据流接口面。"""
 
     @property
     def environment(self) -> BinanceEnvironment: ...
@@ -111,12 +109,12 @@ class BinanceUserDataSource(Protocol):
 
 
 class BinanceTestnetOnlyError(ValueError):
-    """Raised before construction if any dependency targets Binance LIVE."""
+    """任一依赖指向 Binance 实盘时在构造前抛出。"""
 
 
 @dataclass(frozen=True, slots=True)
 class BinanceStartupReconciliation:
-    """Observable result of one fail-closed startup reconciliation."""
+    """一次失败关闭式启动对账的可观测结果。"""
 
     recovered_commands: int
     exchange_open_orders: int
@@ -130,11 +128,10 @@ class BinanceStartupReconciliation:
 
 
 class BinanceSpotTestnetExecutionService:
-    """Persist, submit, stream, and reconcile Binance Spot Testnet orders.
+    """持久化、提交、监听并对账 Binance 现货测试网订单。
 
-    The constructor has no LIVE escape hatch.  Both concrete adapters must
-    advertise ``TESTNET`` and every order must belong to the configured local
-    account and symbol allow-list.
+    构造器不存在实盘逃生口。两个具体适配器都必须声明 ``TESTNET``，且每张订单都必须
+    属于已配置的本地账户与标的允许列表。
     """
 
     def __init__(
@@ -181,7 +178,7 @@ class BinanceSpotTestnetExecutionService:
         return self._started
 
     async def start(self) -> BinanceStartupReconciliation:
-        """Connect, reconcile every authoritative source, then send safe pending work."""
+        """连接并对账所有权威来源，然后发送安全的待处理工作。"""
 
         async with self._operation_lock:
             if self._started:
@@ -216,7 +213,7 @@ class BinanceSpotTestnetExecutionService:
             )
 
     async def stop(self) -> None:
-        """Stop the private stream and disconnect the Testnet REST adapter."""
+        """停止私有数据流并断开测试网 REST 适配器。"""
 
         self._stopping = True
         if self._user_stream is not None:
@@ -226,7 +223,7 @@ class BinanceSpotTestnetExecutionService:
             self._started = False
 
     async def submit(self, order: OrderIntent) -> OrderSnapshot:
-        """Atomically create/lease an order before the Testnet REST call."""
+        """调用测试网 REST 前以原子方式创建订单并获取租约。"""
 
         self._validate_order(order)
         async with self._operation_lock:
@@ -239,7 +236,7 @@ class BinanceSpotTestnetExecutionService:
             return self._oms.require_order(persisted.order.client_order_id)
 
     async def cancel(self, client_order_id: str) -> OrderSnapshot:
-        """Persist and lease one Testnet cancellation before crossing REST."""
+        """跨越 REST 边界前持久化一次测试网撤单并获取租约。"""
 
         async with self._operation_lock:
             self._require_started()
@@ -247,8 +244,7 @@ class BinanceSpotTestnetExecutionService:
             self._validate_order(current.order)
             existing = self._command(f"cancel:{client_order_id}")
             if existing is not None:
-                # SENT and UNKNOWN are both final delivery decisions here: neither
-                # permits a blind second cancellation request.
+                # SENT 与 UNKNOWN 在此处都是最终交付决定：二者都不允许盲目发送第二次撤单请求。
                 return current
             if current.status not in {
                 OrderStatus.ACCEPTED,
@@ -266,14 +262,14 @@ class BinanceSpotTestnetExecutionService:
             return self._oms.require_order(client_order_id)
 
     async def reconcile_startup(self) -> BinanceStartupReconciliation:
-        """Repeat the four-source REST reconciliation without dispatching commands."""
+        """不分发命令地重复执行四来源 REST 对账。"""
 
         async with self._operation_lock:
             self._require_started()
             return await self._reconcile_startup(recovered_commands=0)
 
     async def consume_user_event(self, event: BinanceUserDataEvent) -> bool:
-        """Persist one private stream event; return whether it affected this account."""
+        """持久化一条私有流事件，并返回其是否影响本账户。"""
 
         async with self._operation_lock:
             self._require_started()
@@ -290,7 +286,7 @@ class BinanceSpotTestnetExecutionService:
         raise TypeError(f"unsupported Binance user-data event: {type(event).__name__}")
 
     async def run_user_stream(self, *, maximum_events: int | None = None) -> int:
-        """Consume the configured private stream until stopped or a test limit is reached."""
+        """消费已配置私有数据流，直至停止或达到测试限制。"""
 
         self._require_started()
         if self._user_stream is None:
@@ -383,7 +379,7 @@ class BinanceSpotTestnetExecutionService:
                 exchange_order_id=update.exchange_order_id,
                 reason=update.reason,
             )
-            # Persist the exchange result before acknowledging the durable command.
+            # 在确认持久化命令前先持久化交易所结果。
             self._oms.mark_command_sent(command.command_id, occurred_at=occurred_at)
         except asyncio.CancelledError:
             self._quarantine_in_flight(command, "submission_cancelled")

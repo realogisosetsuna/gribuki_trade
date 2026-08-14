@@ -1,4 +1,4 @@
-"""Intraday whole-market anomaly surveillance orchestration."""
+"""盘中全市场异常监控编排。"""
 
 from __future__ import annotations
 
@@ -49,10 +49,9 @@ class AShareSurveillanceRun:
 
 
 class AShareIntradaySurveillanceService:
-    """Fetch and score one fresh current-session universe snapshot.
+    """拉取并评分一份当前交易日的新鲜标的全集快照。
 
-    The output is a candidate-discovery result.  It has no broker, order, or
-    notification dependency and cannot directly become a trading instruction.
+    输出是候选发现结果，不依赖券商、订单或通知，也不能直接成为交易指令。
     """
 
     def __init__(

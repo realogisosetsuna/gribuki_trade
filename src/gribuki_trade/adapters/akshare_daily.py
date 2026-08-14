@@ -1,10 +1,9 @@
-"""Strict unadjusted A-share stock and ETF daily-history adapters.
+"""严格的不复权 A 股股票与 ETF 日线历史适配器。
 
-AKShare's Eastmoney stock and ETF functions have different endpoint semantics.
-This module routes an explicitly classified instrument to exactly one of them,
-rejects adjusted prices, and normalizes only validated rows into ``DailyBar``.
-The upstream tables contain trading bars rather than a natural-day calendar;
-therefore an omitted suspension day is never silently forward-filled.
+AKShare 的东方财富股票函数与 ETF 函数具有不同端点语义。本模块把已经明确
+分类的证券只路由到其中一个端点，拒绝复权价格，并且只将验证后的记录规范为
+``DailyBar``。上游表格包含交易行情柱，而非自然日日历；因此缺失的停牌日绝不
+会被静默向前填充。
 """
 
 from __future__ import annotations
@@ -19,6 +18,10 @@ from enum import StrEnum
 from functools import partial
 from typing import Any, Protocol
 
+from gribuki_trade.adapters.ashare_screening import (
+    _SINA_HISTORY_LOCK,
+    SINA_HISTORY_SOURCE_ID,
+)
 from gribuki_trade.domain.market import DailyBar, PriceAdjustment
 from gribuki_trade.ports.market_data import (
     AsyncHistoricalDailyData,
@@ -29,39 +32,39 @@ from gribuki_trade.ports.market_data import (
 
 
 class AKShareDailyError(MarketDataUnavailableError):
-    """Base provider/transport failure for AKShare historical daily data."""
+    """AKShare 历史日线数据的提供者/传输失败基类。"""
 
 
 class AKShareDailyNoDataError(AKShareDailyError):
-    """The selected AKShare endpoint returned no rows for the requested window."""
+    """所选 AKShare 端点没有返回请求窗口内的记录。"""
 
 
 class AKShareDailyPayloadError(AKShareDailyError):
-    """The selected endpoint returned an invalid or ambiguous daily-bar payload."""
+    """所选端点返回了无效或有歧义的日线载荷。"""
 
 
 class AKShareDailyTimeoutError(MarketDataTimeoutError, AKShareDailyError):
-    """The blocking AKShare source exceeded the async caller's time limit."""
+    """阻塞式 AKShare 来源超过异步调用方的时间限制。"""
 
 
 class AKShareDailyUnsupportedAdjustmentError(AKShareDailyError):
-    """Only original, unadjusted provider prices are accepted."""
+    """只接受数据提供者的原始不复权价格。"""
 
 
 class HistoricalDailyFallbackError(MarketDataUnavailableError):
-    """Neither the primary nor fallback source supplied acceptable history."""
+    """主来源与回退来源均未提供可接受的历史。"""
 
 
 class HistoricalDailyCoverageError(HistoricalDailyFallbackError):
-    """Both sources returned fewer daily bars than the configured requirement."""
+    """两个来源返回的日线数量都少于配置要求。"""
 
 
 class HistoricalDailyTailStitchError(HistoricalDailyFallbackError):
-    """A requested controlled tail stitch could not be proven safe."""
+    """无法证明所请求的受控尾部拼接是安全的。"""
 
 
 class HistoricalDailyOverlapMismatchError(HistoricalDailyTailStitchError):
-    """Recent common dates or OHLC values differ between candidate sources."""
+    """候选来源之间近期共有日期或开高低收值不一致。"""
 
 
 class AKShareDailyAssetType(StrEnum):
@@ -74,12 +77,12 @@ class HistoricalDailyProvider(
     AsyncHistoricalDailyData,
     Protocol,
 ):
-    """Provider supporting both blocking batch and async service callers."""
+    """同时支持阻塞批处理和异步服务调用方的数据提供者。"""
 
 
 @dataclass(frozen=True, slots=True)
 class HistoricalDailyRouteResult:
-    """Optional diagnostic result for callers that need provider selection."""
+    """供需要了解提供者选择的调用方使用的可选诊断结果。"""
 
     bars: tuple[DailyBar, ...]
     selected_source: str
@@ -88,14 +91,15 @@ class HistoricalDailyRouteResult:
     primary_failure: str | None = None
     selected_source_failures: tuple[str, ...] = ()
     tail_stitch: HistoricalDailyTailStitchDiagnostics | None = None
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class HistoricalDailyTailStitchPolicy:
-    """Explicit opt-in policy for joining a delayed long history to a fresh tail.
+    """将延迟的长历史与新鲜尾部连接的明确选择加入策略。
 
-    The requested ``end`` date is treated as ``latest_completed_session``.  A
-    stitched result is permitted only if the primary contains that exact date.
+    请求的 ``end`` 日期被视为 ``latest_completed_session``。只有主来源包含该
+    精确日期时，才允许产生拼接结果。
     """
 
     minimum_overlap_sessions: int = 20
@@ -107,7 +111,7 @@ class HistoricalDailyTailStitchPolicy:
 
 @dataclass(frozen=True, slots=True)
 class HistoricalDailyTailStitchDiagnostics:
-    """Auditable proof and non-blocking unit diagnostics for a stitched result."""
+    """拼接结果的可审计证明与非阻塞单元诊断。"""
 
     base_source: str
     tail_source: str
@@ -131,11 +135,12 @@ class HistoricalDailyTailStitchDiagnostics:
 
 @dataclass(frozen=True, slots=True)
 class HistoricalDailySourceResult:
-    """Diagnostic result from a provider that has multiple independent sources."""
+    """具有多个独立来源的数据提供者所返回的诊断结果。"""
 
     bars: tuple[DailyBar, ...]
     selected_source: str
     source_failures: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
 
 
 _COLUMN_ALIASES: Mapping[str, tuple[str, ...]] = {
@@ -155,6 +160,15 @@ _COLUMN_ALIASES: Mapping[str, tuple[str, ...]] = {
     "trading_status": ("交易状态", "交易状态码", "tradestatus", "is_trading"),
     "is_st": ("是否ST", "isST", "is_st"),
 }
+_SINA_STOCK_COLUMN_ALIASES: Mapping[str, tuple[str, ...]] = {
+    "date": ("date",),
+    "open": ("open",),
+    "close": ("close",),
+    "high": ("high",),
+    "low": ("low",),
+    "volume": ("volume",),
+    "amount": ("amount",),
+}
 _REQUIRED_COLUMNS = frozenset(
     {"date", "open", "close", "high", "low", "volume", "amount"}
 )
@@ -162,15 +176,19 @@ _TRADING_MARKERS = frozenset({"1", "true", "交易", "正常", "交易中"})
 _SUSPENDED_MARKERS = frozenset({"0", "false", "停牌", "暂停交易"})
 _TRUE_MARKERS = frozenset({"1", "true", "是", "st"})
 _FALSE_MARKERS = frozenset({"0", "false", "否", "非st", "normal"})
+_SINA_DAILY_FALLBACK_WARNINGS = (
+    "SINA_FALLBACK_IS_UNADJUSTED_DAILY_HISTORY",
+    "SINA_PREVIOUS_CLOSE_DERIVED_FROM_ADJACENT_RAW_CLOSES",
+    "SINA_CORPORATE_ACTION_GUARD_HAS_NO_INDEPENDENT_REFERENCE_CLOSE",
+)
 
 
 class AKShareHistoricalDailyAdapter:
-    """AKShare/Eastmoney original-price history for A-share stocks and ETFs.
+    """A 股股票和 ETF 的 AKShare/东方财富原始价格历史。
 
-    Instrument type is resolved from ``asset_types`` first.  The fallback code
-    family rule recognizes common exchange-traded fund families (SH ``5xxxxx``
-    and SZ ``1xxxxx``).  Production callers with unusual products should pass
-    an explicit mapping rather than relying on that conservative rule.
+    首先从 ``asset_types`` 解析证券类型。回退代码族规则识别常见交易所交易
+    基金族（沪市 ``5xxxxx`` 和深市 ``1xxxxx``）。生产调用方处理特殊产品时
+    应传入明确映射，而不是依赖这一保守规则。
     """
 
     def __init__(
@@ -198,7 +216,7 @@ class AKShareHistoricalDailyAdapter:
         *,
         adjustment: PriceAdjustment = PriceAdjustment.NONE,
     ) -> tuple[DailyBar, ...]:
-        """Fetch a strict window, using per-source deadlines via a private loop."""
+        """通过私有循环对各来源分别设置截止时间，获取严格窗口。"""
 
         try:
             asyncio.get_running_loop()
@@ -224,7 +242,7 @@ class AKShareHistoricalDailyAdapter:
         *,
         adjustment: PriceAdjustment = PriceAdjustment.NONE,
     ) -> HistoricalDailySourceResult:
-        """Blocking diagnostic variant returning the selected AKShare subsource."""
+        """返回所选 AKShare 子来源的阻塞式诊断变体。"""
 
         try:
             asyncio.get_running_loop()
@@ -267,7 +285,7 @@ class AKShareHistoricalDailyAdapter:
         *,
         adjustment: PriceAdjustment = PriceAdjustment.NONE,
     ) -> HistoricalDailySourceResult:
-        """Try each applicable source under its own independent timeout."""
+        """在各自独立超时内尝试每个适用来源。"""
 
         canonical_symbol, code = _normalize_symbol(symbol)
         _validate_request(start, end, adjustment)
@@ -277,32 +295,96 @@ class AKShareHistoricalDailyAdapter:
         )
         client = self._client or _import_akshare()
         if asset_type is AKShareDailyAssetType.STOCK:
-            bars = await self._fetch_source_async(
-                client,
-                operation="stock_zh_a_hist",
-                kwargs={
-                    "symbol": code,
-                    "period": "daily",
-                    "start_date": start.strftime("%Y%m%d"),
-                    "end_date": end.strftime("%Y%m%d"),
-                    "adjust": "",
-                    "timeout": self._timeout_seconds,
-                },
-                canonical_symbol=canonical_symbol,
-                code=code,
-                asset_type=asset_type,
-                start=start,
-                end=end,
-                filter_to_window=False,
-                derive_adjacent_previous_close=False,
-            )
-            return HistoricalDailySourceResult(
-                bars=bars,
-                selected_source="AKShare/Eastmoney stock_zh_a_hist",
-            )
+            failures: list[str] = []
+            eastmoney_error: AKShareDailyError | None = None
+            try:
+                eastmoney_bars = await self._fetch_source_async(
+                    client,
+                    operation="stock_zh_a_hist",
+                    kwargs={
+                        "symbol": code,
+                        "period": "daily",
+                        "start_date": start.strftime("%Y%m%d"),
+                        "end_date": end.strftime("%Y%m%d"),
+                        "adjust": "",
+                        "timeout": self._timeout_seconds,
+                    },
+                    canonical_symbol=canonical_symbol,
+                    code=code,
+                    asset_type=asset_type,
+                    start=start,
+                    end=end,
+                    filter_to_window=False,
+                    derive_adjacent_previous_close=False,
+                )
+                _require_minimum_source_bars(
+                    eastmoney_bars,
+                    minimum=self._minimum_source_bars,
+                    operation="stock_zh_a_hist",
+                )
+                _require_exact_requested_end(
+                    eastmoney_bars,
+                    end=end,
+                    operation="stock_zh_a_hist",
+                )
+                return HistoricalDailySourceResult(
+                    bars=eastmoney_bars,
+                    selected_source="AKShare/Eastmoney stock_zh_a_hist",
+                )
+            except AKShareDailyError as exc:
+                eastmoney_error = exc
+                failures.append(f"stock_zh_a_hist:{type(exc).__name__}")
 
-        failures: list[str] = []
-        eastmoney_error: AKShareDailyError | None = None
+            exchange = canonical_symbol.rsplit(".", maxsplit=1)[1].lower()
+            if (
+                exchange not in {"sh", "sz"}
+                or not callable(getattr(client, "stock_zh_a_daily", None))
+            ):
+                assert eastmoney_error is not None
+                raise eastmoney_error
+            try:
+                sina_bars = await self._fetch_source_async(
+                    client,
+                    operation="stock_zh_a_daily",
+                    kwargs={
+                        "symbol": f"{exchange}{code}",
+                        "start_date": start.strftime("%Y%m%d"),
+                        "end_date": end.strftime("%Y%m%d"),
+                        "adjust": "",
+                    },
+                    canonical_symbol=canonical_symbol,
+                    code=code,
+                    asset_type=asset_type,
+                    start=start,
+                    end=end,
+                    filter_to_window=True,
+                    derive_adjacent_previous_close=True,
+                    serialize_sina=True,
+                )
+                _require_minimum_source_bars(
+                    sina_bars,
+                    minimum=self._minimum_source_bars,
+                    operation="stock_zh_a_daily",
+                )
+                _require_exact_requested_end(
+                    sina_bars,
+                    end=end,
+                    operation="stock_zh_a_daily",
+                )
+                return HistoricalDailySourceResult(
+                    bars=sina_bars,
+                    selected_source=SINA_HISTORY_SOURCE_ID,
+                    source_failures=tuple(failures),
+                    warnings=_SINA_DAILY_FALLBACK_WARNINGS,
+                )
+            except AKShareDailyError as exc:
+                failures.append(f"stock_zh_a_daily:{type(exc).__name__}")
+                raise AKShareDailyError(
+                    "all AKShare stock daily sources failed: " + ", ".join(failures)
+                ) from exc
+
+        etf_failures: list[str] = []
+        etf_eastmoney_error: AKShareDailyError | None = None
         try:
             eastmoney_bars = await self._fetch_source_async(
                 client,
@@ -327,17 +409,22 @@ class AKShareHistoricalDailyAdapter:
                 minimum=self._minimum_source_bars,
                 operation="fund_etf_hist_em",
             )
+            _require_exact_requested_end(
+                eastmoney_bars,
+                end=end,
+                operation="fund_etf_hist_em",
+            )
             return HistoricalDailySourceResult(
                 bars=eastmoney_bars,
                 selected_source="AKShare/Eastmoney fund_etf_hist_em",
             )
         except AKShareDailyError as exc:
-            eastmoney_error = exc
-            failures.append(f"fund_etf_hist_em:{type(exc).__name__}")
+            etf_eastmoney_error = exc
+            etf_failures.append(f"fund_etf_hist_em:{type(exc).__name__}")
 
         if not callable(getattr(client, "fund_etf_hist_sina", None)):
-            assert eastmoney_error is not None
-            raise eastmoney_error
+            assert etf_eastmoney_error is not None
+            raise etf_eastmoney_error
         exchange = canonical_symbol.rsplit(".", maxsplit=1)[1].lower()
         try:
             sina_bars = await self._fetch_source_async(
@@ -351,21 +438,28 @@ class AKShareHistoricalDailyAdapter:
                 end=end,
                 filter_to_window=True,
                 derive_adjacent_previous_close=True,
+                serialize_sina=True,
             )
             _require_minimum_source_bars(
                 sina_bars,
                 minimum=self._minimum_source_bars,
                 operation="fund_etf_hist_sina",
             )
+            _require_exact_requested_end(
+                sina_bars,
+                end=end,
+                operation="fund_etf_hist_sina",
+            )
             return HistoricalDailySourceResult(
                 bars=sina_bars,
                 selected_source="AKShare/Sina fund_etf_hist_sina",
-                source_failures=tuple(failures),
+                source_failures=tuple(etf_failures),
+                warnings=_SINA_DAILY_FALLBACK_WARNINGS,
             )
         except AKShareDailyError as exc:
-            failures.append(f"fund_etf_hist_sina:{type(exc).__name__}")
+            etf_failures.append(f"fund_etf_hist_sina:{type(exc).__name__}")
             raise AKShareDailyError(
-                "all AKShare ETF daily sources failed: " + ", ".join(failures)
+                "all AKShare ETF daily sources failed: " + ", ".join(etf_failures)
             ) from exc
 
     async def _fetch_source_async(
@@ -381,6 +475,7 @@ class AKShareHistoricalDailyAdapter:
         end: date,
         filter_to_window: bool,
         derive_adjacent_previous_close: bool,
+        serialize_sina: bool = False,
     ) -> tuple[DailyBar, ...]:
         try:
             return await asyncio.wait_for(
@@ -399,6 +494,7 @@ class AKShareHistoricalDailyAdapter:
                         derive_adjacent_previous_close=(
                             derive_adjacent_previous_close
                         ),
+                        serialize_sina=serialize_sina,
                     )
                 ),
                 timeout=self._timeout_seconds,
@@ -410,12 +506,11 @@ class AKShareHistoricalDailyAdapter:
 
 
 class HistoricalDailyFallbackRouter:
-    """Prefer one complete source, with an opt-in proven tail-stitch policy.
+    """优先采用一个完整来源，并提供选择加入的已证明尾部拼接策略。
 
-    By default the router never mixes providers.  With ``tail_stitch_policy``
-    it may append only primary dates newer than a longer fallback history,
-    after exact recent date/OHLC agreement proves a safe boundary.  It never
-    overwrites fallback overlap rows.
+    默认情况下，路由器绝不混合数据提供者。启用 ``tail_stitch_policy`` 后，
+    只有精确的近期日期/开高低收一致性能证明边界安全时，才可将主来源中晚于
+    较长回退历史的日期追加到尾部；绝不覆盖回退来源的重叠记录。
     """
 
     def __init__(
@@ -466,11 +561,13 @@ class HistoricalDailyFallbackRouter:
         primary_failure: MarketDataUnavailableError | None = None
         primary_selected_source = self._primary_name
         primary_source_failures: tuple[str, ...] = ()
+        primary_warnings: tuple[str, ...] = ()
         try:
             (
                 primary_bars,
                 primary_selected_source,
                 primary_source_failures,
+                primary_warnings,
             ) = _fetch_provider_sync(
                 self._primary,
                 configured_name=self._primary_name,
@@ -495,12 +592,14 @@ class HistoricalDailyFallbackRouter:
                 primary_count=len(primary_bars),
                 fallback_count=None,
                 selected_source_failures=primary_source_failures,
+                warnings=primary_warnings,
             )
         try:
             (
                 fallback_bars,
                 fallback_selected_source,
                 fallback_source_failures,
+                fallback_warnings,
             ) = _fetch_provider_sync(
                 self._fallback,
                 configured_name=self._fallback_name,
@@ -546,6 +645,7 @@ class HistoricalDailyFallbackRouter:
                     *fallback_source_failures,
                 ),
                 tail_stitch=diagnostics,
+                warnings=tuple(dict.fromkeys((*primary_warnings, *fallback_warnings))),
             )
         if len(fallback_bars) < self._minimum_bars:
             raise HistoricalDailyCoverageError(
@@ -563,6 +663,7 @@ class HistoricalDailyFallbackRouter:
                 None if primary_failure is None else type(primary_failure).__name__
             ),
             selected_source_failures=fallback_source_failures,
+            warnings=fallback_warnings,
         )
 
     async def fetch_daily_bars_async(
@@ -594,11 +695,13 @@ class HistoricalDailyFallbackRouter:
         primary_failure: MarketDataUnavailableError | None = None
         primary_selected_source = self._primary_name
         primary_source_failures: tuple[str, ...] = ()
+        primary_warnings: tuple[str, ...] = ()
         try:
             (
                 primary_bars,
                 primary_selected_source,
                 primary_source_failures,
+                primary_warnings,
             ) = await _fetch_provider_async(
                 self._primary,
                 configured_name=self._primary_name,
@@ -623,12 +726,14 @@ class HistoricalDailyFallbackRouter:
                 primary_count=len(primary_bars),
                 fallback_count=None,
                 selected_source_failures=primary_source_failures,
+                warnings=primary_warnings,
             )
         try:
             (
                 fallback_bars,
                 fallback_selected_source,
                 fallback_source_failures,
+                fallback_warnings,
             ) = await _fetch_provider_async(
                 self._fallback,
                 configured_name=self._fallback_name,
@@ -674,6 +779,7 @@ class HistoricalDailyFallbackRouter:
                     *fallback_source_failures,
                 ),
                 tail_stitch=diagnostics,
+                warnings=tuple(dict.fromkeys((*primary_warnings, *fallback_warnings))),
             )
         if len(fallback_bars) < self._minimum_bars:
             raise HistoricalDailyCoverageError(
@@ -691,6 +797,7 @@ class HistoricalDailyFallbackRouter:
                 None if primary_failure is None else type(primary_failure).__name__
             ),
             selected_source_failures=fallback_source_failures,
+            warnings=fallback_warnings,
         )
 
     def _tail_stitch_if_required(
@@ -741,7 +848,7 @@ def _controlled_tail_stitch(
     tuple[DailyBar, ...],
     HistoricalDailyTailStitchDiagnostics,
 ]:
-    """Join only a strictly proven fresh tail onto a longer delayed history."""
+    """只把经过严格证明的新鲜尾部连接到较长的延迟历史。"""
 
     _validate_stitch_input(base_bars, source=base_source)
     _validate_stitch_input(tail_bars, source=tail_source)
@@ -887,7 +994,7 @@ def _fetch_provider_sync(
     start: date,
     end: date,
     adjustment: PriceAdjustment,
-) -> tuple[tuple[DailyBar, ...], str, tuple[str, ...]]:
+) -> tuple[tuple[DailyBar, ...], str, tuple[str, ...], tuple[str, ...]]:
     route_method = getattr(provider, "fetch_daily_bars_with_route", None)
     if callable(route_method):
         route = route_method(
@@ -900,7 +1007,12 @@ def _fetch_provider_sync(
             raise HistoricalDailyFallbackError(
                 f"{configured_name} returned invalid route diagnostics"
             )
-        return route.bars, route.selected_source, route.selected_source_failures
+        return (
+            route.bars,
+            route.selected_source,
+            route.selected_source_failures,
+            route.warnings,
+        )
     diagnostic_method = getattr(provider, "fetch_daily_bars_with_source", None)
     if callable(diagnostic_method):
         result = diagnostic_method(
@@ -913,7 +1025,7 @@ def _fetch_provider_sync(
             raise HistoricalDailyFallbackError(
                 f"{configured_name} returned invalid source diagnostics"
             )
-        return result.bars, result.selected_source, result.source_failures
+        return result.bars, result.selected_source, result.source_failures, result.warnings
     archive_method = getattr(provider, "fetch_daily_bars_with_archive", None)
     if callable(archive_method):
         snapshot = archive_method(
@@ -926,6 +1038,7 @@ def _fetch_provider_sync(
             tuple(snapshot.bars),
             f"LocalImmutableArchive/{snapshot.source_id}",
             (),
+            (),
         )
     bars = tuple(
         provider.fetch_daily_bars(
@@ -935,7 +1048,7 @@ def _fetch_provider_sync(
             adjustment=adjustment,
         )
     )
-    return bars, configured_name, ()
+    return bars, configured_name, (), ()
 
 
 async def _fetch_provider_async(
@@ -946,7 +1059,7 @@ async def _fetch_provider_async(
     start: date,
     end: date,
     adjustment: PriceAdjustment,
-) -> tuple[tuple[DailyBar, ...], str, tuple[str, ...]]:
+) -> tuple[tuple[DailyBar, ...], str, tuple[str, ...], tuple[str, ...]]:
     route_method = getattr(provider, "fetch_daily_bars_async_with_route", None)
     if callable(route_method):
         route = await route_method(
@@ -959,7 +1072,12 @@ async def _fetch_provider_async(
             raise HistoricalDailyFallbackError(
                 f"{configured_name} returned invalid async route diagnostics"
             )
-        return route.bars, route.selected_source, route.selected_source_failures
+        return (
+            route.bars,
+            route.selected_source,
+            route.selected_source_failures,
+            route.warnings,
+        )
     diagnostic_method = getattr(provider, "fetch_daily_bars_async_with_source", None)
     if callable(diagnostic_method):
         result = await diagnostic_method(
@@ -972,7 +1090,7 @@ async def _fetch_provider_async(
             raise HistoricalDailyFallbackError(
                 f"{configured_name} returned invalid async source diagnostics"
             )
-        return result.bars, result.selected_source, result.source_failures
+        return result.bars, result.selected_source, result.source_failures, result.warnings
     archive_method = getattr(provider, "fetch_daily_bars_async_with_archive", None)
     if callable(archive_method):
         snapshot = await archive_method(
@@ -985,6 +1103,7 @@ async def _fetch_provider_async(
             tuple(snapshot.bars),
             f"LocalImmutableArchive/{snapshot.source_id}",
             (),
+            (),
         )
     bars = tuple(
         await provider.fetch_daily_bars_async(
@@ -994,7 +1113,7 @@ async def _fetch_provider_async(
             adjustment=adjustment,
         )
     )
-    return bars, configured_name, ()
+    return bars, configured_name, (), ()
 
 
 def _import_akshare() -> Any:
@@ -1017,12 +1136,17 @@ def _fetch_source_once(
     end: date,
     filter_to_window: bool,
     derive_adjacent_previous_close: bool,
+    serialize_sina: bool,
 ) -> tuple[DailyBar, ...]:
     method = getattr(client, operation, None)
     if method is None or not callable(method):
         raise AKShareDailyError(f"installed AKShare has no callable {operation}")
     try:
-        frame = method(**kwargs)
+        if serialize_sina:
+            with _SINA_HISTORY_LOCK:
+                frame = method(**kwargs)
+        else:
+            frame = method(**kwargs)
     except (KeyboardInterrupt, SystemExit):
         raise
     except AKShareDailyError:
@@ -1074,6 +1198,20 @@ def _require_minimum_source_bars(
         )
 
 
+def _require_exact_requested_end(
+    bars: tuple[DailyBar, ...],
+    *,
+    end: date,
+    operation: str,
+) -> None:
+    latest = bars[-1].trade_date
+    if latest != end:
+        raise AKShareDailyNoDataError(
+            f"AKShare {operation} latest session {latest.isoformat()} does not match "
+            f"exact requested end {end.isoformat()}"
+        )
+
+
 def _normalize_asset_types(
     values: Mapping[str, AKShareDailyAssetType | str],
 ) -> dict[str, AKShareDailyAssetType]:
@@ -1111,9 +1249,8 @@ def _normalize_symbol(symbol: str) -> tuple[str, str]:
 
 
 def _infer_exchange(code: str) -> str:
-    # Beijing-listed equities use legacy 4/8-series codes and, under the
-    # current numbering scheme, 92-series codes.  Check 92 before Shanghai's
-    # broader 9-series rule so a bare current BSE code is never misrouted.
+    # 北交所股票使用旧式 4/8 系代码，当前编号方案还使用 92 系代码。应先检查
+    # 92，再应用上海更宽泛的 9 系规则，避免无后缀的当前北交所代码被错误路由。
     if code.startswith(("4", "8", "92")):
         return "BJ"
     if code.startswith(("5", "6", "9")):
@@ -1161,7 +1298,12 @@ def _resolve_columns(
 ) -> dict[str, str]:
     provider_columns = {str(key) for row in rows for key in row}
     resolved: dict[str, str] = {}
-    for canonical, aliases in _COLUMN_ALIASES.items():
+    aliases_by_field = (
+        _SINA_STOCK_COLUMN_ALIASES
+        if operation == "stock_zh_a_daily"
+        else _COLUMN_ALIASES
+    )
+    for canonical, aliases in aliases_by_field.items():
         matches = [alias for alias in aliases if alias in provider_columns]
         if len(matches) > 1:
             raise AKShareDailyPayloadError(
@@ -1278,8 +1420,8 @@ def _validate_and_sort_bars(
             f"AKShare {operation} returned duplicate trading dates"
         )
     if derive_adjacent_previous_close:
-        # Derive only after window filtering.  The first visible row must not
-        # use a provider row preceding the caller's point-in-time sequence.
+    # 只在窗口过滤后进行派生。首条可见记录不得使用早于调用方时点序列的数据
+    # 提供者记录。
         derived: list[DailyBar] = []
         previous: DailyBar | None = None
         for bar in ordered:
@@ -1335,8 +1477,8 @@ def _date_value(value: Any) -> date:
 def _trading_status(row: Mapping[str, Any], columns: Mapping[str, str]) -> bool:
     status_column = columns.get("trading_status")
     if status_column is None:
-        # Eastmoney daily-history endpoints emit trading bars only.  Suspension
-        # dates are absent rather than represented as forward-filled rows.
+    # 东方财富日线历史端点只发出交易行情柱。停牌日期直接缺失，而不是以向前
+    # 填充的记录表示。
         return True
     value = row.get(status_column)
     if _is_missing(value):
@@ -1352,9 +1494,8 @@ def _trading_status(row: Mapping[str, Any], columns: Mapping[str, str]) -> bool:
 def _stock_st_status(row: Mapping[str, Any], columns: Mapping[str, str]) -> bool:
     st_column = columns.get("is_st")
     if st_column is None or _is_missing(row.get(st_column)):
-        # stock_zh_a_hist has no point-in-time ST column.  The adapter does not
-        # infer ST from names; callers needing authoritative ST history should
-        # keep BaoStock as the preferred source.
+    # stock_zh_a_hist 没有时点 ST 列。适配器不会从名称推断 ST；需要权威 ST
+    # 历史的调用方应继续以 BaoStock 为首选来源。
         return False
     value = row.get(st_column)
     marker = str(value).strip().casefold()

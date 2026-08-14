@@ -1,9 +1,7 @@
-"""Pure conversion of cross-market observations into auditable evidence.
+"""将跨市场观测纯转换为可审计证据。
 
-This module performs no I/O and makes no directional or causal inference.  It
-turns each quote into a content-addressed evidence item, adds one explicit
-coverage item (including requested-but-missing series), and prepares compact
-Chinese report lines with three-decimal numeric presentation.
+本模块不执行 I/O，也不作方向或因果推断。它把每个报价转换为内容寻址证据项，加入一个
+明确的覆盖率证据项（包括已请求但缺失的序列），并准备数值保留三位小数的紧凑中文报告行。
 """
 
 from __future__ import annotations
@@ -40,7 +38,7 @@ _SEGMENT_ORDER = {segment: index for index, segment in enumerate(CrossMarketSegm
 
 @dataclass(frozen=True, slots=True)
 class CrossMarketEvidenceBundle:
-    """Evidence and presentation views derived from exactly one snapshot."""
+    """严格由单个快照派生的证据与展示视图。"""
 
     items: tuple[EvidenceItem, ...]
     references: tuple[EvidenceReference, ...]
@@ -63,11 +61,10 @@ class CrossMarketEvidenceBundle:
 def build_cross_market_evidence(
     snapshot: CrossMarketSnapshot,
 ) -> CrossMarketEvidenceBundle:
-    """Build deterministic quote evidence, coverage evidence and report lines.
+    """构建确定性报价证据、覆盖率证据与报告行。
 
-    Quote and missing-item order in an input snapshot is not treated as
-    meaningful.  Conversion first applies a stable segment/instrument sort, so
-    equivalent observations yield identical IDs and output ordering.
+    输入快照中报价及缺失项的顺序不具语义。转换会先按板块/标的稳定排序，因此等价观测
+    会产生相同标识与输出顺序。
     """
 
     quotes = tuple(sorted(snapshot.quotes, key=_quote_sort_key))
@@ -87,7 +84,7 @@ def build_cross_market_evidence(
 def format_cross_market_report_lines(
     snapshot: CrossMarketSnapshot,
 ) -> tuple[str, ...]:
-    """Return deterministic Chinese observation lines using three decimals."""
+    """返回数值保留三位小数的确定性中文观测行。"""
 
     quotes = tuple(sorted(snapshot.quotes, key=_quote_sort_key))
     missing = tuple(sorted(snapshot.missing, key=_missing_sort_key))

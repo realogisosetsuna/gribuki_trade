@@ -2,6 +2,8 @@
 
 更新日期：2026-08-13
 
+> 本文是该日期的本机验收快照，保留真实 Testnet、历史数据和 SHADOW 观测值；它不是实时状态页。当前接口与生产边界见 [Binance 与 Schwab 接入边界](BINANCE_SCHWAB_INTEGRATION.md)。
+
 ## 当前结论
 
 目前已分别跑通三条可重复的 Binance 研究/模拟链路：

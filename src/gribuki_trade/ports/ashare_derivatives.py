@@ -1,10 +1,8 @@
-"""Point-in-time contracts for official SSE ETF and option research data.
+"""上交所 ETF 与期权官方研究数据的时点契约。
 
-The exchange pages expose end-of-day observations, not executable quotes.  In
-particular, an ETF ``STAT_DATE`` is the date of the post-settlement share count
-and option risk numbers are calculated from that session's closing data.  The
-official endpoints do not publish a machine-readable release timestamp, so
-``available_at`` deliberately means the collector's first-seen time.
+交易所页面公开的是日终观测，而非可执行报价。具体而言，ETF ``STAT_DATE`` 是结算后
+份额统计日期，期权风险数值由该交易日收盘数据计算。官方端点不发布机器可读的发布时间戳，
+因此 ``available_at`` 刻意表示采集器首次看见的时间。
 """
 
 from __future__ import annotations
@@ -17,23 +15,23 @@ from typing import Protocol, runtime_checkable
 
 
 class SSEOfficialDataError(RuntimeError):
-    """Base error for the two read-only SSE official sources."""
+    """两个只读上交所官方来源的基础错误。"""
 
 
 class SSEOptionRiskDataError(SSEOfficialDataError):
-    """Base error for the SSE option-risk source."""
+    """上交所期权风险来源的基础错误。"""
 
 
 class SSEOptionRiskTimeoutError(TimeoutError, SSEOptionRiskDataError):
-    """The SSE option-risk request exceeded its deadline."""
+    """上交所期权风险请求超过截止时间。"""
 
 
 class SSEOptionRiskTransportError(ConnectionError, SSEOptionRiskDataError):
-    """The SSE option-risk endpoint could not be reached."""
+    """无法访问上交所期权风险端点。"""
 
 
 class SSEOptionRiskHTTPStatusError(SSEOptionRiskDataError):
-    """The SSE option-risk endpoint returned an unacceptable HTTP status."""
+    """上交所期权风险端点返回不可接受的 HTTP 状态。"""
 
     def __init__(self, status_code: int) -> None:
         self.status_code = status_code
@@ -41,31 +39,31 @@ class SSEOptionRiskHTTPStatusError(SSEOptionRiskDataError):
 
 
 class SSEOptionRiskSchemaError(SSEOptionRiskDataError):
-    """The option-risk payload cannot be interpreted without ambiguity."""
+    """期权风险载荷无法无歧义地解释。"""
 
 
 class SSEOptionRiskNoDataError(SSEOptionRiskDataError):
-    """No eligible completed option-risk session was available."""
+    """没有可用的合格已完成期权风险交易日。"""
 
 
 class SSEOptionRiskNotVisibleError(SSEOptionRiskDataError):
-    """The fetched option-risk document was first seen after ``as_of``."""
+    """已拉取期权风险文档首次可见时间晚于 ``as_of``。"""
 
 
 class SSEETFShareDataError(SSEOfficialDataError):
-    """Base error for the SSE post-settlement ETF-share source."""
+    """上交所结算后 ETF 份额来源的基础错误。"""
 
 
 class SSEETFShareTimeoutError(TimeoutError, SSEETFShareDataError):
-    """The SSE ETF-share request exceeded its deadline."""
+    """上交所 ETF 份额请求超过截止时间。"""
 
 
 class SSEETFShareTransportError(ConnectionError, SSEETFShareDataError):
-    """The SSE ETF-share endpoint could not be reached."""
+    """无法访问上交所 ETF 份额端点。"""
 
 
 class SSEETFShareHTTPStatusError(SSEETFShareDataError):
-    """The SSE ETF-share endpoint returned an unacceptable HTTP status."""
+    """上交所 ETF 份额端点返回不可接受的 HTTP 状态。"""
 
     def __init__(self, status_code: int) -> None:
         self.status_code = status_code
@@ -73,20 +71,20 @@ class SSEETFShareHTTPStatusError(SSEETFShareDataError):
 
 
 class SSEETFShareSchemaError(SSEETFShareDataError):
-    """The ETF-share payload cannot be interpreted without ambiguity."""
+    """ETF 份额载荷无法无歧义地解释。"""
 
 
 class SSEETFShareNoDataError(SSEETFShareDataError):
-    """No eligible post-settlement ETF-share observation was available."""
+    """没有可用的合格结算后 ETF 份额观测。"""
 
 
 class SSEETFShareNotVisibleError(SSEETFShareDataError):
-    """The fetched ETF-share document was first seen after ``as_of``."""
+    """已拉取 ETF 份额文档首次可见时间晚于 ``as_of``。"""
 
 
 @dataclass(frozen=True, slots=True)
 class SSEOfficialSourceMeta:
-    """Provenance and first-seen timing for one official SSE observation."""
+    """一条上交所官方观测的来源与首次可见时间。"""
 
     source_id: str
     source_url: str
@@ -124,7 +122,7 @@ class SSEOfficialSourceMeta:
 
 @dataclass(frozen=True, slots=True)
 class SSEOptionRiskContract:
-    """One official SSE closing-risk row with its source decimal precision."""
+    """一条保留来源小数精度的上交所官方收盘风险记录。"""
 
     security_id: str
     contract_id: str
@@ -177,7 +175,7 @@ class SSEOptionRiskContract:
 
 @dataclass(frozen=True, slots=True)
 class SSEOptionRiskSnapshot:
-    """All official closing-risk rows for one SSE ETF underlying and date."""
+    """一个上交所 ETF 标的在某日期的全部官方收盘风险记录。"""
 
     underlying_symbol: str
     underlying_name: str
@@ -199,11 +197,10 @@ class SSEOptionRiskSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class SSEETFShareObservation:
-    """One official SSE post-settlement ETF total-share observation.
+    """一条上交所官方结算后 ETF 总份额观测。
 
-    ``total_shares_ten_thousands`` is the field exactly as published by SSE;
-    ``total_shares`` is an exact unit conversion, not an estimate of NAV or
-    assets under management.
+    ``total_shares_ten_thousands`` 是上交所原样发布的字段；``total_shares`` 是精确
+    单位换算，并非净值或资产管理规模估计。
     """
 
     symbol: str
@@ -253,7 +250,7 @@ class AsyncSSEETFShareData(Protocol):
 
 
 def digest_official_payload(body: bytes) -> str:
-    """Return the exact document digest used by source metadata."""
+    """返回来源元数据使用的精确文档摘要。"""
 
     return hashlib.sha256(body).hexdigest()
 

@@ -1,9 +1,7 @@
-"""Orchestrate append-only, ex-post recommendation outcome evaluation.
+"""编排仅追加的事后推荐结果评估。
 
-The daily bars consumed here are outcome observations, never strategy inputs.
-The service explicitly requests unadjusted prices and records when an outcome
-was evaluated; it does not claim that a revisable provider history was known
-at the original recommendation time.
+这里使用的日线柱是结果观测，绝不是策略输入。服务明确请求未复权价格并记录结果评估
+时间；它不会声称可修订的供应商历史在原始推荐时点已经可知。
 """
 
 from __future__ import annotations
@@ -31,12 +29,12 @@ EvaluationPhase = Literal["load", "fetch", "evaluate", "persist"]
 
 
 class HistoricalOutcomeDataError(ValueError):
-    """A provider violated the unadjusted, bounded outcome-data contract."""
+    """供应商违反未复权且有界的结果数据契约。"""
 
 
 @dataclass(frozen=True, slots=True)
 class RecommendationEvaluationFailure:
-    """Sanitized per-item failure; provider messages are deliberately omitted."""
+    """已脱敏的单项失败；刻意省略供应商消息。"""
 
     recommendation_id: str
     phase: EvaluationPhase
@@ -45,7 +43,7 @@ class RecommendationEvaluationFailure:
 
 @dataclass(frozen=True, slots=True)
 class RecommendationEvaluationRun:
-    """Results and mutually exclusive status counts for one finite run."""
+    """一次有限运行的结果与互斥状态计数。"""
 
     selected: int
     pending: int
@@ -63,13 +61,11 @@ class RecommendationEvaluationRun:
 
 
 class RecommendationEvaluationService:
-    """Evaluate retained recommendations independently against future EOD bars.
+    """使用未来日终行情柱独立评估已保留推荐。
 
-    A terminal outcome for the configured horizon is reused, making repeated
-    runs idempotent.  A pending outcome is retried because later sessions may
-    complete its horizon; an unchanged pending payload is not appended again.
-    Every provider request uses ``PriceAdjustment.NONE`` and ends before the
-    evaluation date so an unfinished current-day row cannot enter the result.
+    配置期限内的终态结果会被复用，使重复运行具有幂等性。待定结果会重试，因为后续
+    交易日可能补足期限；未变化的待定载荷不会再次追加。每次供应商请求都使用
+    ``PriceAdjustment.NONE``，且截止于评估日期之前，避免未结束的当日记录进入结果。
     """
 
     def __init__(
@@ -95,13 +91,11 @@ class RecommendationEvaluationService:
         evaluated_at: datetime | None = None,
         data_through: date | None = None,
     ) -> RecommendationEvaluationRun:
-        """Evaluate an explicit set, or select retained records by symbol/as-of.
+        """评估显式集合，或按标的/截止时点选择已保留记录。
 
-        ``as_of`` is an exact timestamp filter.  Explicit recommendations and
-        store filters are mutually exclusive.  ``data_through`` is the latest
-        fully closed daily session that the caller permits; it must precede
-        ``evaluated_at``.  The conservative default is the previous calendar
-        day.
+        ``as_of`` 是精确时间戳过滤器。显式推荐与存储过滤器互斥。``data_through``
+        是调用方允许的最近一个已完整收盘交易日，必须早于 ``evaluated_at``；
+        保守默认值为前一自然日。
         """
 
         observation_time = evaluated_at or self._clock()

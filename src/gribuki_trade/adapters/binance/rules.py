@@ -1,4 +1,4 @@
-"""Parsing and exact Decimal validation for Binance ``exchangeInfo`` rules."""
+"""对 Binance ``exchangeInfo`` 规则做解析与精确 Decimal 校验。"""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ from typing import Any
 
 
 class BinanceValidationError(ValueError):
-    """An order violates locally cached Binance symbol filters."""
+    """订单违反了本地缓存的 Binance 标的过滤规则。"""
 
 
 def decimal_from_api(value: object, field_name: str) -> Decimal:
-    """Parse a finite decimal without ever passing through binary floats."""
+    """解析有限 Decimal，且绝不经过二进制浮点。"""
 
     try:
         result = Decimal(str(value))
@@ -24,7 +24,7 @@ def decimal_from_api(value: object, field_name: str) -> Decimal:
 
 
 def decimal_to_fixed(value: Decimal) -> str:
-    """Return a non-scientific decimal string suitable for Binance requests."""
+    """返回适合 Binance 请求的非科学计数法十进制字符串。"""
 
     if not isinstance(value, Decimal):
         raise TypeError("Binance numeric order values must be Decimal")
@@ -170,7 +170,7 @@ class SymbolRules:
         current_position: Decimal | None = None,
         open_order_count: int | None = None,
     ) -> None:
-        """Validate exact precision, ranges, and notional using Decimal only."""
+        """仅使用 Decimal 校验精确精度、范围与名义金额。"""
 
         decimal_to_fixed(quantity)
         decimal_to_fixed(price)

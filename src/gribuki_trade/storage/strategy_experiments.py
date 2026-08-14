@@ -1,4 +1,4 @@
-"""Append-only SQLite storage for offline strategy experiment audit documents."""
+"""用于离线策略实验审计文档的仅追加 SQLite 存储。"""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from gribuki_trade.strategy_lab.experiments import (
 
 
 class StrategyExperimentCollisionError(ValueError):
-    """An experiment ID was replayed with different immutable content."""
+    """同一实验 ID 被以不同不可变内容重放。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,11 +47,10 @@ class StoredStrategyExperiment:
 
 
 class SQLiteStrategyExperimentStore:
-    """WAL-backed immutable experiment registry.
+    """由 WAL 支撑的不可变实验登记表。
 
-    The canonical JSON contains every fold, candidate, metric, cost scenario,
-    contribution, warning, and holdout result.  Indexed columns support audit
-    discovery without introducing mutable relational projections.
+    规范 JSON 包含每个折叠、候选、指标、成本情景、贡献、告警和留出集结果。
+    索引列支持审计发现，而不引入可变关系投影。
     """
 
     def __init__(
@@ -133,7 +132,7 @@ class SQLiteStrategyExperimentStore:
             )
 
     def append(self, experiment: StrategyExperiment) -> bool:
-        """Append an experiment, returning false for an exact idempotent replay."""
+        """追加一项实验；精确幂等重放返回 false。"""
 
         payload = experiment_to_json(experiment)
         digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()

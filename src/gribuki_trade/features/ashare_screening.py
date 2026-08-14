@@ -1,8 +1,7 @@
-"""Deterministic hard filtering and cross-sectional A-share ranking.
+"""确定性的 A 股硬过滤与横截面排序。
 
-This module is deliberately pure: it has no provider, clock, LLM, account, or
-broker dependency.  Missing factors remain ``None`` in the audit trail; they
-never receive a fabricated median percentile or neutral score.
+本模块刻意保持纯粹：不依赖供应商、时钟、LLM、账户或券商。缺失因子在审计轨迹中
+保持 ``None``，绝不会获得虚构的中位百分位或中性评分。
 """
 
 from __future__ import annotations
@@ -55,7 +54,7 @@ class FactorObservationStatus(StrEnum):
 
 
 class ScreeningCandidateDataStatus(StrEnum):
-    """Completeness of a scored candidate, not a trading recommendation."""
+    """已评分候选标的的完整度，而非交易建议。"""
 
     COMPLETE = "COMPLETE"
     DEGRADED = "DEGRADED"
@@ -63,7 +62,7 @@ class ScreeningCandidateDataStatus(StrEnum):
 
 
 class FactorEligibilityReason(StrEnum):
-    """Second-layer historical qualification failures."""
+    """第二层历史资格检查失败。"""
 
     FACTOR_RECORD_MISSING = "FACTOR_RECORD_MISSING"
     MISSING_AVERAGE_AMOUNT_20 = "MISSING_AVERAGE_AMOUNT_20"
@@ -72,7 +71,7 @@ class FactorEligibilityReason(StrEnum):
 
 
 class ScreeningDeferralReason(StrEnum):
-    """Why an L1 survivor was not sent to expensive factor enrichment."""
+    """第一层通过者未送往高成本因子增强的原因。"""
 
     FACTOR_BUDGET_DEFERRED = "FACTOR_BUDGET_DEFERRED"
 
@@ -139,7 +138,7 @@ DEFAULT_FACTOR_SPECS = (
 
 @dataclass(frozen=True, slots=True)
 class AShareScreeningConfig:
-    """Transparent defaults for the v1 all-market funnel."""
+    """第一版全市场漏斗的透明默认值。"""
 
     min_listing_days: int = 250
     strict_listing_age: bool = True
@@ -237,7 +236,7 @@ class ScreeningDeferredRecord:
 
 @dataclass(frozen=True, slots=True)
 class ScreeningFactorContribution:
-    """Full audit row for one symbol-factor pair."""
+    """一个标的-因子组合的完整审计行。"""
 
     factor_id: ScreeningFactorId
     status: FactorObservationStatus
@@ -252,7 +251,7 @@ class ScreeningFactorContribution:
 
 @dataclass(frozen=True, slots=True)
 class RankedAShareCandidate:
-    """A cross-sectional result suitable for a later deep-research stage."""
+    """适合后续深度研究阶段的横截面结果。"""
 
     symbol: str
     name: str
@@ -279,7 +278,7 @@ def hard_filter_ashare_universe(
     *,
     config: AShareScreeningConfig | None = None,
 ) -> HardFilterResult:
-    """Fail closed on unknown eligibility fields and retain every reason."""
+    """资格字段未知时按失败关闭处理，并保留每项原因。"""
 
     resolved = config or AShareScreeningConfig()
     symbols = tuple(item.symbol for item in records)
@@ -310,12 +309,11 @@ def rank_ashare_factor_cross_section(
     config: AShareScreeningConfig | None = None,
     source_degraded: bool = False,
 ) -> AShareFactorRanking:
-    """Winsorize, percentile-rank, direction-adjust, and aggregate factors.
+    """对因子执行缩尾、百分位排序、方向调整与聚合。
 
-    Each available factor receives a signed percentile score in ``[-1, 1]``.
-    The configured contribution is ``score * weight``.  Missing factor weight
-    is withheld from the composite instead of receiving percentile ``0.5``;
-    coverage and a stable degradation reason make that penalty explicit.
+    每个可用因子获得 ``[-1, 1]`` 内的带符号百分位分数，配置贡献为
+    ``score * weight``。缺失因子的权重不会计入综合分，而非赋予百分位 ``0.5``；
+    覆盖率与稳定降级原因会明确体现该惩罚。
     """
 
     resolved = config or AShareScreeningConfig()

@@ -1,6 +1,6 @@
 # A 股全市场筛选、搜索发现与宏观融合边界
 
-更新日期：2026-08-14
+更新日期：2026-08-15
 
 本文说明三项已经进入代码库、但成熟度不同的能力：全市场三层筛选漏斗、
 Tavily/SearXNG 搜索发现，以及搜索事件进入宏观证据后的评分门禁。这里描述的是
@@ -10,7 +10,8 @@ Tavily/SearXNG 搜索发现，以及搜索事件进入宏观证据后的评分�
 
 | 能力 | 当前状态 | 已能完成 | 尚不能完成 |
 |---|---|---|---|
-| 三层全市场筛选漏斗 | 核心与单次 CLI 已实现，生产编排接线中 | 收盘后全市场硬过滤、有限候选历史因子补全、横截面排序、输出/原子导出 Top-N 研究候选 | 尚无排名数据库、定时任务、GUI 页面或 Top-N 批量深研/通知闭环 |
+| 三层全市场筛选漏斗 | 核心、单次 CLI、候选/运行档案和有界批量深研已实现；自动编排未接入 | 收盘后全市场硬过滤、有限候选历史因子补全、横截面排序、Top-N 候选入库，以及 ACTIVE 候选的串行深研、报告和 NapCat outbox | 尚无完整快照/全排名数据库、应用内交易日调度、GUI 页面或无人值守的每日闭环 |
+| PAPER-day 盘前降级种子 | 已接入 `ashare-paper-day`，无独立执行入口 | 09:25 前把当前网页快照保守绑定到已核验的上一交易日，产生沪深研究种子 | 不是集合竞价、历史收盘重放或买入授权；北交所不在该路径，开盘后必须由当前时段证据复核 |
 | Tavily/SearXNG 搜索发现 | 核心及收盘研究 CLI 已接入 | 个股、行业、宏观查询；并发、故障隔离、去重、线索事件归一化；SearXNG 可选 Keyring Bearer 鉴权 | 不保证搜索覆盖率、网页事实正确性或原文长期可访问 |
 | 搜索证据与宏观融合门禁 | 已实现 | `discovery_hint` 拒绝进入宏观证据；满足晋级条件的 `discovery_confirmed` 才可继续经过 PIT/时效/注入等门禁 | `confirmed` 不代表事实已核实；宏观分不是概率，也不能把技术非入场信号升级为入场 |
 
@@ -24,6 +25,8 @@ Tavily/SearXNG 搜索发现，以及搜索事件进入宏观证据后的评分�
 - [确定性硬过滤与因子排名](../src/gribuki_trade/features/ashare_screening.py)
 - [三层编排服务](../src/gribuki_trade/services/ashare_screening.py)
 - [AKShare 收盘快照与历史因子适配器](../src/gribuki_trade/adapters/ashare_screening.py)
+- [PAPER-day 盘前降级适配器](../src/gribuki_trade/adapters/ashare_preopen_screening.py)
+- [盘前种子编排服务](../src/gribuki_trade/services/ashare_preopen_screening.py)
 
 当前数据流是：
 
@@ -36,8 +39,9 @@ Tavily/SearXNG 搜索发现，以及搜索事件进入宏观证据后的评分�
     ├─ L2：未复权日线、公司行为防护、横截面因子评分
     │      └─ 输出有完整因子审计行的确定性排名
     │
-    └─ L3：截取默认 Top 30，作为后续单标的深度研究输入
-           └─ 批量深研、报告、通知和 GUI 接线尚未完成
+    └─ L3：截取默认 Top 30，写入候选事件库和筛选运行档案
+           ├─ 可由有界串行批处理生成单标的报告并进入 NapCat outbox
+           └─ 应用内自动调度、GUI 列表和失败重跑尚未接入
 ```
 
 ### 2.1 L1：全市场快照和硬过滤
@@ -46,7 +50,7 @@ Tavily/SearXNG 搜索发现，以及搜索事件进入宏观证据后的评分�
 AKShare/腾讯 `stock_zh_a_spot_tx`。腾讯成交额和总市值会按其上游单位显式换算为
 人民币。一个快照少于默认 4,500 个标的会被视为覆盖异常，而不是继续生成排名。
 
-网页接口没有权威 payload 时间戳，因此当前实现只允许查询“上海时区当前交易日”，
+网页接口没有权威 payload 时间戳，因此上述**收盘适配器**只允许查询“上海时区当前交易日”，
 并保守地把 15:05 作为收盘数据最早可用时间。它不是交易所 feed，不支持盘中全市场
 筛选，也不能用今天下载的页面重建过去某日的股票池。
 
@@ -68,6 +72,12 @@ AKShare/腾讯 `stock_zh_a_spot_tx`。腾讯成交额和总市值会按其上游
 每个被排除标的保留全部原因；缺字段不会用默认值猜测。超过历史补全预算的幸存者会
 标记为 `FACTOR_BUDGET_DEFERRED`，这意味着当前排名刻意偏向流动性较高的候选，不能
 把未进入 L2 解释为负面投资判断。
+
+#### 2.1.1 PAPER-day 盘前降级种子
+
+`ashare-paper-day` 在上海时区当前自然日不晚于 09:25 时，可以调用独立盘前适配器。该适配器仍抓取“现在”的东方财富/腾讯网页快照，但只在交易日历已经精确核验上一交易日后，才把它保守重标为上一交易日研究种子。行情与因子状态无条件标记为 `DEGRADED`，并显式记录当前抓取时点，不能用来声称拥有上一交易日的不可变原始快照。
+
+这条路径只承诺沪深主板、创业板和科创板，北交所失败关闭。种子进入当日 watchlist 后，任何 PAPER 买入仍必须取得开盘后的当前 surveillance、技术、LLM、价格、数量、资金和 QUICK 保护证据；盘前结果本身不能创建订单。
 
 ### 2.2 L2：历史补全和横截面评分
 
@@ -111,10 +121,17 @@ L2 仅为预算内候选请求 AKShare `stock_zh_a_hist` 未复权日线，默�
 # 当前交易日 15:05（Asia/Shanghai）后运行；输出 JSON 到 stdout
 .\.venv\Scripts\python.exe -m gribuki_trade ashare-market-screen-once
 
-# 同时原子写入一个 JSON 文件；这不是历史排名数据库
+# 默认同时保存 Top-N 候选和规范化运行档案；可另行原子写出 JSON
 .\.venv\Scripts\python.exe -m gribuki_trade ashare-market-screen-once `
   --top-n 30 --factor-budget 300 `
+  --candidate-db runtime/research/candidates.sqlite3 `
+  --run-db runtime/research/runs.sqlite3 `
   --output runtime/screening/latest.json
+
+# 对 ACTIVE 候选执行最多 10 个标的的串行收盘深研、报告和通知入箱
+.\.venv\Scripts\python.exe -m gribuki_trade ashare-close-research-batch `
+  --candidate-db runtime/research/candidates.sqlite3 --limit 10 `
+  --notify-target-kind private --notify-target-id "YOUR_QQ_ID"
 ```
 
 CLI 支持修改 Top-N、因子补全预算、上市天数、当日成交额、20 日平均成交额和市值
@@ -124,13 +141,14 @@ CLI 支持修改 Top-N、因子补全预算、上市天数、当日成交额、2
 
 当前尚缺：
 
-- 快照、历史排名和因子审计行的数据库；`--output` 只是一次性 JSON 快照；
-- Top-N 到现有单标的收盘深研、报告、NapCat outbox 的有界批量编排；
-- 交易日历调度、GUI 列表、运行状态和失败重跑；
+- 完整原始快照、全截面历史排名和全部因子审计行的数据库；当前候选库只保留 Top-N，运行档案
+  保存规范化输出与 lineage，`--output` 仍只是一次性 JSON 投影；
+- 应用内交易日历调度、GUI 列表、无人值守运行状态和失败重跑；
 - 历史股票池归档及真正的 Point-in-Time 全市场 walk-forward 回测。
 
 因此，目前不能声称软件已经会“每天自动从全市场选出并推送 30 只股票”。核心算法和
-单次 CLI 已有离线测试，但连续运行、批量深研和真实数据 soak test 仍在接线。
+单次 CLI、候选/运行档案及有界批量深研已有离线测试，但连续自动运行和真实数据 soak test
+仍未完成。
 
 ## 3. Tavily 与 SearXNG 搜索发现
 
@@ -202,10 +220,11 @@ CLI 当前为每个标的生成个股、国内政策与流动性、美联储/美
 查询最多 8 条，每组宏观查询最多 6 条。provider × query 并发执行，单 provider 的
 401/403、429、超时、传输或 JSON schema 故障不会终止其他新闻源。
 
-结果按 canonical URL 和规范化标题去重，保留 provider、URL、可解析的
-`published_at`、本机首次观察时间、内容 SHA-256 和查询实体。搜索 API 原始响应不进入
-原始文档档案；只保存长度受限、明确标记为搜索线索的事件。未提供或无法解析发布时间
-时不会编造时间。
+结果按 canonical URL 和规范化标题聚类，保留搜索 provider、匹配 URL、规范化发布者身份、
+可解析的 `published_at`、本机首次观察时间、内容 SHA-256 和查询实体。发布者身份按注册域计算；
+已知官方域映射到稳定的官方主体身份。provider ID 只表示发现路由，绝不作为独立发布者计数。
+搜索 API 原始响应不进入原始文档档案；只保存长度受限、明确标记为搜索线索的事件。未提供或
+无法解析发布时间时不会编造时间。
 
 当前没有 Brave provider，也不会持久化 Brave 搜索结果。
 
@@ -215,27 +234,29 @@ CLI 当前为每个标的生成个股、国内政策与流动性、美联储/美
 
 | 情形 | 事件类型 | 能否进入宏观证据选择 |
 |---|---|---|
-| 普通媒体 URL，仅一个 provider 发现 | `discovery_hint` | 否；即使 entities 精确命中股票代码也拒绝 |
+| 普通媒体 URL，仅一个发布域 | `discovery_hint` | 否；即使多个搜索 provider 返回、entities 精确命中股票代码也拒绝 |
 | URL 主机命中配置的官方域名 | `discovery_confirmed` | 可以继续参加后续门禁 |
-| 至少两个独立 provider 发现同一 canonical URL | `discovery_confirmed` | 可以继续参加后续门禁 |
-| 至少两个独立 provider 发现规范化后相同标题 | `discovery_confirmed` | 可以继续参加后续门禁 |
+| 多个 provider 发现同一 canonical URL | `discovery_hint` | 否；它们仍指向同一发布者页面 |
+| 同一注册发布域的不同 URL 标题相同 | `discovery_hint` | 否；子域或栏目路由不能制造第二家媒体 |
+| 不同独立注册发布域的规范化标题相同 | `discovery_confirmed` | 可以继续参加后续门禁 |
 
 默认官方域名集合包括巨潮、证监会、国务院/政府、财政部、发改委、央行、外汇局、
 上交所、统计局和深交所的主域名。子域名可匹配，形如 `sse.com.cn.evil.example` 的
 后缀伪装不能匹配。
 
 标题“同一故事”目前只做大小写、空白和标点归一化后的精确相等，不做 embedding 或
-LLM 语义聚类；过短或已知通用标题不会用于多 provider 晋级。它仍会遗漏改写标题，
-也不能解释为事实级交叉验证。
+LLM 语义聚类；过短或已知通用标题不会用于独立发布域晋级。注册域使用保守的常见多标签公共
+后缀规则，已知监管/交易所域使用稳定官方主体身份。它仍会遗漏改写标题，也不能解释为事实级
+交叉验证。
 
 两条重要边界：
 
 1. `discovery_hint` 可以进入事件库，并通过 `hint_events` API 供展示层读取；宏观
    selector 在实体匹配之前直接拒绝它，不能因为带有股票代码而绕过确认门。当前
    收盘报告不保证逐条展示所有 hint，专用线索区仍需接线。
-2. `discovery_confirmed` 的含义只是“搜索发现达到晋级条件”。事件仍为
-   `SourceTier.PUBLIC_MEDIA`，不会冒充 `OFFICIAL`。多个搜索 provider 都发现一个页面，
-   也不证明页面中的主张正确或彼此独立采编。
+2. `discovery_confirmed` 的含义只是“官方域命中，或同标题由至少两个独立发布域承载”。事件仍为
+   `SourceTier.PUBLIC_MEDIA`，不会冒充 `OFFICIAL`。多个搜索 provider 都发现一个页面不会晋级；
+   即使不同发布域达到晋级条件，也不证明页面中的主张正确或彼此独立采编。
 
 confirmed 事件进入宏观 EvidencePack 前仍必须通过：
 
@@ -291,12 +312,12 @@ combined_score = technical_score × (1 - effective_macro_weight)
 
 - 在单标的收盘研究中启用 Tavily 和/或 SearXNG，观察 hint/confirmed 数量、来源失败
   和宏观证据采用情况；
-- 通过 Python 核心运行当前交易日收盘后的全市场筛选离线/受控实验；
+- 通过现有 CLI 运行当前交易日收盘后的全市场筛选和受控实验；
 - 验证宏观缺失、模型弃权、线索未确认和负面宏观时系统是否按预期降级。
 
 在宣称“全市场自动选股系统可用”前仍需完成：
 
-1. 筛选 SQLite 审计存储、Top-N 有界深研与通知接线；
+1. 持久归档每日完整原始快照、全排名、所有排除原因和全部因子审计行，而不只保存规范化运行结果；
 2. 归档每日完整股票池和 source revision，建立无幸存者偏差的历史回放；
 3. 对因子做行业/规模暴露、换手、交易成本和 walk-forward 评估；
 4. 对 Tavily/SearXNG 做连续可用性、费用、429 和字段漂移观测；

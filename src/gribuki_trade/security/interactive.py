@@ -1,4 +1,4 @@
-"""No-echo helpers for local credential management."""
+"""用于本地凭据管理的无回显辅助组件。"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def prompt_and_set_secret(
     prompt: str | None = None,
     getpass_fn: GetpassFunction | None = None,
 ) -> None:
-    """Read a value without terminal echo and store it without printing it."""
+    """在终端无回显地读取并保存值，全程不打印其内容。"""
 
     read_hidden = getpass_fn or getpass.getpass
     value = read_hidden(prompt or f"Enter secret for {name}: ")
@@ -25,11 +25,10 @@ def prompt_and_set_secret(
 
 
 class InteractiveSecretManager:
-    """Small local management facade that never writes secret values.
+    """绝不写出秘密值的小型本地管理外观。
 
-    ``get_secret`` returns the value to trusted application code; this class
-    itself performs no printing or logging.  Saving always uses a no-echo
-    ``getpass`` reader.  Deletion and lookup report through return values only.
+    ``get_secret`` 会把值返回给可信应用代码；本类自身不执行打印或日志记录。保存操作
+    始终使用无回显的 ``getpass`` 读取器，删除与查询只通过返回值报告结果。
     """
 
     __slots__ = ("_getpass_fn", "_provider")

@@ -1,8 +1,7 @@
-"""Offline CSV export for orders that require manual broker confirmation.
+"""为需要人工券商确认的订单导出离线 CSV。
 
-This module has no broker-client integration and performs no screen, keyboard,
-or mouse automation.  Its only side effect is an atomic file export to a path
-chosen by the caller.
+本模块不集成券商客户端，也不做屏幕、键盘或鼠标自动化。它唯一的副作用是
+把结果原子写出到调用方指定的路径。
 """
 
 from __future__ import annotations
@@ -32,12 +31,11 @@ def export_manual_tickets(
     *,
     overwrite: bool = False,
 ) -> Path:
-    """Atomically export deterministic UTF-8 CSV tickets for manual entry.
+    """原子导出供人工录入的确定性 UTF-8 CSV 委托单。
 
-    ``client_order_id`` values must be unique within one export.  By default an
-    existing destination is never replaced; callers must opt in explicitly via
-    ``overwrite=True``.  A temporary file is fully flushed in the destination
-    directory before it becomes visible under the requested filename.
+    同一次导出内的 ``client_order_id`` 必须唯一。默认绝不替换已有目标文件；
+    调用方必须通过 ``overwrite=True`` 明确选择覆盖。临时文件会先在目标目录中
+    完整刷盘，之后才以所请求的文件名对外可见。
     """
 
     destination = Path(path)
@@ -96,7 +94,7 @@ def _reject_duplicate_ids(orders: Iterable[OrderIntent]) -> None:
 
 
 def _install_without_overwrite(temporary_path: Path, destination: Path) -> None:
-    """Atomically publish a complete file while preserving an existing target."""
+    """原子发布完整文件，同时保留已有目标文件。"""
 
     try:
         os.link(temporary_path, destination)

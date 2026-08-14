@@ -134,7 +134,7 @@ def test_watch_macro_score_has_discounted_influence() -> None:
 
     result = build_recommendation(technical(), evidence(), macro=watched)
 
-    # WATCH uses 12.5% macro and redistributes the unused 12.5% to technical.
+    # WATCH 使用 12.5% 宏观权重，并把未使用的 12.5% 重新分配给技术面。
     assert result.combined_score == Decimal("0.7250")
     assert result.technical_fusion_weight == Decimal("0.875")
     assert result.macro_fusion_weight == Decimal("0.125")

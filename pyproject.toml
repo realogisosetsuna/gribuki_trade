@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Cross-platform Python trading workstation with an A-share first implementation"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
-license = { text = "Proprietary - personal use" }
+license = { text = "MIT" }
 authors = [{ name = "Gribuki Trade" }]
 dependencies = [
     "akshare>=1.18.84,<1.19",
@@ -36,6 +36,7 @@ packages = ["src/gribuki_trade"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
+cache_dir = "runtime/tmp/pytest-cache"
 testpaths = ["tests"]
 
 [tool.ruff]

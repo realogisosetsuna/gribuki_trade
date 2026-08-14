@@ -7,6 +7,11 @@ from decimal import Decimal
 
 import pytest
 
+from gribuki_trade.analysis.schemas import (
+    MacroAnalysis,
+    MacroAnalysisDecision,
+    MacroClaim,
+)
 from gribuki_trade.domain.recommendations import (
     EvidenceReference,
     RecommendationDecision,
@@ -22,11 +27,16 @@ from gribuki_trade.ports.market_data import (
     MinuteInterval,
     SourceSemantics,
 )
+from gribuki_trade.reporting.contracts import (
+    ReportKind,
+    validate_text_report_contract,
+)
 from gribuki_trade.services import (
     AShareResearchRequest,
     AShareResearchService,
     ResearchNotificationTarget,
 )
+from gribuki_trade.services.ashare_research import format_recommendation_notification
 from gribuki_trade.storage import SQLiteOutbox
 
 NOW = datetime(2026, 8, 13, 2, 35, tzinfo=UTC)
@@ -328,9 +338,56 @@ def test_explicit_notification_is_idempotently_enqueued(tmp_path) -> None:
         assert first.notification is not None
         assert "不会自动下单" in first.notification.text
         assert "可执行交易指令" in first.notification.text
+        validate_text_report_contract(
+            ReportKind.INSTRUMENT_RESEARCH,
+            first.notification.text,
+        )
         assert second.notification is not None
         assert second.notification.idempotency_key == first.notification.idempotency_key
         assert len(outbox.list_items()) == 1
+
+
+def test_compact_research_report_displays_both_track_coverage_and_audit() -> None:
+    service = AShareResearchService(
+        FakeIntradayMarketData(market_bars()),
+        technical_config=technical_config(),
+    )
+    recommendation = run(service, request()).recommendation
+    evidence_id = recommendation.evidence[0].evidence_id
+
+    def track(decision: MacroAnalysisDecision, score: Decimal) -> MacroAnalysis:
+        return MacroAnalysis(
+            analysis_id="dual-track-1",
+            as_of=recommendation.as_of,
+            decision=decision,
+            regime="中性",
+            technical_alignment=Decimal("0.2"),
+            macro_impact=score,
+            scenarios=(),
+            claims=(MacroClaim("证据支持", (evidence_id,), ()),),
+            uncertainties=(),
+            data_gaps=(),
+            invalidation_conditions=("证据修订",),
+            reported_confidence="UNCALIBRATED",
+            refusal_reason="",
+            model_version="model-1",
+        )
+
+    notification = format_recommendation_notification(
+        recommendation,
+        ResearchNotificationTarget(target_id="123456"),
+        baseline_macro=track(MacroAnalysisDecision.PUBLISH, Decimal("0.3")),
+        adversarial_macro=track(MacroAnalysisDecision.WATCH, Decimal("-0.1")),
+        selected_track="ADVERSARIAL",
+        audit_record_sha256="a" * 64,
+    )
+
+    validate_text_report_contract(ReportKind.INSTRUMENT_RESEARCH, notification.text)
+    assert "证据覆盖 1/" in notification.text
+    assert "结构化对抗分析器" in notification.text
+    assert "生产采用：结构化对抗分析器" in notification.text
+    assert "短线（1至5个交易日）" in notification.text
+    assert "a" * 64 in notification.text
 
 
 def test_notification_requires_explicit_outbox_and_target(tmp_path) -> None:

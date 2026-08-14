@@ -1,8 +1,8 @@
-"""Configurable, dependency-free HTML list adapter.
+"""可配置且不依赖浏览器的 HTML 列表适配器。
 
-It extracts only list metadata (title, link, timestamp and short summary).  It
-does not follow item links, execute scripts, solve challenges, or access pages
-behind a login/paywall.
+该适配器只提取标题、链接、发布时间和短摘要，不跟随正文链接、不执行脚本，
+也不会尝试绕过登录、付费墙或反爬验证。每一条解析出的链接还必须重新通过
+来源自身的域名与协议白名单，避免列表页把无关站点混入研究证据。
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, tzinfo
 from html.parser import HTMLParser
+from urllib.parse import urlsplit, urlunsplit
 
 from gribuki_trade.domain.events import NormalizedEvent, RawDocument, SourcePolicy
 from gribuki_trade.pipeline.normalize import (
@@ -52,6 +53,7 @@ class HtmlListConfig:
     event_type: str = "news"
     source_timezone: tzinfo = UTC
     require_published_at: bool = False
+    upgrade_http_links_to_https: bool = False
 
     def __post_init__(self) -> None:
         if not self.item_tag.strip() or not self.link_tag.strip():
@@ -195,6 +197,13 @@ def parse_html_list(
             continue
         try:
             link = canonicalize_url(item.href, base_url=document.canonical_url)
+            if config.upgrade_http_links_to_https:
+                parsed = urlsplit(link)
+                if parsed.scheme == "http":
+                    link = urlunsplit(
+                        ("https", parsed.netloc, parsed.path, parsed.query, parsed.fragment)
+                    )
+            policy.validate_url(link)
         except ValueError:
             continue
         published = parse_published_datetime(

@@ -1,4 +1,4 @@
-"""Read-only adapter for Cboe's official VIX end-of-day CSV history."""
+"""Cboe 官方 VIX 日终 CSV 历史数据的只读适配器。"""
 
 from __future__ import annotations
 
@@ -41,12 +41,11 @@ _ACCEPTED_MEDIA_TYPES = frozenset(
 
 
 class CboeVIXDailyAdapter:
-    """Fetch and PIT-filter the exact official Cboe VIX daily history.
+    """获取精确的 Cboe 官方 VIX 日线历史并按时点过滤。
 
-    Cboe's file is a current-history document rather than a vintage archive.
-    Session rows are therefore filtered by the VIX regular-session close, but
-    the adapter cannot reconstruct later corrections that were unknown at an
-    old ``as_of`` time.  The warning is retained in every result.
+    Cboe 文件是当前历史文档，而非分版本归档。因此交易日行按 VIX 常规时段
+    收盘时间过滤，但适配器无法重建旧 ``as_of`` 时点尚未知晓的后续修订。
+    每份结果都会保留这一警告。
     """
 
     def __init__(
@@ -76,7 +75,7 @@ class CboeVIXDailyAdapter:
         as_of: datetime,
         cache: GlobalRiskCacheEntry | None = None,
     ) -> VIXDailyHistory:
-        """Return only VIX sessions whose 16:15 New York close is complete."""
+        """仅返回纽约时间 16:15 收盘已经完成的 VIX 交易日。"""
 
         _require_aware(as_of, "as_of")
         if cache is not None and cache.source_url != CBOE_VIX_EOD_CSV_URL:
@@ -131,7 +130,7 @@ class CboeVIXDailyAdapter:
         parsed = _parse_vix_csv(body, as_of=as_of)
         if parsed.latest_visible_session_date in parsed.invalid_ohlc_dates:
             latest_date = parsed.latest_visible_session_date
-            assert latest_date is not None  # membership narrows the runtime invariant
+            assert latest_date is not None  # 成员关系检查收窄了运行时不变量。
             raise GlobalRiskSchemaError(
                 "official VIX CSV latest visible row has inconsistent OHLC for "
                 f"{latest_date.isoformat()}; refusing to fall back to an older close"
@@ -249,9 +248,8 @@ def _parse_vix_csv(body: bytes, *, as_of: datetime) -> _ParsedVIXCSV:
             _VIX_REGULAR_CLOSE,
             tzinfo=_NEW_YORK,
         )
-        # A future row cannot influence an earlier PIT request.  Header, field
-        # count, DATE validity, uniqueness, and order remain fail-closed, while
-        # its values are parsed only after that US session has completed.
+        # 未来行不能影响更早的时点请求。表头、字段数、日期有效性、唯一性和
+        # 顺序仍采用关闭失败；只有对应美国交易日结束后才解析其数值。
         if available_at > as_of:
             continue
         latest_visible_session_date = session_date
@@ -262,9 +260,8 @@ def _parse_vix_csv(body: bytes, *, as_of: datetime) -> _ParsedVIXCSV:
         if high < max(open_value, low, close) or low > min(
             open_value, high, close
         ):
-            # Cboe's immutable historical file contains at least one legacy
-            # row where OPEN lies above HIGH.  Preserve the source bytes and
-            # values exactly, but do not expose a semantically invalid bar.
+        # Cboe 的不可变历史文件至少包含一条开盘价高于最高价的旧记录。精确保留
+        # 来源字节和数值，但不暴露语义无效的行情柱。
             invalid_ohlc_dates.append(session_date)
             continue
         bars.append(

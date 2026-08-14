@@ -1,9 +1,8 @@
-"""Resilient AKShare adapter for A-share public-web market data.
+"""面向 A 股公开网页行情数据的韧性 AKShare 适配器。
 
-AKShare aggregates public web endpoints.  In particular,
-``stock_intraday_em`` is time-and-sales-like data without exchange sequence
-numbers, packet recovery, or a completeness guarantee.  This module therefore
-never labels it as an exchange tick feed.
+AKShare 聚合公开网页端点。特别是 ``stock_intraday_em`` 只提供类似逐笔成交的
+数据，没有交易所序列号、数据包恢复或完整性保证。因此本模块绝不会把它标记
+为交易所逐笔数据源。
 """
 
 from __future__ import annotations
@@ -43,29 +42,28 @@ _SpotCacheEntry = tuple[
 
 
 class AKShareError(MarketDataUnavailableError):
-    """Base class for provider, transport, and payload failures."""
+    """数据提供者、传输和载荷失败的基类。"""
 
 
 class AKShareNoDataError(AKShareError):
-    """The provider returned no record for a valid request."""
+    """数据提供者没有为有效请求返回记录。"""
 
 
 class AKSharePayloadError(AKShareError):
-    """The provider returned missing or invalid fields."""
+    """数据提供者返回的字段缺失或无效。"""
 
 
 class AKShareTimeoutError(MarketDataTimeoutError, AKShareError):
-    """An async adapter call exceeded its caller-visible timeout."""
+    """异步适配器调用超过调用方可见的超时。"""
 
 
 class AKShareMarketDataAdapter:
-    """A-share spot, public time-and-sales, and minute-bar adapter.
+    """A 股现货、公开逐笔成交及分钟线适配器。
 
-    The synchronous methods are convenient for batch jobs.  GUI/event-loop
-    callers should use the ``*_async`` variants; provider calls are moved off
-    the event loop and bounded by ``timeout_seconds``.  Python cannot safely
-    kill a blocking third-party thread, so an async timeout bounds the caller's
-    wait but the abandoned provider call may finish in the background.
+    同步方法便于批处理任务使用。图形界面/事件循环调用方应使用 ``*_async``
+    变体；数据提供者调用会移出事件循环，并受 ``timeout_seconds`` 限制。Python
+    无法安全终止阻塞的第三方线程，因此异步超时只限制调用方等待时间，被放弃
+    的提供者调用仍可能在后台完成。
     """
 
     _SINGLE_SPOT_COLUMNS = frozenset({"item", "value"})
@@ -137,13 +135,11 @@ class AKShareMarketDataAdapter:
         self._single_spot_unavailable_until: datetime | None = None
 
     def fetch_spot_snapshot(self, symbol: str) -> MarketSnapshot:
-        """Fetch one symbol first, with Tencent-table and stale-cache fallback.
+        """优先获取单个代码，并以腾讯表格和过期缓存作为回退。
 
-        ``stock_bid_ask_em`` is the preferred call because it retrieves one
-        symbol rather than several thousand.  If that endpoint is unavailable,
-        the independently hosted Tencent board table is used as a marked
-        degraded fallback and cached for reuse across symbols.  Neither source
-        exposes an authoritative quote timestamp.
+        首选 ``stock_bid_ask_em``，因为它只获取一个代码而非数千个。若该端点
+        不可用，则使用独立托管的腾讯行情表作为已标记降级回退，并缓存以供多个
+        代码复用。两个来源都不暴露权威报价时间戳。
         """
 
         canonical_symbol, code = _normalize_symbol(symbol)
@@ -196,7 +192,7 @@ class AKShareMarketDataAdapter:
         return await self._run_async("spot snapshot", self.fetch_spot_snapshot, symbol)
 
     def fetch_trade_prints(self, symbol: str) -> tuple[TradePrint, ...]:
-        """Fetch the provider's current-session public time-and-sales table."""
+        """获取数据提供者的当前交易日公开逐笔成交表。"""
 
         canonical_symbol, code = _normalize_symbol(symbol)
         fetched_at = _aware_now(self._now)
@@ -253,11 +249,10 @@ class AKShareMarketDataAdapter:
         interval: MinuteInterval = MinuteInterval.ONE_MINUTE,
         completed_only: bool = True,
     ) -> tuple[IntradayBar, ...]:
-        """Fetch provider-aggregated 1-minute or 5-minute bars.
+        """获取数据提供者聚合的 1 分钟或 5 分钟行情柱。
 
-        By default the current, potentially changing bar is removed.  AKShare's
-        1-minute endpoint may expose only a short recent history; callers must
-        persist bars if they need a durable intraday archive.
+        默认移除当前可能仍在变化的行情柱。AKShare 的 1 分钟端点可能只暴露
+        较短的近期历史；调用方如需持久盘中归档，必须自行保存行情柱。
         """
 
         canonical_symbol, code = _normalize_symbol(symbol)
@@ -371,9 +366,8 @@ class AKShareMarketDataAdapter:
                         "Eastmoney timestamp is treated as bar start",
                     )
 
-                # Provider implementations do not share identical slicing
-                # behavior.  Only return bars fully contained in the caller's
-                # requested point-in-time window.
+            # 不同数据提供者实现的切片行为并不完全相同。只返回完整位于调用方
+            # 所请求时点窗口内的行情柱。
                 if bar_start < start or bar_end > end:
                     continue
                 is_closed = bar_end <= fetched_at
@@ -616,8 +610,8 @@ class AKShareMarketDataAdapter:
         for record in records:
             raw_code = str(record.get("code", "")).strip().lower()
             if not raw_code.startswith(("sh", "sz")):
-                # This adapter's canonical symbol contract currently covers
-                # SH/SZ only; Tencent's aStock board also contains BSE rows.
+        # 本适配器的规范代码契约当前只覆盖沪深市场；腾讯 A 股行情表还包含北交所
+        # 记录。
                 continue
             code = _normalize_tencent_code(record.get("code"))
             if code in indexed:
@@ -657,7 +651,7 @@ class AKShareMarketDataAdapter:
     def _provider_records_once(
         self, operation: str, **kwargs: Any
     ) -> list[Mapping[str, Any]]:
-        """Call one provider once for an independently bounded async attempt."""
+        """仅调用一次数据提供者，执行具有独立时限的异步尝试。"""
 
         client = self._client or _import_akshare()
         method = getattr(client, operation, None)
@@ -678,12 +672,11 @@ class AKShareMarketDataAdapter:
     async def _provider_records_async(
         self, operation: str, **kwargs: Any
     ) -> list[Mapping[str, Any]]:
-        """Bound each upstream independently so a slow primary cannot skip fallback.
+        """分别限制每个上游，避免缓慢主来源跳过回退。
 
-        Python cannot stop a third-party HTTP call already running in a worker
-        thread.  A timeout therefore bounds this caller's wait only.  Keeping
-        each attempt single-shot prevents an abandoned worker from performing
-        the adapter's normal synchronous retry loop in the background.
+        Python 无法停止已在工作线程中运行的第三方 HTTP 调用。因此超时只限制
+        当前调用方的等待。每次尝试只调用一次，可防止被放弃的工作线程在后台
+        执行适配器的常规同步重试循环。
         """
 
         try:
@@ -977,13 +970,12 @@ def _sina_symbol(canonical_symbol: str) -> str:
 
 
 def _minute_primary_operation(code: str) -> str:
-    """Select the documented AKShare minute endpoint for ETF-like symbols.
+    """为类似 ETF 的代码选择 AKShare 文档规定的分钟端点。
 
-    Shanghai-listed ETFs commonly start with ``5`` and Shenzhen ETFs with
-    ``159``.  AKShare's stock minute helper infers the market from a leading
-    ``6`` only, which incorrectly maps symbols such as 510300 to Shenzhen.
-    The ETF helper uses AKShare's market-ID resolver and produces the same bar
-    schema consumed by this adapter.
+    沪市 ETF 通常以 ``5`` 开头，深市 ETF 通常以 ``159`` 开头。AKShare 股票
+    分钟助手只根据首位是否为 ``6`` 推断市场，会把 510300 等代码错误映射到
+    深圳。ETF 助手使用 AKShare 市场编号解析器，并生成本适配器使用的同一行情
+    柱架构。
     """
 
     if code.startswith("5") or code.startswith("159"):
@@ -1026,7 +1018,7 @@ def _normalize_tencent_spot_row(
 
 
 def _tencent_volume_lots(value: Any) -> tuple[int, str | None]:
-    """Convert Tencent's decimal lot display to the integer port contract."""
+    """把腾讯显示的小数手数转换为端口契约要求的整数。"""
 
     number = _non_negative_decimal(value, "Tencent volume")
     whole_lots = int(number)
@@ -1040,13 +1032,13 @@ def _tencent_volume_lots(value: Any) -> tuple[int, str | None]:
 
 
 def _tencent_turnover_yuan(value: Any) -> Decimal:
-    """Tencent board ``turnover`` is displayed in CNY 10,000 units."""
+    """腾讯行情表的 ``turnover`` 以人民币万元显示。"""
 
     return _non_negative_decimal(value, "Tencent turnover") * Decimal(10_000)
 
 
 def _sina_volume_lots(value: Any) -> tuple[int, tuple[str, ...]]:
-    """Convert Sina minute volume (shares) to whole A-share lots."""
+    """把新浪分钟成交量（股）转换为完整 A 股手数。"""
 
     shares = _non_negative_integer(value, "Sina volume")
     lots, odd_shares = divmod(shares, 100)

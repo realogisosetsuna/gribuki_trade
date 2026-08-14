@@ -1,4 +1,4 @@
-"""Immutable evidence snapshots for deterministic A-share daily analysis."""
+"""用于确定性 A 股日线分析的不可变证据快照。"""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def daily_bar_evidence_canonical_url(
     latest_completed_session: date,
     provider_id: str = "baostock.daily",
 ) -> str:
-    """Return the exact URL identity shared by archival writes and replay reads."""
+    """返回归档写入与回放读取共用的精确 URL 标识。"""
 
     canonical_symbol = symbol.strip().upper()
     canonical_provider_id = provider_id.strip().lower()
@@ -59,7 +59,7 @@ def archive_daily_bar_evidence(
     provider_id: str = "baostock.daily",
     provider_name: str = "BaoStock",
 ) -> ArchivedDailyBarEvidence:
-    """Archive the exact unadjusted bars used by a close decision."""
+    """归档收盘决策所用的精确未复权 K 线。"""
 
     if fetched_at.tzinfo is None or fetched_at.utcoffset() is None:
         raise ValueError("fetched_at must be timezone-aware")

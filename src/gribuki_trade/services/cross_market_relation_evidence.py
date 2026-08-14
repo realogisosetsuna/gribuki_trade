@@ -1,20 +1,15 @@
-"""Pure PIT alignment and evidence for descriptive cross-market relations.
+"""描述性跨市场关系的纯时点对齐与证据构建。
 
-The converter deliberately owns no network or storage operation.  It turns
-completed A-share daily bars and independently collected index histories into
-the strictly aligned inputs expected by :mod:`gribuki_trade.features`.
+转换器刻意不拥有网络或存储操作。它将已完成 A 股日线柱与独立采集的指数历史转换为
+:mod:`gribuki_trade.features` 所要求的严格对齐输入。
 
-An external close-to-close return is consumed exactly once: at the first
-A-share 15:05 Asia/Shanghai decision point at or after the return became
-available.  When several external sessions accrue during an A-share holiday,
-their returns are compounded into that first decision point.  Missing external
-sessions are never forward-filled, so an overseas holiday cannot repeat a
-stale return across several A-share sessions.
+一项外部收盘到收盘收益只会消费一次：在该收益可用时点或之后，第一个上海时区
+15:05 的 A 股决策点。若 A 股节假日期间累积了多个外部交易日，其收益会复合到该首个
+决策点。缺失的外部交易日绝不向前填充，因此海外节假日不会令过期收益在多个 A 股
+交易日重复出现。
 
-The resulting correlations and regressions are descriptive associations.  In
-particular, the lag-1 view is *not* labelled a forecast: it describes the
-historical relation between the factor return already known at the preceding
-A-share decision point and the current A-share return.
+所得相关与回归只是描述性关联。尤其是，滞后一期视图不会被标为预测：它描述的是
+前一 A 股决策点已经可知的因子收益与当前 A 股收益之间的历史关系。
 """
 
 from __future__ import annotations
@@ -58,7 +53,7 @@ _AKSHARE_INDEX_DOCS = "https://akshare.akfamily.xyz/data/index/index.html"
 
 @dataclass(frozen=True, slots=True)
 class CrossMarketRelationEvidenceBundle:
-    """One relation report plus its content-addressed evidence views."""
+    """一份关系报告及其内容寻址证据视图。"""
 
     report: CrossMarketRelationsReport
     items: tuple[EvidenceItem, ...]
@@ -86,11 +81,10 @@ def build_cross_market_relation_evidence(
     history: CrossMarketHistorySnapshot,
     as_of: datetime,
 ) -> CrossMarketRelationEvidenceBundle:
-    """Align histories, calculate relations, and emit deterministic evidence.
+    """对齐历史、计算关系并生成确定性证据。
 
-    ``as_of`` is a hard point-in-time boundary.  A history snapshot fetched
-    after that boundary is rejected rather than back-dated, and target or
-    factor observations unavailable by the boundary are excluded.
+    ``as_of`` 是严格时点边界。在该边界之后拉取的历史快照会被拒绝而非倒填时间；
+    截至该边界仍不可用的目标或因子观测会被排除。
     """
 
     _require_aware(as_of, "as_of")

@@ -1,4 +1,5 @@
 import asyncio
+import threading
 import time
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -274,21 +275,50 @@ def test_overlapping_configured_aliases_are_rejected() -> None:
 
 def test_independent_sina_daily_fallback_covers_exact_csi300_and_hsi() -> None:
     calls: list[tuple[str, str]] = []
+    active = 0
+    maximum_active = 0
+    counter_lock = threading.Lock()
 
     def primary() -> pd.DataFrame:
         raise ConnectionResetError("simulated Eastmoney disconnect")
 
     def mainland(*, symbol: str) -> pd.DataFrame:
-        calls.append(("mainland", symbol))
-        return _daily_rows(
-            (("2026-08-11", "4700"), ("2026-08-12", "4720"), ("2026-08-13", "4729"))
-        )
+        nonlocal active, maximum_active
+        with counter_lock:
+            active += 1
+            maximum_active = max(maximum_active, active)
+        try:
+            time.sleep(0.02)
+            calls.append(("mainland", symbol))
+            return _daily_rows(
+                (
+                    ("2026-08-11", "4700"),
+                    ("2026-08-12", "4720"),
+                    ("2026-08-13", "4729"),
+                )
+            )
+        finally:
+            with counter_lock:
+                active -= 1
 
     def hong_kong(*, symbol: str) -> pd.DataFrame:
-        calls.append(("hong_kong", symbol))
-        return _daily_rows(
-            (("2026-08-11", "24800"), ("2026-08-12", "25000"), ("2026-08-13", "25250"))
-        )
+        nonlocal active, maximum_active
+        with counter_lock:
+            active += 1
+            maximum_active = max(maximum_active, active)
+        try:
+            time.sleep(0.02)
+            calls.append(("hong_kong", symbol))
+            return _daily_rows(
+                (
+                    ("2026-08-11", "24800"),
+                    ("2026-08-12", "25000"),
+                    ("2026-08-13", "25250"),
+                )
+            )
+        finally:
+            with counter_lock:
+                active -= 1
 
     client = SimpleNamespace(
         index_global_spot_em=primary,
@@ -304,6 +334,7 @@ def test_independent_sina_daily_fallback_covers_exact_csi300_and_hsi() -> None:
     snapshot = adapter.fetch_cross_market_snapshot()
 
     assert calls == [("mainland", "sh000300"), ("hong_kong", "HSI")]
+    assert maximum_active == 1
     assert snapshot.degraded is True
     assert snapshot.missing == ()
     assert snapshot.provider == "AKShare/Sina daily close fallback"

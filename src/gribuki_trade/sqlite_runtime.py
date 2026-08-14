@@ -1,10 +1,8 @@
-"""SQLite runtime safety policy for shared WAL deployments.
+"""共享 WAL 部署使用的 SQLite 运行时安全策略。
 
-SQLite disclosed a low-probability WAL-reset corruption race in 2026.  The
-race requires multiple connections to the same WAL database, so single-store
-local workflows remain usable on affected runtimes.  Long-running or
-multi-process deployments must call :func:`require_safe_shared_wal` before
-allowing a database path to be shared.
+SQLite 在 2026 年披露了一个低概率的 WAL 重置损坏竞态。该问题要求多个连接同时访问
+同一个 WAL 数据库，因此受影响运行时上的单存储本地流程仍可使用。长期运行或多进程部署
+必须先调用 :func:`require_safe_shared_wal`，才能允许共享数据库路径。
 """
 
 from __future__ import annotations
@@ -21,7 +19,7 @@ SQLITE_WAL_RESET_FIXED_RELEASES: Final = ("3.44.6", "3.50.7", ">=3.51.3")
 
 
 class SQLiteSharedWALUnsafeError(RuntimeError):
-    """The runtime is not approved for multiple connections to one WAL DB."""
+    """当前运行时未获准让多个连接共享同一 WAL 数据库。"""
 
     error_code = SQLITE_WAL_RESET_RUNTIME_UNSAFE
 
@@ -37,11 +35,10 @@ class SQLiteRuntimeStatus:
 
 
 def sqlite_shared_wal_is_safe(version: tuple[int, int, int]) -> bool:
-    """Return whether *version* contains an official WAL-reset fix.
+    """返回 *version* 是否包含官方 WAL 重置修复。
 
-    SQLite fixed the current release line in 3.51.3 and backported the fix to
-    the maintained 3.50 and 3.44 lines in 3.50.7 and 3.44.6 respectively.
-    Versions on other older branches are conservatively treated as unsafe.
+    SQLite 在 3.51.3 修复当前发布线，并分别在 3.50.7 与 3.44.6 将修复回移到仍维护的
+    3.50 和 3.44 发布线。其他较旧分支按保守原则视为不安全。
     """
 
     if len(version) != 3 or any(
@@ -61,7 +58,7 @@ def sqlite_shared_wal_is_safe(version: tuple[int, int, int]) -> bool:
 def sqlite_runtime_status(
     version: tuple[int, int, int] | None = None,
 ) -> SQLiteRuntimeStatus:
-    """Describe the current (or explicitly supplied) SQLite runtime."""
+    """描述当前或显式提供的 SQLite 运行时。"""
 
     selected = tuple(sqlite3.sqlite_version_info) if version is None else version
     if len(selected) != 3:
@@ -81,7 +78,7 @@ def sqlite_runtime_status(
 def require_safe_shared_wal(
     version: tuple[int, int, int] | None = None,
 ) -> SQLiteRuntimeStatus:
-    """Fail closed before a same-file multi-connection WAL deployment."""
+    """在同文件多连接 WAL 部署前执行失败关闭检查。"""
 
     status = sqlite_runtime_status(version)
     if not status.shared_wal_safe:

@@ -1,9 +1,8 @@
-"""A broker-independent weekly trend and momentum strategy.
+"""与券商无关的周频趋势和动量策略。
 
-The module intentionally contains no clock, data-source, or broker access.  A caller
-must construct one :class:`SymbolDailySnapshot` per symbol using information known at
-``decision_date``.  This makes the ranking function deterministic and keeps execution
-on the following trading session outside the signal calculation.
+本模块刻意不包含时钟、数据源或券商访问。调用方必须使用在 ``decision_date`` 已知的
+信息，为每个标的构建一个 :class:`SymbolDailySnapshot`。这样可使排序函数保持确定性，
+并将下一交易时段的执行排除在信号计算之外。
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ from statistics import fmean, stdev
 
 @dataclass(frozen=True, slots=True)
 class WeeklyTrendConfig:
-    """Parameters for the weekly trend strategy."""
+    """周频趋势策略的参数。"""
 
     momentum_lookback_days: int = 120
     momentum_skip_days: int = 5
@@ -65,11 +64,10 @@ class WeeklyTrendConfig:
 
 @dataclass(frozen=True, slots=True)
 class SymbolDailySnapshot:
-    """Daily information for one symbol as known on ``as_of``.
+    """截至 ``as_of`` 已知的单个标的日频信息。
 
-    ``closes`` must be ordered oldest to newest and end at ``as_of``.  It deliberately
-    contains no forward return or next-session price.  Liquidity and listing age are
-    snapshots computed only from data available on the same date.
+    ``closes`` 必须从最早到最新排序，并终止于 ``as_of``。其中刻意不包含未来收益或
+    下一交易时段价格。流动性和上市时长均为仅使用当日可用数据计算的快照。
     """
 
     symbol: str
@@ -96,7 +94,7 @@ class SymbolDailySnapshot:
 
 @dataclass(frozen=True, slots=True)
 class CandidateMetrics:
-    """Metrics calculated solely from data through the decision date."""
+    """仅根据截至决策日的数据计算的指标。"""
 
     symbol: str
     rank: int
@@ -109,7 +107,7 @@ class CandidateMetrics:
 
 @dataclass(frozen=True, slots=True)
 class TargetWeight:
-    """A target selected by the strategy; execution belongs to another layer."""
+    """策略选出的目标；执行由另一层负责。"""
 
     symbol: str
     weight: float
@@ -119,7 +117,7 @@ class TargetWeight:
 
 @dataclass(frozen=True, slots=True)
 class WeeklyTrendDecision:
-    """Immutable strategy output for one weekly decision date."""
+    """一个周频决策日对应的不可变策略输出。"""
 
     decision_date: date
     targets: tuple[TargetWeight, ...]
@@ -143,11 +141,10 @@ def build_weekly_trend_decision(
     current_holdings: Iterable[str] = (),
     config: WeeklyTrendConfig | None = None,
 ) -> WeeklyTrendDecision:
-    """Rank eligible symbols and produce capped inverse-volatility target weights.
+    """对符合条件的标的排序，并生成设有上限的反波动率目标权重。
 
-    A snapshot dated before or after ``decision_date`` is rejected instead of silently
-    mixing cross-sections from different dates.  A strategy runner should execute the
-    returned targets no earlier than the next trading session.
+    日期早于或晚于 ``decision_date`` 的快照会被拒绝，而不会静默混合不同日期的
+    横截面。策略运行器最早应在下一交易时段执行返回的目标。
     """
 
     resolved_config = config or WeeklyTrendConfig()

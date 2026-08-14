@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import threading
+import time
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -15,6 +17,7 @@ import pytest
 from gribuki_trade.adapters.ashare_screening import (
     AKSHARE_HISTORY_SOURCE_ID,
     EASTMONEY_SCREENING_SOURCE_ID,
+    SINA_HISTORY_SOURCE_ID,
     TENCENT_SCREENING_SOURCE_ID,
     AKShareAShareScreeningAdapter,
     AKShareScreeningPointInTimeError,
@@ -81,6 +84,52 @@ class FrozenAKShareClient:
         if symbol in self.corporate_action_symbols:
             frame.loc[150, "涨跌额"] = "5.00"
         return frame
+
+
+class SinaFallbackClient(FrozenAKShareClient):
+    def __init__(self) -> None:
+        super().__init__(fail_history_symbols=frozenset({"600000"}))
+        self.sina_history_calls: list[dict[str, object]] = []
+
+    def stock_zh_a_daily(self, **kwargs: object) -> pd.DataFrame:
+        self.sina_history_calls.append(dict(kwargs))
+        source = _history_frame()
+        return pd.DataFrame(
+            {
+                "date": source.iloc[:, 0],
+                "open": source.iloc[:, 1],
+                "close": source.iloc[:, 2],
+                "high": source.iloc[:, 3],
+                "low": source.iloc[:, 4],
+                "volume": source.iloc[:, 5],
+                "amount": source.iloc[:, 6],
+                "outstanding_share": 1_000_000_000,
+                "turnover": 0.01,
+            }
+        )
+
+
+class ConcurrentSinaFallbackClient(SinaFallbackClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.active = 0
+        self.maximum_active = 0
+        self.counter_lock = threading.Lock()
+
+    def stock_zh_a_hist(self, **kwargs: object) -> pd.DataFrame:
+        self.history_calls.append(dict(kwargs))
+        raise RuntimeError("frozen history failure")
+
+    def stock_zh_a_daily(self, **kwargs: object) -> pd.DataFrame:
+        with self.counter_lock:
+            self.active += 1
+            self.maximum_active = max(self.maximum_active, self.active)
+        try:
+            time.sleep(0.02)
+            return super().stock_zh_a_daily(**kwargs)
+        finally:
+            with self.counter_lock:
+                self.active -= 1
 
 
 def _history_frame() -> pd.DataFrame:
@@ -268,6 +317,52 @@ def test_corporate_action_guard_withholds_price_factors_but_keeps_liquidity_audi
     assert record.value_for(ScreeningFactorId.AVERAGE_AMOUNT_20_CNY) is not None
 
 
+def test_sina_unadjusted_history_is_an_explicit_degraded_fallback() -> None:
+    client = SinaFallbackClient()
+
+    snapshot = asyncio.run(
+        _adapter(client).fetch_factor_snapshot(
+            ("600000.SH",),
+            as_of=AS_OF,
+            known_at=NOW,
+        )
+    )
+
+    assert snapshot.quality is ScreeningSourceQuality.DEGRADED
+    assert SINA_HISTORY_SOURCE_ID in snapshot.source_id
+    assert "SINA_HISTORY_FALLBACK_SYMBOLS:1/1" in snapshot.warnings
+    assert client.sina_history_calls == [
+        {
+            "symbol": "sh600000",
+            "start_date": "20250610",
+            "end_date": "20260814",
+            "adjust": "",
+        }
+    ]
+    record = snapshot.records[0]
+    assert f"HISTORY_SOURCE_FALLBACK:{SINA_HISTORY_SOURCE_ID}" in record.warnings
+    assert "SINA_PREVIOUS_CLOSE_DERIVED_FROM_ADJACENT_RAW_CLOSES" in record.warnings
+    assert all(item.value is not None for item in record.values)
+
+
+def test_v8_backed_sina_fallback_is_process_wide_serialized() -> None:
+    client = ConcurrentSinaFallbackClient()
+
+    snapshot = asyncio.run(
+        _adapter(client, history_concurrency=4).fetch_factor_snapshot(
+            ("600000.SH", "000001.SZ"),
+            as_of=AS_OF,
+            known_at=NOW,
+        )
+    )
+
+    assert client.maximum_active == 1
+    assert all(
+        f"HISTORY_SOURCE_FALLBACK:{SINA_HISTORY_SOURCE_ID}" in item.warnings
+        for item in snapshot.records
+    )
+
+
 def test_per_symbol_history_failure_is_isolated_and_batch_budget_is_enforced() -> None:
     snapshot = asyncio.run(
         _adapter(
@@ -284,6 +379,7 @@ def test_per_symbol_history_failure_is_isolated_and_batch_budget_is_enforced() -
     assert by_symbol["600000.SH"].warnings == ()
     assert by_symbol["000001.SZ"].warnings == (
         "HISTORY_FETCH_FAILED:AKShareScreeningDataError",
+        "HISTORY_FALLBACK_FAILED:AKShareScreeningDataError",
     )
     assert all(item.value is None for item in by_symbol["000001.SZ"].values)
 

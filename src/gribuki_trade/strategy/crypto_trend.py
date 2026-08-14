@@ -1,9 +1,8 @@
-"""Point-in-time-safe moving-average target-position strategy for crypto spot.
+"""面向加密货币现货、满足时点安全的移动平均目标仓位策略。
 
-The strategy is deliberately broker independent.  It consumes only completed
-bars exposed by the backtest/paper event and emits at most one deterministic
-market order for that decision timestamp.  Execution is left to the caller,
-which makes the same policy reusable in historical replay and paper trading.
+本策略刻意保持券商无关。它只消费回测或 PAPER 事件暴露的已完成 K 线，并针对该决策
+时间戳最多生成一个确定性市价单。执行由调用方负责，因此同一策略可复用于历史回放与
+模拟交易。
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ from gribuki_trade.domain.orders import Side
 
 
 class CryptoTrendRegime(StrEnum):
-    """Long-only regime selected from completed closing prices."""
+    """根据已完成收盘价选择的仅做多状态。"""
 
     WARMUP = "WARMUP"
     LONG = "LONG"
@@ -33,7 +32,7 @@ class CryptoTrendRegime(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class CryptoTrendConfig:
-    """Parameters for a long-only moving-average target-position strategy."""
+    """仅做多移动平均目标仓位策略的参数。"""
 
     fast_window: int = 20
     slow_window: int = 50
@@ -78,7 +77,7 @@ class CryptoTrendConfig:
 
 @dataclass(frozen=True, slots=True)
 class CryptoTrendDecision:
-    """Auditable calculation made from one point-in-time event."""
+    """基于单个时点事件得出的可审计计算结果。"""
 
     decision_time: datetime
     symbol: str
@@ -94,7 +93,7 @@ class CryptoTrendDecision:
 
 
 class MovingAverageCryptoTrendStrategy:
-    """Move a spot portfolio between flat and a configured long allocation."""
+    """在空仓与已配置多头仓位之间调整现货组合。"""
 
     def __init__(
         self,
@@ -125,7 +124,7 @@ class MovingAverageCryptoTrendStrategy:
         return () if decision.order is None else (decision.order,)
 
     def evaluate(self, event: BacktestBarEvent, /) -> CryptoTrendDecision:
-        """Calculate one target using no information available after the event."""
+        """在不使用事件之后任何信息的前提下计算一个目标。"""
 
         self._validate_event(event)
         history = event.history
@@ -241,11 +240,9 @@ class MovingAverageCryptoTrendStrategy:
             raise ValueError("decision_time must be timezone-aware")
         if event.decision_time < event.bar.available_at:
             raise ValueError("decision_time precedes current bar availability")
-        # Only the trailing slow window contributes to this decision.  Scanning
-        # an ever-growing prefix on every bar would make long replays quadratic.
-        # Backtest inputs are validated globally by the engine; standalone
-        # callers still receive full validation for every value the strategy
-        # can actually observe in its calculation.
+        # 只有尾部慢速窗口参与本次决策。在每根 K 线上扫描不断增长的前缀会使长回放
+        # 产生二次复杂度。回测输入由引擎全局验证；独立调用方仍会对策略计算中实际可见的
+        # 每个值执行完整验证。
         relevant_history = event.history[-self._config.slow_window :]
         if any(not bar.complete for bar in relevant_history):
             raise ValueError("strategy requires completed bars")
@@ -259,8 +256,8 @@ class MovingAverageCryptoTrendStrategy:
 
 
 def _average_close(history: Sequence[CryptoBar], window: int) -> Decimal:
-    # BacktestBarEvent.history is validated above.  Keeping this helper Decimal-only
-    # makes its numerical result reproducible across platforms.
+    # 上方已验证 BacktestBarEvent.history。此辅助函数仅使用 Decimal，确保数值结果
+    # 可跨平台复现。
     bars = history[-window:]
     closes = [bar.close for bar in bars]
     return sum(closes, Decimal("0")) / Decimal(window)
@@ -277,8 +274,8 @@ def _order_id(symbol: str, candle_open_time: datetime, side: Side) -> str:
         (delta.days * 86_400 + delta.seconds) * 1_000 + delta.microseconds // 1_000
     )
     side_code = "b" if side is Side.BUY else "s"
-    # Binance client-order IDs are limited to 36 characters.  Timestamp and side
-    # make the ID stable even if the same completed candle is delivered late.
+    # Binance 客户端订单 ID 最长为 36 个字符。即使同一根已完成 K 线延迟送达，
+    # 时间戳和方向也能保持 ID 稳定。
     return f"ct-{symbol[:12].lower()}-{milliseconds}-{side_code}"
 
 

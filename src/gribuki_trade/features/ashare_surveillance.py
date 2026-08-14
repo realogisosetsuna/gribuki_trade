@@ -1,4 +1,4 @@
-"""Pure cross-sectional anomaly scoring for an intraday A-share snapshot."""
+"""针对 A 股盘中快照的纯横截面异常评分。"""
 
 from __future__ import annotations
 
@@ -130,6 +130,9 @@ class IntradayCandidate:
     session_amount_cny: Decimal
     factors: tuple[IntradayFactorContribution, ...]
     reason_codes: tuple[str, ...]
+    # 保留经供应商校验的精确前收盘价，供交易所价格区间计算使用。仅旧版序列化候选标的
+    # 允许 ``None``，执行层会对其保守处理。
+    previous_close: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,7 +155,7 @@ def rank_intraday_anomalies(
     *,
     config: AShareIntradaySurveillanceConfig | None = None,
 ) -> AShareIntradayRanking:
-    """Rank current-session anomalies without producing a trading action."""
+    """对当前交易日异常排序，且不产生交易操作。"""
 
     resolved = config or AShareIntradaySurveillanceConfig()
     if len(records) != len({item.symbol for item in records}):
@@ -281,6 +284,7 @@ def _candidate(
 ) -> IntradayCandidate:
     record, score, coverage, factors = item
     assert record.last_price is not None
+    assert record.previous_close is not None
     assert record.change_percent is not None
     assert record.session_amount_cny is not None
     factor_map = {factor.factor_id: factor for factor in factors}
@@ -314,6 +318,7 @@ def _candidate(
         session_amount_cny=record.session_amount_cny,
         factors=factors,
         reason_codes=tuple(reasons),
+        previous_close=record.previous_close,
     )
 
 

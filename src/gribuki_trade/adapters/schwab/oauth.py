@@ -1,4 +1,4 @@
-"""OAuth 2.0 Authorization Code support for Charles Schwab."""
+"""面向 Charles Schwab 的 OAuth 2.0 Authorization Code 支持。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from .transport import AsyncHttpTransport, HttpRequest, HttpResponse
 
 @dataclass(frozen=True, slots=True)
 class OAuthToken:
-    """An OAuth token whose access-token TTL comes from ``expires_in``."""
+    """访问令牌生存期取自 ``expires_in`` 的 OAuth 令牌。"""
 
     access_token: str = field(repr=False)
     token_type: str
@@ -33,7 +33,7 @@ class OAuthToken:
 
 
 class TokenStore(Protocol):
-    """Async persistence boundary; implementations decide encryption/storage."""
+    """异步持久化边界；具体实现负责决定加密和存储方式。"""
 
     async def load(self) -> OAuthToken | None: ...
 
@@ -41,7 +41,7 @@ class TokenStore(Protocol):
 
 
 class InMemoryTokenStore:
-    """Process-local token store suitable for tests, never disk persistence."""
+    """适用于测试的进程内令牌存储，绝不落盘。"""
 
     def __init__(self, token: OAuthToken | None = None) -> None:
         self._token = token
@@ -67,7 +67,7 @@ class AuthorizationRequest:
 
 
 class SchwabOAuthClient:
-    """Authorization Code client with exact redirect URI and state checks."""
+    """严格校验重定向 URI 和状态值的授权码客户端。"""
 
     def __init__(
         self,
@@ -118,7 +118,7 @@ class SchwabOAuthClient:
             raise ValueError("redirect_uri must not contain a fragment")
 
     def authorization_request(self, *, state: str | None = None) -> AuthorizationRequest:
-        """Create an authorization URL and remember its one-time state value."""
+        """创建授权 URL，并记住其一次性状态值。"""
 
         state = state or secrets.token_urlsafe(32)
         if not state or state in self._pending_states:
@@ -142,7 +142,7 @@ class SchwabOAuthClient:
     async def exchange_callback(
         self, callback_url: str, *, expected_state: str
     ) -> OAuthToken:
-        """Validate an exact callback target and exchange its authorization code."""
+        """严格验证回调目标，并交换其中的授权码。"""
 
         callback = urlsplit(callback_url)
         configured = urlsplit(self.redirect_uri)
@@ -183,7 +183,7 @@ class SchwabOAuthClient:
         return await self.exchange_code(code, redirect_uri=self.redirect_uri)
 
     async def exchange_code(self, code: str, *, redirect_uri: str) -> OAuthToken:
-        """Exchange a code using the byte-for-byte configured redirect URI."""
+        """使用逐字节一致的已配置重定向 URI 交换授权码。"""
 
         if not _constant_time_equal(redirect_uri, self.redirect_uri):
             raise SchwabOAuthError("token exchange redirect_uri must match exactly")
@@ -199,7 +199,7 @@ class SchwabOAuthClient:
         )
 
     async def token(self) -> OAuthToken:
-        """Return a usable token, refreshing based on its server-provided TTL."""
+        """返回可用令牌，并依据服务器给出的生存期按需刷新。"""
 
         token = await self._token_store.load()
         if token is None:
@@ -209,7 +209,7 @@ class SchwabOAuthClient:
         return token
 
     async def refresh(self, *, expected_access_token: str | None = None) -> OAuthToken:
-        """Refresh once, coalescing concurrent refreshes of the same token."""
+        """只刷新一次，并合并针对同一令牌的并发刷新。"""
 
         async with self._refresh_lock:
             current = await self._token_store.load()

@@ -1,5 +1,7 @@
 import asyncio
+import threading
 import time as wall_time
+from collections.abc import Callable
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from types import SimpleNamespace
@@ -20,9 +22,9 @@ from gribuki_trade.ports.cross_market_history import (
     CrossMarketHistoryFailureCode,
 )
 
-# Frozen provider observations: all tests use this fixed sequence and never
-# contact a live endpoint.  There are 131 sessions so a not-yet-closed latest
-# row leaves exactly the contractual 130-observation minimum.
+# 冻结的提供方观察值：所有测试都使用这组固定序列，绝不访问实时端点。
+# 共有 131 个交易日，因此即使最新一行尚未收盘，仍恰好保留契约要求的
+# 最少 130 个观察值。
 _FROZEN_SESSIONS: tuple[tuple[str, str], ...] = tuple(
     (timestamp.date().isoformat(), str(Decimal("4000") + index))
     for index, timestamp in enumerate(
@@ -118,6 +120,48 @@ def test_default_universe_calls_only_audited_exact_sina_symbols() -> None:
     assert "no historical release vintages" in " ".join(snapshot.warnings)
 
 
+def test_sina_history_endpoints_are_processed_serially_in_universe_order() -> None:
+    activity_lock = threading.Lock()
+    active = 0
+    max_active = 0
+    calls: list[tuple[str, str]] = []
+
+    def endpoint(method_name: str) -> Callable[..., pd.DataFrame]:
+        def fetch(*, symbol: str) -> pd.DataFrame:
+            nonlocal active, max_active
+            with activity_lock:
+                active += 1
+                max_active = max(max_active, active)
+                calls.append((method_name, symbol))
+            try:
+                wall_time.sleep(0.01)
+                return _frame()
+            finally:
+                with activity_lock:
+                    active -= 1
+
+        return fetch
+
+    universe = (_spec("CSI_300"), _spec("HANG_SENG"), _spec("S_AND_P_500"))
+    adapter = AKShareCrossMarketHistoryAdapter(
+        SimpleNamespace(
+            stock_zh_index_daily=endpoint("stock_zh_index_daily"),
+            stock_hk_index_daily_sina=endpoint("stock_hk_index_daily_sina"),
+            index_us_stock_sina=endpoint("index_us_stock_sina"),
+        ),
+        universe=universe,
+        timeout_seconds=1.0,
+    )
+
+    snapshot = adapter.fetch_cross_market_history(
+        as_of=datetime(2026, 8, 14, tzinfo=UTC)
+    )
+
+    assert snapshot.missing == ()
+    assert max_active == 1
+    assert calls == [(spec.method_name, spec.symbol) for spec in universe]
+
+
 def test_pit_filter_uses_each_local_close_and_us_previous_session() -> None:
     frame = _frame()
     client = SimpleNamespace(
@@ -129,8 +173,8 @@ def test_pit_filter_uses_each_local_close_and_us_previous_session() -> None:
         client,
         universe=(_spec("CSI_300"), _spec("HANG_SENG"), _spec("S_AND_P_500")),
     )
-    # 15:05 China time is after the A-share close, before the HK close auction
-    # has completed, and long before the current US regular session close.
+    # 中国时间 15:05 已晚于 A 股收盘，但港股收市竞价尚未完成，距离当日
+    # 美股常规交易时段收盘也还很久。
     as_of = datetime(2026, 8, 13, 15, 5, tzinfo=ZoneInfo("Asia/Shanghai"))
 
     snapshot = adapter.fetch_cross_market_history(as_of=as_of)
@@ -217,9 +261,14 @@ def test_insufficient_visible_history_is_explicit_missing_without_proxy() -> Non
 
 
 def test_timeout_and_upstream_failures_are_isolated_per_exact_series() -> None:
+    slow_finished = threading.Event()
+
     def slow_mainland(*, symbol: str) -> pd.DataFrame:
-        wall_time.sleep(0.05)
-        return _frame()
+        try:
+            wall_time.sleep(0.05)
+            return _frame()
+        finally:
+            slow_finished.set()
 
     def failed_us(*, symbol: str) -> pd.DataFrame:
         raise ConnectionError("frozen disconnect")
@@ -231,13 +280,16 @@ def test_timeout_and_upstream_failures_are_isolated_per_exact_series() -> None:
     )
     adapter = AKShareCrossMarketHistoryAdapter(
         client,
-        universe=(_spec("CSI_300"), _spec("HANG_SENG"), _spec("S_AND_P_500")),
+        # 把刻意超时的原生调用放在最后。其工作线程超过截止时间后，会一直
+        # 持有进程级安全锁直至真正退出，因而后续 V8 调用无法与之重叠。
+        universe=(_spec("HANG_SENG"), _spec("S_AND_P_500"), _spec("CSI_300")),
         timeout_seconds=0.005,
     )
 
     snapshot = adapter.fetch_cross_market_history(
         as_of=datetime(2026, 8, 14, tzinfo=UTC)
     )
+    assert slow_finished.wait(timeout=1.0)
 
     assert [item.market_id for item in snapshot.series] == ["HANG_SENG"]
     missing = {item.market_id: item for item in snapshot.missing}

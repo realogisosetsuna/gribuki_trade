@@ -1,9 +1,8 @@
-"""Read-only contracts for official Chinese FX and money-market fixings.
+"""中国官方外汇与货币市场定盘数据的只读契约。
 
-The observations in this module are research inputs, not executable quotes.
-Every value carries an explicit unit, quote convention, scheduled publication
-time, and HTTP provenance so callers cannot silently confuse a percentage with
-a decimal rate or SAFE's ``100 USD`` display unit with ``USD/CNY``.
+本模块中的观测是研究输入，而非可执行报价。每个值都带有显式单位、报价约定、计划
+发布时间和 HTTP 来源，使调用方不能静默混淆百分数与小数利率，也不能混淆 SAFE 的
+``100 USD`` 展示单位与 ``USD/CNY``。
 """
 
 from __future__ import annotations
@@ -17,35 +16,35 @@ from typing import Protocol, runtime_checkable
 
 
 class OfficialRatesDataError(RuntimeError):
-    """Base failure raised by an official-rates adapter."""
+    """官方利率适配器抛出的基础失败。"""
 
 
 class SafeCentralParityError(OfficialRatesDataError):
-    """Base failure for the SAFE central-parity source."""
+    """SAFE 中间价数据源的基础失败。"""
 
 
 class ShiborDataError(OfficialRatesDataError):
-    """Base failure for the official Shibor source."""
+    """官方 Shibor 数据源的基础失败。"""
 
 
 class SafeCentralParityTimeoutError(TimeoutError, SafeCentralParityError):
-    """The SAFE query exceeded its configured deadline."""
+    """SAFE 查询超过已配置的期限。"""
 
 
 class ShiborTimeoutError(TimeoutError, ShiborDataError):
-    """The official Shibor query exceeded its configured deadline."""
+    """官方 Shibor 查询超过已配置的期限。"""
 
 
 class SafeCentralParityTransportError(ConnectionError, SafeCentralParityError):
-    """The SAFE HTTPS endpoint could not be reached."""
+    """无法访问 SAFE HTTPS 端点。"""
 
 
 class ShiborTransportError(ConnectionError, ShiborDataError):
-    """The official Shibor HTTPS endpoint could not be reached."""
+    """无法访问官方 Shibor HTTPS 端点。"""
 
 
 class SafeCentralParityHTTPStatusError(SafeCentralParityError):
-    """SAFE returned an unacceptable HTTP status."""
+    """SAFE 返回了不可接受的 HTTP 状态。"""
 
     def __init__(self, status_code: int) -> None:
         self.status_code = status_code
@@ -53,7 +52,7 @@ class SafeCentralParityHTTPStatusError(SafeCentralParityError):
 
 
 class ShiborHTTPStatusError(ShiborDataError):
-    """The official Shibor endpoint returned an unacceptable HTTP status."""
+    """官方 Shibor 端点返回了不可接受的 HTTP 状态。"""
 
     def __init__(self, status_code: int) -> None:
         self.status_code = status_code
@@ -61,29 +60,29 @@ class ShiborHTTPStatusError(ShiborDataError):
 
 
 class SafeCentralParitySchemaError(SafeCentralParityError):
-    """The SAFE HTML cannot be parsed without ambiguity."""
+    """无法无歧义地解析 SAFE HTML。"""
 
 
 class ShiborSchemaError(ShiborDataError):
-    """The official Shibor JSON cannot be parsed without ambiguity."""
+    """无法无歧义地解析官方 Shibor JSON。"""
 
 
 class SafeCentralParityNoDataError(SafeCentralParityError):
-    """No SAFE observation was visible at the requested point in time."""
+    """请求时点没有可见的 SAFE 观测。"""
 
 
 class ShiborNoDataError(ShiborDataError):
-    """No Shibor observation was visible at the requested point in time."""
+    """请求时点没有可见的 Shibor 观测。"""
 
 
 class FXQuoteConvention(StrEnum):
-    """Direction of a normalized currency-pair quote."""
+    """标准化货币对报价的方向。"""
 
     QUOTE_CURRENCY_PER_BASE_CURRENCY = "QUOTE_CURRENCY_PER_BASE_CURRENCY"
 
 
 class InterestRateUnit(StrEnum):
-    """Explicit unit used by the official Shibor publication."""
+    """官方 Shibor 发布使用的显式单位。"""
 
     PERCENT_PER_ANNUM = "PERCENT_PER_ANNUM"
 
@@ -101,7 +100,7 @@ class ShiborTenor(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class OfficialRateSourceMeta:
-    """Provenance and publication timing for one official document."""
+    """一个官方文档的来源与发布时间。"""
 
     source_id: str
     source_url: str
@@ -130,10 +129,10 @@ class OfficialRateSourceMeta:
 
 @dataclass(frozen=True, slots=True)
 class USDCNYCentralParityObservation:
-    """One SAFE USD/CNY central parity, normalized to CNY per one USD.
+    """一条 SAFE USD/CNY 中间价，标准化为每一美元对应的人民币数值。
 
-    SAFE displays this series as ``100 USD = X CNY``.  Both that exact source
-    value and the normalized market convention are retained and cross-checked.
+    SAFE 将此序列展示为 ``100 USD = X CNY``。精确来源值与标准化市场约定均会保留并
+    交叉校验。
     """
 
     session_date: date
@@ -178,7 +177,7 @@ class USDCNYCentralParityObservation:
 
 @dataclass(frozen=True, slots=True)
 class SafeCentralParityHistory:
-    """Strictly ordered SAFE USD/CNY observations visible at ``as_of``."""
+    """在 ``as_of`` 可见的严格有序 SAFE USD/CNY 观测。"""
 
     as_of: datetime
     start_date: date
@@ -200,7 +199,7 @@ class SafeCentralParityHistory:
 
 @dataclass(frozen=True, slots=True)
 class ShiborRate:
-    """One tenor value in annual percentage points (not a decimal fraction)."""
+    """一个以年化百分点表示的期限值（并非小数比例）。"""
 
     tenor: ShiborTenor
     value_percent: Decimal
@@ -214,10 +213,10 @@ class ShiborRate:
 
 @dataclass(frozen=True, slots=True)
 class ShiborDailyObservation:
-    """One official eight-tenor Shibor fixing row.
+    """一条包含八个期限的官方 Shibor 定盘记录。
 
-    The publication defines Shibor as a simple, unsecured wholesale offered
-    rate, quoted as annual percent with ACT/360 and T+0 settlement.
+    官方发布将 Shibor 定义为简单、无担保的批发市场报价利率，以年化百分数报价，
+    采用 ACT/360 与 T+0 结算。
     """
 
     session_date: date
@@ -245,14 +244,14 @@ class ShiborDailyObservation:
         )
 
     def rate(self, tenor: ShiborTenor) -> Decimal:
-        """Return one annual percentage-point value without changing units."""
+        """返回一个年化百分点值，不改变单位。"""
 
         return next(item.value_percent for item in self.rates if item.tenor is tenor)
 
 
 @dataclass(frozen=True, slots=True)
 class ShiborHistory:
-    """Strictly ordered official Shibor fixings visible at ``as_of``."""
+    """在 ``as_of`` 可见的严格有序官方 Shibor 定盘数据。"""
 
     as_of: datetime
     start_date: date
@@ -295,7 +294,7 @@ class AsyncShiborData(Protocol):
 
 
 def content_sha256(body: bytes) -> str:
-    """Return a stable digest for provenance tests and evidence builders."""
+    """返回供来源测试与证据构建器使用的稳定摘要。"""
 
     return hashlib.sha256(body).hexdigest()
 

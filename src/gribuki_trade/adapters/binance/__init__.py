@@ -1,4 +1,4 @@
-"""Public API for Binance Spot, data, and Futures adapters."""
+"""Binance 现货、行情与期货适配器的公开 API。"""
 
 from .credentials import (
     BINANCE_COIN_FUTURES_DEMO_API_KEY_SECRET,

@@ -1,4 +1,4 @@
-"""RSS 2.0 and Atom list adapter; linked articles are not fetched."""
+"""RSS 2.0 与 Atom 列表适配器；不会继续抓取其中链接正文。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from gribuki_trade.ports.news import (
 
 
 class FeedParseError(ValueError):
-    """The source returned content that is not a safe RSS/Atom document."""
+    """数据源返回的内容不是安全的 RSS 或 Atom 文档。"""
 
 
 def _local_name(tag: str) -> str:

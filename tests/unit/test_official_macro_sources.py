@@ -15,16 +15,24 @@ from gribuki_trade.ingest.official_macro import (
     CSRC_SOURCE_ID,
     FED_MONETARY_RSS_URL,
     FED_SOURCE_ID,
+    MOF_POLICY_RELEASE_URL,
+    MOF_SOURCE_ID,
     NBS_DATA_RELEASE_URL,
     NBS_SOURCE_ID,
+    NDRC_NORMATIVE_POLICY_URL,
+    NDRC_SOURCE_ID,
     PBOC_OPEN_MARKET_URL,
     PBOC_SOURCE_ID,
+    SAFE_FOREIGN_EXCHANGE_NEWS_URL,
+    SAFE_SOURCE_ID,
+    SSE_MARKET_NEWS_URL,
+    SSE_SOURCE_ID,
     build_default_official_macro_sources,
 )
 from gribuki_trade.ports.news import DocumentFetch, FetchCursor
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "official_macro"
-FIRST_SEEN = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+FIRST_SEEN = datetime(2026, 8, 14, 1, 0, tzinfo=UTC)
 
 
 class FixtureFetcher:
@@ -48,7 +56,7 @@ def _document(source_id: str, url: str, fixture: str, content_type: str) -> RawD
         content_type=content_type,
         content=(FIXTURES / fixture).read_bytes(),
         first_seen_at=FIRST_SEEN,
-        retrieved_at=datetime(2026, 8, 13, 12, 1, tzinfo=UTC),
+        retrieved_at=datetime(2026, 8, 14, 1, 1, tzinfo=UTC),
         available_at=FIRST_SEEN,
         encoding="utf-8",
     )
@@ -81,6 +89,30 @@ def test_default_official_sources_parse_frozen_live_structures_with_pit_metadata
             "csrc_policy_interpretation.html",
             "text/html",
         ),
+        MOF_SOURCE_ID: _document(
+            MOF_SOURCE_ID,
+            MOF_POLICY_RELEASE_URL,
+            "mof_policy_release.html",
+            "text/html",
+        ),
+        NDRC_SOURCE_ID: _document(
+            NDRC_SOURCE_ID,
+            NDRC_NORMATIVE_POLICY_URL,
+            "ndrc_normative_policy.html",
+            "text/html",
+        ),
+        SAFE_SOURCE_ID: _document(
+            SAFE_SOURCE_ID,
+            SAFE_FOREIGN_EXCHANGE_NEWS_URL,
+            "safe_foreign_exchange_news.html",
+            "text/html",
+        ),
+        SSE_SOURCE_ID: _document(
+            SSE_SOURCE_ID,
+            SSE_MARKET_NEWS_URL,
+            "sse_market_news.html",
+            "text/html",
+        ),
     }
     batches = {}
     for source_id, source in sources.items():
@@ -92,6 +124,10 @@ def test_default_official_sources_parse_frozen_live_structures_with_pit_metadata
         PBOC_SOURCE_ID,
         FED_SOURCE_ID,
         CSRC_SOURCE_ID,
+        MOF_SOURCE_ID,
+        NDRC_SOURCE_ID,
+        SAFE_SOURCE_ID,
+        SSE_SOURCE_ID,
     )
     nbs = batches[NBS_SOURCE_ID].events
     assert len(nbs) == 1
@@ -124,6 +160,29 @@ def test_default_official_sources_parse_frozen_live_structures_with_pit_metadata
     assert csrc[0].published_at == datetime(2026, 5, 14, 16, 0, tzinfo=UTC)
     assert csrc[0].event_type == "regulatory"
 
+    mof = batches[MOF_SOURCE_ID].events
+    assert len(mof) == 1  # 站外链接必须在归一化阶段被丢弃。
+    assert mof[0].canonical_url == (
+        "https://kjs.mof.gov.cn/zhengcefabu/202608/t20260805_3994927.htm"
+    )
+    assert mof[0].published_at == datetime(2026, 8, 4, 16, 0, tzinfo=UTC)
+    assert mof[0].event_type == "fiscal_policy"
+
+    ndrc = batches[NDRC_SOURCE_ID].events
+    assert len(ndrc) == 1
+    assert ndrc[0].canonical_url.endswith("/ghxwj/202605/t20260519_1405299.html")
+    assert ndrc[0].event_type == "industrial_policy"
+
+    safe = batches[SAFE_SOURCE_ID].events
+    assert len(safe) == 1
+    assert safe[0].canonical_url == "https://www.safe.gov.cn/safe/2026/0814/27784.html"
+    assert safe[0].event_type == "foreign_exchange_policy"
+
+    sse = batches[SSE_SOURCE_ID].events
+    assert len(sse) == 1
+    assert sse[0].canonical_url.endswith("/c/c_20260724_10826669.shtml")
+    assert sse[0].event_type == "exchange_regulatory"
+
     for batch in batches.values():
         for event in batch.events:
             assert event.source_tier is SourceTier.OFFICIAL
@@ -136,7 +195,11 @@ def test_default_official_sources_parse_frozen_live_structures_with_pit_metadata
         assert policy.timeout_seconds == 15.0
         assert policy.max_attempts == 1
         assert policy.allowed_schemes == frozenset({"https"})
-        assert not policy.allow_subdomains
+        if policy.source_id == MOF_SOURCE_ID:
+            assert policy.allow_subdomains
+            assert policy.allowed_hosts == frozenset({"mof.gov.cn"})
+        else:
+            assert not policy.allow_subdomains
 
 
 def test_close_news_collection_always_merges_official_sources(
@@ -177,7 +240,7 @@ def test_close_news_collection_always_merges_official_sources(
             max_concurrency: int,
         ) -> None:
             del raw_store, event_store
-            assert max_concurrency == 4
+            assert max_concurrency == 1
             captured.append(tuple(sources))
             self.source_ids = tuple(sources)
 
@@ -200,6 +263,10 @@ def test_close_news_collection_always_merges_official_sources(
         PBOC_SOURCE_ID: FakeSource(),
         FED_SOURCE_ID: FakeSource(),
         CSRC_SOURCE_ID: FakeSource(),
+        MOF_SOURCE_ID: FakeSource(),
+        NDRC_SOURCE_ID: FakeSource(),
+        SAFE_SOURCE_ID: FakeSource(),
+        SSE_SOURCE_ID: FakeSource(),
     }
     monkeypatch.setattr(ingest, "AKShareNewsSource", FakeSource)
     monkeypatch.setattr(ingest, "build_default_official_macro_sources", lambda: official)
@@ -226,9 +293,13 @@ def test_close_news_collection_always_merges_official_sources(
             PBOC_SOURCE_ID,
             FED_SOURCE_ID,
             CSRC_SOURCE_ID,
+            MOF_SOURCE_ID,
+            NDRC_SOURCE_ID,
+            SAFE_SOURCE_ID,
+            SSE_SOURCE_ID,
         )
     ]
-    assert [item["source_id"] for item in results][-4:] == list(official)
+    assert [item["source_id"] for item in results][-8:] == list(official)
 
 
 def test_close_news_collection_rejects_source_id_collisions(

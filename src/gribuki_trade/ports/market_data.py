@@ -1,8 +1,7 @@
-"""Stable ports and transport-neutral types for market data.
+"""稳定的市场数据端口与传输无关类型。
 
-The source semantics are deliberately part of the contract.  A public web
-``time-and-sales`` endpoint is useful for research, but it must not be exposed
-to a strategy as an exchange sequenced tick feed.
+来源语义刻意作为契约的一部分。公开网页的 ``time-and-sales`` 端点可用于研究，
+但不得作为交易所排序的逐笔数据源暴露给策略。
 """
 
 from __future__ import annotations
@@ -18,15 +17,15 @@ from gribuki_trade.domain.market import DailyBar, PriceAdjustment
 
 
 class MarketDataUnavailableError(RuntimeError):
-    """The provider could not supply market data for this request."""
+    """提供方无法为此请求提供市场数据。"""
 
 
 class MarketDataTimeoutError(MarketDataUnavailableError):
-    """The market-data request exceeded its configured time limit."""
+    """市场数据请求超过已配置的时限。"""
 
 
 class SourceSemantics(StrEnum):
-    """What an upstream record actually represents."""
+    """上游记录实际表示的内容。"""
 
     PUBLIC_WEB_QUOTE_SNAPSHOT = "PUBLIC_WEB_QUOTE_SNAPSHOT"
     PUBLIC_WEB_TIME_AND_SALES = "PUBLIC_WEB_TIME_AND_SALES"
@@ -35,11 +34,10 @@ class SourceSemantics(StrEnum):
 
 
 class FreshnessStatus(StrEnum):
-    """Freshness assessed when a record is collected.
+    """收集记录时评估的新鲜度。
 
-    ``UNKNOWN`` is materially different from ``CURRENT``.  For example,
-    AKShare's all-A-share snapshot contains no authoritative quote timestamp,
-    so a recent HTTP fetch cannot prove that the underlying quote is current.
+    ``UNKNOWN`` 与 ``CURRENT`` 有实质差异。例如，AKShare 全 A 股快照不含权威行情
+    时间戳，因此近期的 HTTP 获取不能证明底层行情为当前数据。
     """
 
     CURRENT = "CURRENT"
@@ -65,7 +63,7 @@ class TradeDirection(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class MarketDataMeta:
-    """Provenance and point-in-time metadata attached to a provider record."""
+    """附加到提供方记录的来源与时点元数据。"""
 
     provider: str
     semantics: SourceSemantics
@@ -87,7 +85,7 @@ class MarketDataMeta:
 
 @dataclass(frozen=True, slots=True)
 class MarketSnapshot:
-    """Best-effort public-web quote snapshot, not an exchange tick."""
+    """尽力而为的公开网页行情快照，并非交易所逐笔数据。"""
 
     symbol: str
     name: str | None
@@ -104,11 +102,10 @@ class MarketSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class TradePrint:
-    """A public-web time-and-sales row.
+    """一条公开网页逐笔成交记录。
 
-    AKShare/Eastmoney does not expose an exchange sequence number through this
-    endpoint, so these rows cannot be used for order-book reconstruction.
-    ``volume_lots`` preserves the provider's reported unit (A-share lots).
+    AKShare/Eastmoney 不通过此端点暴露交易所序列号，因此这些记录不能用于重建订单簿。
+    ``volume_lots`` 保留提供方报告的单位（A 股手数）。
     """
 
     symbol: str
@@ -122,7 +119,7 @@ class TradePrint:
 
 @dataclass(frozen=True, slots=True)
 class IntradayBar:
-    """A completed, provider-aggregated minute bar."""
+    """一根由提供方聚合且已完成的分钟 K 线。"""
 
     symbol: str
     start_at: datetime
@@ -141,11 +138,10 @@ class IntradayBar:
 
 @dataclass(frozen=True, slots=True)
 class TradeCalendarDay:
-    """One natural day from a provider's official trading calendar.
+    """提供方官方交易日历中的一个自然日。
 
-    Calendar adapters must return every natural day in the requested inclusive
-    range.  This makes weekends and exchange holidays explicit instead of
-    forcing callers to infer them from missing rows.
+    日历适配器必须返回请求闭区间内的每个自然日。这样周末与交易所休市日会被显式
+    表达，而无需调用方根据缺失记录进行推断。
     """
 
     calendar_date: date

@@ -86,7 +86,7 @@ def response_payload(
     message: dict[str, object] = {
         "role": "assistant",
         "content": content if content is not None else json.dumps(body or analysis_body()),
-        # The adapter must neither expose nor persist provider reasoning.
+        # 适配器既不能暴露，也不能持久化提供方的推理内容。
         "reasoning_content": "private provider reasoning",
     }
     if tool_calls is not None:

@@ -1,9 +1,8 @@
-"""Minimal async REST boundary for Binance USD-M and COIN-M Futures.
+"""Binance USD-M 与 COIN-M 合约的最小异步 REST 边界。
 
-The default is Binance Demo Trading.  Public and signed account/test-order
-requests are deliberately small, injectable, and fully testable offline.  The
-client never retries mutations and never changes an unsupported environment to
-a live URL.
+默认连接 Binance 模拟交易环境。公开请求以及签名后的账户、测试订单请求均保持
+精简且可注入，以便完全离线测试。客户端不会重试变更操作，也不会把不受支持的
+环境切换到实盘地址。
 """
 
 from __future__ import annotations
@@ -50,11 +49,11 @@ class BinanceFuturesTicker:
 
 
 class BinanceFuturesRestClient:
-    """REST client for a single USD-M or COIN-M environment.
+    """面向单一 USD-M 或 COIN-M 环境的 REST 客户端。
 
-    ``DEMO`` is the only supported non-production Futures stage in the current
-    official documentation.  ``LIVE`` additionally requires ``allow_live``;
-    passing ``TESTNET`` raises instead of selecting either Demo or Live.
+    按当前官方文档，``DEMO`` 是唯一受支持的非生产合约阶段。``LIVE`` 还要求
+    显式启用 ``allow_live``；传入 ``TESTNET`` 会直接报错，而不会替调用方选择
+    模拟或实盘环境。
     """
 
     def __init__(
@@ -162,9 +161,8 @@ class BinanceFuturesRestClient:
             self._v1("ticker/price"),
             params=(("symbol", normalized),),
         )
-        # COIN-M currently returns a one-element array even when ``symbol`` is
-        # supplied, while USD-M returns an object.  Preserve this documented
-        # product difference at the adapter boundary.
+        # 当前 COIN-M 即使提供 ``symbol`` 仍返回单元素数组，而 USD-M 返回对象；
+        # 在适配器边界保留这一有文档依据的产品差异。
         if isinstance(payload, list):
             if len(payload) != 1 or not isinstance(payload[0], Mapping):
                 raise BinanceProtocolError(
@@ -249,7 +247,7 @@ class BinanceFuturesRestClient:
         close_position: bool | None = None,
         client_order_id: str | None = None,
     ) -> dict[str, Any]:
-        """Call the official Futures test-order endpoint without creating an order."""
+        """调用官方合约测试订单端点，但不实际创建订单。"""
 
         params: list[tuple[str, object]] = [
             ("symbol", self._normalize_symbol(symbol)),

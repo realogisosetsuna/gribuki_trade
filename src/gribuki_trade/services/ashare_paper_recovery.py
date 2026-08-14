@@ -1,10 +1,8 @@
-"""Crash-recoverable saga around deterministic A-share PAPER matching.
+"""围绕确定性 A 股 PAPER 匹配构建的可崩溃恢复 Saga。
 
-The order-event database and the cash/position ledger are separate SQLite
-files, so this module does not claim cross-database atomicity.  It records a
-complete ``RUN_STARTED`` input before matching, relies on deterministic ledger
-``fill_id`` idempotency, then records ``ORDER_FILL_APPLIED`` and
-``RUN_COMPLETED``.  Recovery recomputes only an unfinished run.
+订单事件数据库与现金/持仓账本是分离的 SQLite 文件，因此本模块不声称具备跨数据库
+原子性。匹配前先记录完整的 ``RUN_STARTED`` 输入，依靠确定性账本 ``fill_id`` 的
+幂等性，再记录 ``ORDER_FILL_APPLIED`` 与 ``RUN_COMPLETED``。恢复时只重新计算未完成运行。
 """
 
 from __future__ import annotations
@@ -37,7 +35,7 @@ from gribuki_trade.storage.paper_orders import (
 
 
 class PaperRecoveryRequiredError(RuntimeError):
-    """The in-memory matcher may have diverged and must be rebuilt."""
+    """内存匹配器可能已经偏离，必须重建。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,10 +45,10 @@ class PaperRecoverySummary:
 
 
 class DurableASharePaperOrderMatcher:
-    """Persist submissions, state transitions and bar-run sagas.
+    """持久化提交、状态转换与行情柱运行 Saga。
 
-    This remains a local PAPER simulator.  It has no broker route and makes no
-    queue-position or fill-probability claim beyond the wrapped daily-bar model.
+    本服务仍是本地 PAPER 模拟器，不含券商路由；除所封装日线模型外，不对队列位置
+    或成交概率作任何声明。
     """
 
     def __init__(
@@ -81,7 +79,7 @@ class DurableASharePaperOrderMatcher:
         return self._matcher
 
     def recover(self, *, recovered_at: datetime | None = None) -> PaperRecoverySummary:
-        """Rebuild stable order state and finish the sole incomplete saga."""
+        """重建稳定订单状态并完成唯一未结束的 Saga。"""
 
         now = _aware_utc(recovered_at or datetime.now(UTC))
         self._renew_writer()
@@ -113,7 +111,7 @@ class DurableASharePaperOrderMatcher:
 
         recovered: list[str] = []
         incomplete = self._store.incomplete_runs()
-        if len(incomplete) > 1:  # store prevents this; fail closed on corruption
+        if len(incomplete) > 1:  # 存储层会阻止这种情况；出现损坏时按失败关闭处理。
             raise PaperOrderStoreConflictError("multiple incomplete paper runs exist")
         for record in incomplete:
             start = next(
@@ -217,8 +215,7 @@ class DurableASharePaperOrderMatcher:
                 self._requires_recovery = True
                 raise PaperRecoveryRequiredError("unfinished run exists; call recover()")
             return self._completed_replay(prior.run_id, bar)
-        # Persist the complete matcher projection, not only this symbol.  A
-        # recovered matcher must retain unrelated open reservations as well.
+        # 持久化完整匹配器投影，而不只保存本标的。恢复后的匹配器也必须保留无关的未完成预留。
         orders_before = matcher.orders()
         run_document = {
             "bar": _bar_document(bar),
@@ -260,7 +257,7 @@ class DurableASharePaperOrderMatcher:
         run_id: str,
         bar: SimulatedDailyBar,
     ) -> PaperBarMatchRun:
-        """Return a stable receipt-less summary for an exact completed replay."""
+        """为完全相同的已完成重放返回不含回执的稳定摘要。"""
 
         events = self._store.run_events(run_id)
         start = next(
@@ -279,9 +276,8 @@ class DurableASharePaperOrderMatcher:
                 "symbol/date/config replay has different bar content or revision"
             )
         payload = completed.payload
-        # Replays intentionally omit outcomes: receipts include historical
-        # account projections and are not fabricated.  Durable event rows hold
-        # every outcome and ledger fill reference for audit/reconstruction.
+        # 重放刻意省略结果：回执包含历史账户投影，不应虚构。持久化事件行保留每项结果与
+        # 账本成交引用，供审计和重建使用。
         return PaperBarMatchRun(
             bar=bar,
             applied_new=False,

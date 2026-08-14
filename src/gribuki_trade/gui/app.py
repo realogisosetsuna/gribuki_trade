@@ -1,4 +1,4 @@
-"""Qt application bootstrap helpers."""
+"""Qt 应用程序启动辅助工具。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .main_window import TradingMainWindow
 
 
 def create_application(argv: Sequence[str] | None = None) -> QApplication:
-    """Return the process QApplication, creating it when necessary."""
+    """返回进程的 QApplication，必要时创建它。"""
 
     existing = QApplication.instance()
     if isinstance(existing, QApplication):
@@ -29,7 +29,7 @@ def create_application(argv: Sequence[str] | None = None) -> QApplication:
 
 
 def run(argv: Sequence[str] | None = None) -> int:
-    """Start the desktop workstation."""
+    """启动桌面工作台。"""
 
     app = create_application(argv)
     window = TradingMainWindow()

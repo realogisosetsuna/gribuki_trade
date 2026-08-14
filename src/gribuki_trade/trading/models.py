@@ -1,4 +1,4 @@
-"""Durable order-management and trading-ledger value objects."""
+"""持久化订单管理与交易账本值对象。"""
 
 from __future__ import annotations
 
@@ -11,17 +11,17 @@ from gribuki_trade.domain.orders import OrderIntent, OrderStatus, Side
 
 
 class TradingCommandType(StrEnum):
-    """Commands that may cross the process/exchange boundary."""
+    """可能跨越进程或交易所边界的命令。"""
 
     SUBMIT_ORDER = "SUBMIT_ORDER"
     CANCEL_ORDER = "CANCEL_ORDER"
 
 
 class TradingCommandStatus(StrEnum):
-    """Durable delivery state for a trading command.
+    """交易命令的持久化投递状态。
 
-    ``UNKNOWN`` is deliberately not retryable.  The OMS must reconcile the
-    exchange by ``client_order_id`` before it can resolve that command.
+    ``UNKNOWN`` 被刻意设计为不可重试。OMS 必须先按 ``client_order_id`` 与交易所对账，
+    才能解决该命令。
     """
 
     PENDING = "PENDING"
@@ -33,7 +33,7 @@ class TradingCommandStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class OrderSnapshot:
-    """Latest materialized state reconstructed from append-only events."""
+    """由仅追加事件重建的最新物化状态。"""
 
     order: OrderIntent
     status: OrderStatus
@@ -46,7 +46,7 @@ class OrderSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class OrderEventRecord:
-    """One immutable order event in ingestion order."""
+    """按摄取顺序排列的一条不可变订单事件。"""
 
     sequence: int
     event_id: str
@@ -60,7 +60,7 @@ class OrderEventRecord:
 
 @dataclass(frozen=True, slots=True)
 class TradingCommand:
-    """One durable broker command from the transactional outbox."""
+    """事务性发件箱中的一条持久化券商命令。"""
 
     id: int
     command_id: str
@@ -77,7 +77,7 @@ class TradingCommand:
 
 @dataclass(frozen=True, slots=True)
 class ExecutionFill:
-    """An immutable execution used by paper, Testnet, and live ledgers."""
+    """供 PAPER、Testnet 与实时账本使用的一条不可变成交记录。"""
 
     fill_id: str
     client_order_id: str
@@ -114,7 +114,7 @@ class ExecutionFill:
 
 @dataclass(frozen=True, slots=True)
 class AssetBalance:
-    """Latest authoritative free/locked balance for one asset."""
+    """单项资产最新的权威可用/锁定余额。"""
 
     account_id: str
     asset: str
@@ -135,7 +135,7 @@ class AssetBalance:
 
 @dataclass(frozen=True, slots=True)
 class BalanceValue:
-    """Input value for an account balance snapshot."""
+    """账户余额快照的输入值。"""
 
     asset: str
     free: Decimal
@@ -152,7 +152,7 @@ class BalanceValue:
 
 @dataclass(frozen=True, slots=True)
 class PositionSnapshot:
-    """Net-position projection derived from immutable fills."""
+    """由不可变成交记录派生的净持仓投影。"""
 
     account_id: str
     symbol: str

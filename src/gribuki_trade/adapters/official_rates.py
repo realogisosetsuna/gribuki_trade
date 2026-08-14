@@ -1,4 +1,4 @@
-"""Strict HTTPS adapters for SAFE USD/CNY parity and official Shibor data."""
+"""外汇管理局美元/人民币中间价与官方 Shibor 数据的严格 HTTPS 适配器。"""
 
 from __future__ import annotations
 
@@ -108,7 +108,7 @@ _SHIBOR_TENOR_DAYS = {
 
 
 class SafeCentralParityAdapter(AsyncSafeCentralParityData):
-    """Read SAFE's official table and expose only exact USD/CNY rows."""
+    """读取外汇管理局官方表格，仅暴露精确的美元/人民币行。"""
 
     def __init__(
         self,
@@ -225,7 +225,7 @@ class SafeCentralParityAdapter(AsyncSafeCentralParityData):
 
 
 class OfficialShiborAdapter(AsyncShiborData):
-    """Read the JSON endpoint used by Shibor's official download page."""
+    """读取 Shibor 官方下载页使用的 JSON 端点。"""
 
     def __init__(
         self,
@@ -324,10 +324,9 @@ class OfficialShiborAdapter(AsyncShiborData):
                     timeout=timeout,
                     follow_redirects=False,
                 )
-            # The official server currently requests legacy TLS renegotiation.
-            # Permit only the client-side compatibility bit; never disable CA or
-            # hostname verification, and keep the request pinned to the static
-            # HTTPS host allowlist checked above and after the response.
+    # 官方服务器当前要求旧式 TLS 重协商。只允许客户端兼容位，绝不禁用 CA
+    # 或主机名验证；请求必须固定在静态 HTTPS 主机允许列表中，并在发送前和
+    # 收到响应后分别检查。
             ssl_context = ssl.create_default_context()
             legacy_server_connect = getattr(ssl, "OP_LEGACY_SERVER_CONNECT", 0)
             ssl_context.options |= legacy_server_connect

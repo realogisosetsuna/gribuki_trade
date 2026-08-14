@@ -1,4 +1,4 @@
-"""Pure conversion of an A-share breadth snapshot into auditable evidence."""
+"""将 A 股市场宽度快照纯转换为可审计证据。"""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def build_ashare_breadth_evidence(
     snapshot: AShareBreadthSnapshot | None,
     as_of: datetime,
 ) -> AShareBreadthEvidenceBundle:
-    """Build deterministic breadth evidence with a strict first-seen cutoff."""
+    """按照严格的首次可见时间截点构建确定性市场宽度证据。"""
 
     _require_aware(as_of, "as_of")
     if snapshot is None:

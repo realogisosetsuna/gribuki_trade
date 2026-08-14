@@ -1,8 +1,7 @@
-"""Anonymous BaoStock historical-data adapter.
+"""匿名 BaoStock 历史数据适配器。
 
-BaoStock is used only for research, backtests, and PAPER mode.  It is not a
-licensed low-latency execution feed.  The dependency is imported lazily so the
-domain package remains usable when this optional external service is absent.
+BaoStock 只用于研究、回测和模拟盘模式，并非获得许可的低延迟执行数据源。
+依赖采用延迟导入，因此缺少这一可选外部服务时，领域包仍然可用。
 """
 
 from __future__ import annotations
@@ -26,16 +25,15 @@ from gribuki_trade.ports.market_data import (
 
 
 class BaoStockError(MarketDataUnavailableError):
-    """A provider login, query, or payload error."""
+    """数据提供者登录、查询或载荷错误。"""
 
 
 class BaoStockTimeoutError(MarketDataTimeoutError, BaoStockError):
-    """An async BaoStock request exceeded its caller-visible timeout."""
+    """异步 BaoStock 请求超过调用方可见的超时。"""
 
 
-# BaoStock's Python SDK maintains process-global login state.  A complete
-# login/query/logout session must therefore be serialized across adapter
-# instances as well as across the daily-bar and calendar endpoints.
+# BaoStock 的 Python SDK 维护进程全局登录状态。因此，完整的登录/查询/登出
+# 会话必须在适配器实例之间，以及日线与交易日历端点之间串行执行。
 _BAOSTOCK_SESSION_LOCK = threading.Lock()
 
 
@@ -79,7 +77,7 @@ class BaoStockDailyAdapter:
         *,
         adjustment: PriceAdjustment = PriceAdjustment.NONE,
     ) -> tuple[DailyBar, ...]:
-        """Fetch daily bars without requiring a user account or API token."""
+        """无需用户账户或 API 令牌即可获取日线。"""
 
         if start > end:
             raise ValueError("start must be on or before end")
@@ -115,7 +113,7 @@ class BaoStockDailyAdapter:
         *,
         adjustment: PriceAdjustment = PriceAdjustment.NONE,
     ) -> tuple[DailyBar, ...]:
-        """Run the blocking SDK away from an asyncio GUI/service loop."""
+        """在 asyncio 图形界面/服务事件循环之外运行阻塞式 SDK。"""
 
         try:
             return await asyncio.wait_for(
@@ -140,7 +138,7 @@ class BaoStockDailyAdapter:
         start: date,
         end: date,
     ) -> tuple[TradeCalendarDay, ...]:
-        """Fetch and strictly validate BaoStock's inclusive trading calendar."""
+        """获取并严格验证 BaoStock 的闭区间交易日历。"""
 
         if start > end:
             raise ValueError("start must be on or before end")
@@ -166,7 +164,7 @@ class BaoStockDailyAdapter:
         start: date,
         end: date,
     ) -> tuple[TradeCalendarDay, ...]:
-        """Run the blocking calendar SDK call away from an asyncio loop."""
+        """在 asyncio 循环之外运行阻塞式日历 SDK 调用。"""
 
         try:
             return await asyncio.wait_for(
@@ -246,8 +244,7 @@ class BaoStockDailyAdapter:
             return tuple(bars)
         finally:
             if logged_in:
-                # A failed logout must not hide the query result/error.  The
-                # next retry opens a new anonymous provider session.
+        # 登出失败不得掩盖查询结果或错误；下一次重试会打开新的匿名提供者会话。
                 with suppress(Exception):
                     client.logout()
 

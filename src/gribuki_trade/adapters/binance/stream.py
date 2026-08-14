@@ -1,7 +1,6 @@
-"""Public Binance Spot WebSocket market-data streams.
+"""Binance 现货公共 WebSocket 市场数据流。
 
-Only public streams are supported here.  API credentials and private user-data
-listen keys deliberately do not form part of this module's interface.
+此处仅支持公共数据流；模块接口特意不包含 API 凭据或私有用户数据监听密钥。
 """
 
 from __future__ import annotations
@@ -61,11 +60,11 @@ _MAX_COMBINED_STREAMS = 1024
 
 
 class BinanceStreamConnectionError(BinanceTransportError):
-    """A public WebSocket could not be established or restored safely."""
+    """无法安全建立或恢复公共 WebSocket 连接。"""
 
 
 class WebSocketConnection(Protocol):
-    """Minimum socket surface used by :class:`BinanceSpotMarketStream`."""
+    """:class:`BinanceSpotMarketStream` 使用的最小套接字接口。"""
 
     async def recv(self) -> str | bytes: ...
 
@@ -133,7 +132,7 @@ BinanceMarketEvent: TypeAlias = (
 
 
 def normalize_symbol(symbol: str) -> str:
-    """Validate a Binance symbol and return its canonical upper-case form."""
+    """校验 Binance 标的代码并返回规范的大写形式。"""
 
     if not isinstance(symbol, str) or _SYMBOL_RE.fullmatch(symbol) is None:
         raise ValueError("symbol must contain 2-32 ASCII letters or digits")
@@ -156,10 +155,10 @@ def kline_stream(symbol: str, interval: str) -> str:
 
 
 def validate_stream_name(stream: str) -> str:
-    """Return a canonical public stream name or reject it.
+    """返回规范的公共数据流名称，无法规范化时拒绝。
 
-    Requiring lower-case symbols matches Binance's wire format and prevents a
-    caller from injecting another path or query parameter into a stream URL.
+    要求标的代码使用小写，既符合 Binance 线上格式，也可阻止调用方把其他路径或
+    查询参数注入数据流 URL。
     """
 
     if not isinstance(stream, str) or _STREAM_RE.fullmatch(stream) is None:
@@ -192,7 +191,7 @@ def build_stream_url(
     allow_live: bool = False,
     combined: bool | None = None,
 ) -> str:
-    """Build a raw or combined public WebSocket URL from validated streams."""
+    """根据已校验的数据流构建原始或组合公共 WebSocket URL。"""
 
     try:
         selected = (
@@ -222,8 +221,7 @@ def build_stream_url(
     if not use_combined and len(canonical) != 1:
         raise ValueError("a raw Binance WebSocket URL supports exactly one stream")
     if use_combined:
-        # Stream names are grammar-validated above, so joining cannot inject a
-        # path, fragment, or second query parameter.
+        # 数据流名称已经过语法校验，因此拼接不会注入路径、片段或第二个查询参数。
         return f"{base_url}/stream?streams={'/'.join(canonical)}"
     return f"{base_url}/ws/{canonical[0]}"
 
@@ -233,7 +231,7 @@ def parse_stream_message(
     *,
     expected_streams: Sequence[str] | None = None,
 ) -> BinanceMarketEvent:
-    """Parse one raw or combined Binance market-data frame strictly."""
+    """严格解析一个原始或组合 Binance 市场数据帧。"""
 
     if isinstance(message, bytes):
         try:
@@ -295,11 +293,10 @@ def parse_stream_message(
 
 
 class BinanceSpotMarketStream:
-    """Async iterator over public Binance Spot market events.
+    """迭代 Binance 现货公共市场事件的异步迭代器。
 
-    The WebSocket library supplies protocol ping/pong heartbeats.  A network
-    loss is retried a bounded number of times; malformed data and sequence
-    regressions are raised immediately and are never treated as reconnectable.
+    WebSocket 库负责协议层 ping/pong 心跳。网络中断只进行有限次重试；数据格式
+    错误与序列倒退会立即抛出，绝不按可重连故障处理。
     """
 
     def __init__(
@@ -361,8 +358,8 @@ class BinanceSpotMarketStream:
         self._last_sequence: dict[str, int] = {}
 
     def __repr__(self) -> str:
-        # Deliberately omit ``url``: combined URLs use a query component and
-        # retaining it in repr would be an unsafe precedent for future streams.
+        # 特意省略 ``url``：组合 URL 含查询部分，在 repr 中保留它会为未来数据流
+        # 留下不安全的先例。
         return (
             f"BinanceSpotMarketStream(environment={self.environment.value!r}, "
             f"stream_count={len(self.streams)!r}, connected={self.connected!r})"
@@ -388,7 +385,7 @@ class BinanceSpotMarketStream:
         return self.events()
 
     async def aclose(self) -> None:
-        """Stop iteration and close the active socket, if one exists."""
+        """停止迭代，并关闭存在的活动套接字。"""
 
         self._stop_requested = True
         connection = self._connection
@@ -447,8 +444,8 @@ class BinanceSpotMarketStream:
 
                 if self._stop_requested:
                     break
-                # A conforming WebSocket normally exits through ConnectionClosed.
-                # Treat an unexplained clean context exit as a bounded disconnect.
+                # 合规 WebSocket 通常以 ConnectionClosed 退出；无法解释的上下文正常
+                # 退出也按有限次可重试断连处理。
                 if received_valid_event:
                     reconnects = 0
                 if reconnects >= self._max_reconnect_attempts:
@@ -516,8 +513,8 @@ def _validate_envelope_matches_payload(
     if stream_symbol != symbol.lower():
         raise BinanceProtocolError("Binance stream symbol does not match its payload")
     expected_type = "kline" if stream_kind.startswith("kline_") else stream_kind
-    # Binance's bookTicker wire payload omits ``e`` on some endpoints; the
-    # canonical envelope name plus its required field set identifies it.
+    # Binance 的 bookTicker 线上载荷在部分端点省略 ``e``；可由规范信封名称及其
+    # 必填字段集合识别。
     if event_type != expected_type and not (
         expected_type == "bookTicker" and event_type is None
     ):
@@ -561,9 +558,8 @@ def _parse_trade(
         trade_id=_integer(payload, "t", minimum=0),
         price=_decimal(payload, "p", positive=True),
         quantity=_decimal(payload, "q", positive=True),
-        # The current public Spot trade stream doesn't guarantee order IDs.
-        # Some environments/older payloads include them; preserve them when
-        # present without rejecting the documented minimal event shape.
+    # 当前现货公共成交流不保证包含订单 ID。部分环境或旧载荷会提供该值；若存在则
+    # 原样保留，同时不拒绝文档规定的最小事件结构。
         buyer_order_id=_optional_integer(payload, "b", minimum=0),
         seller_order_id=_optional_integer(payload, "a", minimum=0),
         trade_time_ms=_integer(payload, "T", minimum=0),

@@ -1,4 +1,4 @@
-"""Charles Schwab OAuth, Market Data, and Trader API adapter skeleton."""
+"""Charles Schwab OAuth、行情与 Trader API 适配器骨架。"""
 
 from .broker import (
     SCHWAB_ORDER_STATUS_EVENT,

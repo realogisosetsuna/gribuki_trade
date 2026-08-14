@@ -1,10 +1,9 @@
-"""Strict multi-upstream AKShare cross-market snapshot adapter.
+"""严格的多上游 AKShare 跨市场快照适配器。
 
-``index_global_spot_em`` is the primary full-table observation.  If it fails
-or lacks a configured series, the adapter may use an independently sourced
-Sina daily close only where the installed AKShare API exposes an audited exact
-index mapping.  Every other gap remains a missing item; a similarly named ETF,
-future or volatility series is never substituted.
+``index_global_spot_em`` 是主要的全表观测。若其失败或缺少已配置序列，只有在
+已安装 AKShare API 暴露经审计精确指数映射时，适配器才可使用独立来源的新浪
+日收盘价。其他缺口一律保持缺失；绝不替换为名称相似的 ETF、期货或波动率
+序列。
 """
 
 from __future__ import annotations
@@ -14,7 +13,6 @@ import math
 import threading
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
@@ -23,6 +21,7 @@ from queue import Empty, Queue
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from gribuki_trade.adapters.ashare_screening import _SINA_HISTORY_LOCK
 from gribuki_trade.ports.cross_market import (
     CrossMarketDataError,
     CrossMarketDataTimeoutError,
@@ -198,12 +197,10 @@ class _SinaDailyFallbackSpec:
     completion_grace: timedelta = timedelta(minutes=30)
 
 
-# These are deliberately limited to mappings exposed by the installed AKShare
-# 1.18.x interfaces.  ``index_us_stock_sina`` explicitly documents .INX,
-# .NDX and .DJI, so those three are exact index mappings.  Neither that API nor
-# ``index_global_hist_sina`` exposes DXY, CRB or VIX.  Those instruments must
-# remain missing when Eastmoney is unavailable; a similarly named ETF or
-# future is not the same series.
+# 这里刻意只采用已安装 AKShare 1.18.x 接口暴露的映射。
+# ``index_us_stock_sina`` 明确记录 .INX、.NDX 和 .DJI，因此这三项是精确指数
+# 映射。该 API 与 ``index_global_hist_sina`` 都不暴露 DXY、CRB 或 VIX。东方
+# 财富不可用时，这些证券必须保持缺失；名称相似的 ETF 或期货不是同一序列。
 _SINA_DAILY_FALLBACKS: Mapping[str, _SinaDailyFallbackSpec] = {
     "SHANGHAI_COMPOSITE": _SinaDailyFallbackSpec(
         "stock_zh_index_daily",
@@ -328,7 +325,7 @@ _DEFAULT_SPEC_BY_ID: Mapping[str, CrossMarketInstrumentSpec] = {
 
 
 class AKShareCrossMarketAdapter:
-    """Fetch primary global quotes plus strictly mapped daily fallbacks."""
+    """获取主要全球报价及严格映射的日线回退。"""
 
     def __init__(
         self,
@@ -361,7 +358,7 @@ class AKShareCrossMarketAdapter:
         self._now = now or (lambda: datetime.now(tz=UTC))
 
     def fetch_cross_market_snapshot(self) -> CrossMarketSnapshot:
-        """Fetch the primary table, then use only audited exact daily fallbacks."""
+        """获取主表，之后只使用经过审计的精确日线回退。"""
 
         fetched_at = _aware_now(self._now)
         primary_error: CrossMarketDataError | None = None
@@ -399,41 +396,28 @@ class AKShareCrossMarketAdapter:
                 continue
             fallback_work.append((spec, fallback))
 
-        if fallback_work:
-            # One disconnected source must not serialize all other independent
-            # upstream deadlines.  Results are consumed in universe order so the
-            # snapshot remains deterministic.
-            with ThreadPoolExecutor(
-                max_workers=len(fallback_work),
-                thread_name_prefix="cross-market-fallback",
-            ) as executor:
-                futures = [
-                    executor.submit(
-                        self._fetch_sina_daily_quote,
+        # AKShare 已审计的新浪回退通过 MiniRacer 解码 JavaScript。在 Windows 上
+        # 同时运行多个运行时可能终止进程，因此保持股票池顺序，并串行地给每个
+        # 来源分配自身截止时间。
+        for spec, fallback in fallback_work:
+            try:
+                fallback_quotes.append(
+                    self._fetch_sina_daily_quote(spec, fallback, fetched_at)
+                )
+            except CrossMarketDataError as exc:
+                fallback_failures += 1
+                missing.append(
+                    _missing_item(
                         spec,
-                        fallback,
-                        fetched_at,
+                        reason=_fallback_failure_reason(exc),
                     )
-                    for spec, fallback in fallback_work
-                ]
-                for (spec, _), future in zip(fallback_work, futures, strict=True):
-                    try:
-                        fallback_quotes.append(future.result())
-                    except CrossMarketDataError as exc:
-                        fallback_failures += 1
-                        missing.append(
-                            _missing_item(
-                                spec,
-                                reason=_fallback_failure_reason(exc),
-                            )
-                        )
+                )
 
         quotes = [*primary_quotes, *fallback_quotes]
         if not quotes and isinstance(
             primary_error, (CrossMarketDataTimeoutError, CrossMarketPayloadError)
         ):
-            # Preserve the existing typed-failure contract when no independently
-            # sourced observation can salvage the request.
+                # 没有独立来源观测能挽救请求时，保留既有类型化失败契约。
             raise primary_error
 
         degraded = (
@@ -483,11 +467,14 @@ class AKShareCrossMarketAdapter:
         )
 
     async def fetch_cross_market_snapshot_async(self) -> CrossMarketSnapshot:
-        """Bound total orchestration time; every upstream call is bounded too."""
+        """限制总编排时间；每个上游调用也分别受限。"""
 
+        fallback_count = sum(
+            _audited_sina_fallback(spec) is not None for spec in self._universe
+        )
         orchestration_timeout = (
             self._timeout_seconds
-            + self._fallback_timeout_seconds
+            + self._fallback_timeout_seconds * fallback_count
             + 1.0
         )
         try:
@@ -570,7 +557,10 @@ class AKShareCrossMarketAdapter:
         label = f"AKShare {fallback.method_name}({fallback.symbol})"
         try:
             frame = _run_with_timeout(
-                partial(method, symbol=fallback.symbol),
+                partial(
+                    _run_sina_v8_call,
+                    partial(method, symbol=fallback.symbol),
+                ),
                 self._fallback_timeout_seconds,
                 label,
             )
@@ -603,7 +593,7 @@ def _run_with_timeout(
     timeout_seconds: float,
     label: str,
 ) -> Any:
-    """Run one blocking upstream call with its own non-blocking deadline."""
+    """运行一次阻塞上游调用，并设置其自身非阻塞截止时间。"""
 
     result_queue: Queue[tuple[bool, Any]] = Queue(maxsize=1)
 
@@ -611,7 +601,7 @@ def _run_with_timeout(
         try:
             result_queue.put((True, call()))
         except BaseException as exc:
-            # The exception is transported to the caller thread and re-raised there.
+    # 异常会传递到调用方线程并在那里重新抛出。
             result_queue.put((False, exc))
 
     worker = threading.Thread(target=invoke, daemon=True, name="cross-market-source")
@@ -630,6 +620,13 @@ def _run_with_timeout(
     if isinstance(value, BaseException):
         raise value
     raise CrossMarketDataError(f"{label} returned an invalid thread result")
+
+
+def _run_sina_v8_call(call: Callable[[], Any]) -> Any:
+    """在共享进程锁内运行一次由 MiniRacer 支持的新浪调用。"""
+
+    with _SINA_HISTORY_LOCK:
+        return call()
 
 
 def _frame_records(
@@ -653,7 +650,7 @@ def _frame_records(
 def _audited_sina_fallback(
     spec: CrossMarketInstrumentSpec,
 ) -> _SinaDailyFallbackSpec | None:
-    """Return a fallback only when the custom spec still denotes the audited series."""
+    """仅当自定义规格仍表示已审计序列时返回回退。"""
 
     fallback = _SINA_DAILY_FALLBACKS.get(spec.instrument_id)
     canonical = _DEFAULT_SPEC_BY_ID.get(spec.instrument_id)

@@ -1,4 +1,4 @@
-"""Concrete adapters for external systems and local simulation."""
+"""面向外部系统与本地模拟的具体适配器集合。"""
 
 from gribuki_trade.adapters.akshare import (
     AKShareError,
@@ -56,9 +56,15 @@ from gribuki_trade.adapters.ashare_derivatives import (
     SSEETFShareAdapter,
     SSEOptionRiskAdapter,
 )
+from gribuki_trade.adapters.ashare_preopen_screening import (
+    PREOPEN_FACTOR_SOURCE_ID,
+    PREOPEN_UNIVERSE_SOURCE_SUFFIX,
+    AKSharePreopenScreeningAdapter,
+)
 from gribuki_trade.adapters.ashare_screening import (
     AKSHARE_HISTORY_SOURCE_ID,
     EASTMONEY_SCREENING_SOURCE_ID,
+    SINA_HISTORY_SOURCE_ID,
     TENCENT_SCREENING_SOURCE_ID,
     AKShareAShareScreeningAdapter,
     AKShareScreeningCoverageError,
@@ -69,6 +75,7 @@ from gribuki_trade.adapters.ashare_screening import (
 )
 from gribuki_trade.adapters.ashare_surveillance import (
     EASTMONEY_SURVEILLANCE_SOURCE_ID,
+    TENCENT_ENRICHED_SURVEILLANCE_SOURCE_ID,
     TENCENT_SURVEILLANCE_SOURCE_ID,
     AKShareAShareSurveillanceAdapter,
 )
@@ -125,6 +132,7 @@ from gribuki_trade.adapters.paper_account import (
 __all__ = [
     "AKShareAShareBreadthAdapter",
     "AKShareAShareScreeningAdapter",
+    "AKSharePreopenScreeningAdapter",
     "AKShareAShareSurveillanceAdapter",
     "AKShareETFContextAdapter",
     "AKShareIFContextAdapter",
@@ -150,6 +158,7 @@ __all__ = [
     "AKShareScreeningPointInTimeError",
     "AKShareScreeningSourcesExhaustedError",
     "AKSHARE_HISTORY_SOURCE_ID",
+    "SINA_HISTORY_SOURCE_ID",
     "AKSHARE_ETF_PROFILE_SOURCE_ID",
     "AKSHARE_STOCK_PROFILE_SOURCE_ID",
     "ArchivedDailyBarSnapshot",
@@ -198,6 +207,8 @@ __all__ = [
     "PaperOrderUpdate",
     "PaperReservationStatus",
     "PaperSpotAccount",
+    "PREOPEN_FACTOR_SOURCE_ID",
+    "PREOPEN_UNIVERSE_SOURCE_SUFFIX",
     "OfficialShiborAdapter",
     "SAFE_CENTRAL_PARITY_URL",
     "SAFE_USD_CNY_SOURCE_ID",
@@ -212,6 +223,7 @@ __all__ = [
     "SSE_QUERY_URL",
     "TENCENT_BREADTH_SOURCE_ID",
     "TENCENT_BREADTH_SOURCE_URL",
+    "TENCENT_ENRICHED_SURVEILLANCE_SOURCE_ID",
     "TENCENT_SCREENING_SOURCE_ID",
     "TENCENT_SURVEILLANCE_SOURCE_ID",
     "export_manual_tickets",

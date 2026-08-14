@@ -1,11 +1,31 @@
-"""Local immutable storage adapters."""
+"""本地不可变存储适配器。"""
 
+from gribuki_trade.storage.adversarial_audit import (
+    AdversarialAuditIntegrityError,
+    SQLiteAdversarialAuditStore,
+)
 from gribuki_trade.storage.candidate_store import (
     CandidateEventCollisionError,
     CandidateNotFoundError,
     SQLiteCandidateStore,
 )
-from gribuki_trade.storage.event_store import SQLiteEventStore
+from gribuki_trade.storage.event_store import NewsSourceProbeClaim, SQLiteEventStore
+from gribuki_trade.storage.exit_plans import (
+    ExitPlanStoreConcurrencyError,
+    ExitPlanStoreConflictError,
+    ExitPlanStoreError,
+    ExitPlanStoreIntegrityError,
+    SQLiteExitPlanStore,
+)
+from gribuki_trade.storage.live_records import (
+    LiveConfirmationCommit,
+    LiveRecordConflictError,
+    LiveRecordIntegrityError,
+    LiveRecordStateError,
+    LiveRecordStoreError,
+    SQLiteLiveRecordStore,
+    StoredLiveCommand,
+)
 from gribuki_trade.storage.market_evidence import (
     ArchivedDailyBarEvidence,
     archive_daily_bar_evidence,
@@ -17,6 +37,13 @@ from gribuki_trade.storage.outbox import (
     OutboxItem,
     OutboxStatus,
     SQLiteOutbox,
+)
+from gribuki_trade.storage.paper_day import (
+    PaperDayStoreConflictError,
+    PaperDayStoreError,
+    PaperDayStoreIntegrityError,
+    PaperDayStoreLeaseError,
+    SQLitePaperDayStore,
 )
 from gribuki_trade.storage.paper_ledger import (
     PaperLedgerConcurrencyError,
@@ -71,13 +98,24 @@ from gribuki_trade.storage.strategy_experiments import (
 )
 
 __all__ = [
+    "AdversarialAuditIntegrityError",
     "ArchivedDailyBarEvidence",
     "BodyNotRetainedError",
     "CandidateEventCollisionError",
     "CandidateNotFoundError",
     "DispatchSummary",
+    "ExitPlanStoreConcurrencyError",
+    "ExitPlanStoreConflictError",
+    "ExitPlanStoreError",
+    "ExitPlanStoreIntegrityError",
     "FileRawDocumentStore",
     "InvalidReviewCaseTransitionError",
+    "LiveRecordConflictError",
+    "LiveConfirmationCommit",
+    "LiveRecordIntegrityError",
+    "LiveRecordStateError",
+    "LiveRecordStoreError",
+    "NewsSourceProbeClaim",
     "OutboxDispatcher",
     "OutboxItem",
     "OutboxStatus",
@@ -85,6 +123,10 @@ __all__ = [
     "PaperLedgerConflictError",
     "PaperLedgerError",
     "PaperLedgerIntegrityError",
+    "PaperDayStoreConflictError",
+    "PaperDayStoreError",
+    "PaperDayStoreIntegrityError",
+    "PaperDayStoreLeaseError",
     "PaperOrderEvent",
     "PaperOrderEventType",
     "PaperOrderStoreConflictError",
@@ -99,9 +141,13 @@ __all__ = [
     "ReviewCaseEventCollisionError",
     "ReviewCaseNotFoundError",
     "SQLiteEventStore",
+    "SQLiteAdversarialAuditStore",
+    "SQLiteLiveRecordStore",
+    "SQLiteExitPlanStore",
     "SQLiteCandidateStore",
     "SQLiteOutbox",
     "SQLitePaperLedger",
+    "SQLitePaperDayStore",
     "SQLitePaperOrderStore",
     "SQLiteResearchStore",
     "SQLiteReviewCaseStore",
@@ -111,6 +157,7 @@ __all__ = [
     "SourceHealthCollisionError",
     "SourceHealthSummary",
     "StoredRawDocument",
+    "StoredLiveCommand",
     "StoredResearchRun",
     "StoredStrategyExperiment",
     "StrategyExperimentCollisionError",

@@ -1,13 +1,15 @@
-"""Fail-closed public HTTP collector with conditional requests and backoff."""
+"""带条件请求与退避策略、且失败关闭的公共 HTTP 采集器。"""
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
-from collections.abc import Awaitable, Callable
+import ipaddress
+import socket
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 
@@ -23,7 +25,7 @@ from gribuki_trade.ports.news import (
 
 
 class NewsTransportError(ConnectionError):
-    """Network transport failure with URL/body details deliberately removed."""
+    """有意移除网址与正文细节的网络传输故障。"""
 
 
 class SourceFetchError(RuntimeError):
@@ -40,33 +42,38 @@ class SourceFetchError(RuntimeError):
 
 
 class SourceAccessDenied(SourceFetchError):
-    """A 401/403 response; the collector will not try to evade it."""
+    """收到 401/403 响应；采集器不会尝试规避。"""
 
 
 class SourceRateLimited(SourceFetchError):
-    """A 429 response; the scheduler must wait until ``next_allowed_at``."""
+    """收到 429 响应；调度器必须等待至 ``next_allowed_at``。"""
 
 
 class SourceBackoffActive(SourceFetchError):
-    """A caller attempted I/O before the source backoff expired."""
+    """调用方在数据源退避期结束前尝试输入输出操作。"""
 
 
 class SourceUnavailable(SourceFetchError):
-    """Transient retries were exhausted or the response was unacceptable."""
+    """瞬时故障重试次数已耗尽，或响应不可接受。"""
 
 
 class HttpxNewsTransport:
-    """HTTPX transport with redirects disabled for per-hop policy checks."""
+    """禁用重定向、以便逐跳检查策略的 HTTPX 传输层。"""
 
     async def send(self, request: NewsHttpRequest) -> NewsHttpResponse:
+        request_url, request_headers, extensions = _pinned_httpx_request(request)
         try:
-            async with httpx.AsyncClient(follow_redirects=False) as client:
+            async with httpx.AsyncClient(
+                follow_redirects=False,
+                trust_env=False,
+            ) as client:
                 response = await client.request(
                     request.method,
-                    request.url,
-                    headers=request.headers,
+                    request_url,
+                    headers=request_headers,
                     content=request.body,
                     timeout=request.timeout_seconds,
+                    extensions=extensions,
                 )
         except httpx.HTTPError:
             raise NewsTransportError("public source request failed") from None
@@ -75,6 +82,81 @@ class HttpxNewsTransport:
             headers=dict(response.headers),
             body=response.content,
         )
+
+
+def _pinned_httpx_request(
+    request: NewsHttpRequest,
+) -> tuple[str, dict[str, str], dict[str, object]]:
+    if request.resolved_ip is None or request.server_hostname is None:
+        return request.url, dict(request.headers), {}
+    try:
+        parsed = urlsplit(request.url)
+        hostname = parsed.hostname
+        port = parsed.port
+        address = ipaddress.ip_address(request.resolved_ip)
+    except ValueError:
+        raise NewsTransportError("public source pinned endpoint is invalid") from None
+    expected_hostname = request.server_hostname.rstrip(".").casefold()
+    if hostname is None or hostname.rstrip(".").casefold() != expected_hostname:
+        raise NewsTransportError("public source pinned endpoint is invalid")
+    if not address.is_global or parsed.username is not None or parsed.password is not None:
+        raise NewsTransportError("public source pinned endpoint is invalid")
+
+    address_text = f"[{address.compressed}]" if address.version == 6 else address.compressed
+    authority = address_text if port is None else f"{address_text}:{port}"
+    pinned_url = urlunsplit((parsed.scheme, authority, parsed.path, parsed.query, ""))
+    host_header = expected_hostname
+    default_port = 443 if parsed.scheme == "https" else 80
+    if port is not None and port != default_port:
+        host_header = f"{host_header}:{port}"
+    headers = {key: value for key, value in request.headers.items() if key.casefold() != "host"}
+    headers["Host"] = host_header
+    return pinned_url, headers, {"sni_hostname": expected_hostname}
+
+
+HostResolver = Callable[[str, int], Awaitable[Sequence[str]]]
+
+
+async def _system_resolver(hostname: str, port: int) -> Sequence[str]:
+    results = await asyncio.get_running_loop().getaddrinfo(
+        hostname,
+        port,
+        family=socket.AF_UNSPEC,
+        type=socket.SOCK_STREAM,
+        proto=socket.IPPROTO_TCP,
+    )
+    return tuple(str(result[4][0]) for result in results)
+
+
+def _public_resolution(addresses: Sequence[str]) -> frozenset[str]:
+    if not addresses:
+        raise ValueError("source hostname returned no addresses")
+    normalized: set[str] = set()
+    for value in addresses:
+        if not isinstance(value, str) or "%" in value:
+            raise ValueError("source hostname returned an invalid address")
+        try:
+            address = ipaddress.ip_address(value)
+        except ValueError:
+            raise ValueError("source hostname returned an invalid address") from None
+        if not address.is_global:
+            raise ValueError("source hostname resolved to a non-public address")
+        normalized.add(address.compressed)
+    return frozenset(normalized)
+
+
+def _url_endpoint(url: str) -> tuple[str, int]:
+    try:
+        parsed = urlsplit(url)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        raise ValueError("source URL endpoint is invalid") from None
+    if hostname is None:
+        raise ValueError("source URL endpoint is invalid")
+    if port is None:
+        port = 443 if parsed.scheme == "https" else 80
+    return hostname.rstrip(".").casefold(), port
 
 
 def _header(headers: dict[str, str], name: str) -> str | None:
@@ -88,7 +170,7 @@ def _charset(content_type: str | None) -> str | None:
     for item in content_type.split(";")[1:]:
         key, separator, value = item.partition("=")
         if separator and key.strip().lower() == "charset":
-            return value.strip().strip('"\'') or None
+            return value.strip().strip("\"'") or None
     return None
 
 
@@ -115,11 +197,13 @@ class PublicHttpFetcher:
         *,
         clock: Callable[[], datetime] | None = None,
         sleeper: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        resolver: HostResolver | None = None,
         user_agent: str = "gribuki-trade/0.1 public-information-collector",
     ) -> None:
         self._transport = transport
         self._clock = clock or (lambda: datetime.now(UTC))
         self._sleeper = sleeper
+        self._resolver = resolver or _system_resolver
         self._user_agent = user_agent
 
     def _now(self) -> datetime:
@@ -179,8 +263,34 @@ class PublicHttpFetcher:
             headers["If-Modified-Since"] = state.last_modified
 
         redirects = 0
+        resolved_hosts: dict[tuple[str, int], frozenset[str]] = {}
         for attempt in range(1, policy.max_attempts + 1):
-            request = NewsHttpRequest("GET", current_url, headers, policy.timeout_seconds)
+            endpoint = _url_endpoint(current_url)
+            try:
+                resolved = _public_resolution(await self._resolver(*endpoint))
+            except (OSError, TimeoutError, ValueError):
+                failed = self._failed_cursor(policy, state, self._now())
+                raise SourceUnavailable(
+                    "source hostname resolution was rejected",
+                    cursor=failed,
+                ) from None
+            previous_resolution = resolved_hosts.get(endpoint)
+            if previous_resolution is not None and previous_resolution != resolved:
+                failed = self._failed_cursor(policy, state, self._now())
+                raise SourceUnavailable(
+                    "source DNS rebinding was rejected",
+                    cursor=failed,
+                )
+            resolved_hosts[endpoint] = resolved
+            selected_address = sorted(resolved)[0]
+            request = NewsHttpRequest(
+                "GET",
+                current_url,
+                headers,
+                policy.timeout_seconds,
+                resolved_ip=selected_address,
+                server_hostname=endpoint[0],
+            )
             try:
                 response = await self._transport.send(request)
             except (NewsTransportError, TimeoutError, OSError):

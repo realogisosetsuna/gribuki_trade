@@ -1,4 +1,4 @@
-"""Ports for public news and announcement collection."""
+"""公开新闻与公告收集端口。"""
 
 from __future__ import annotations
 
@@ -16,10 +16,13 @@ class NewsHttpRequest:
     url: str = field(repr=False)
     headers: dict[str, str] = field(default_factory=dict, repr=False)
     timeout_seconds: float = 15.0
-    # Kept last so existing positional construction remains compatible.  The
-    # body is intentionally excluded from repr because authenticated API
-    # payloads can contain queries or provider-specific secrets.
+    # 保持在末尾以兼容现有的位置参数构造。正文刻意排除在 repr 之外，因为经过认证的
+    # API 载荷可能包含查询内容或提供方专属敏感信息。
     body: bytes | None = field(default=None, repr=False)
+    # PublicHttpFetcher 先解析并校验主机名，再把所选地址固定到传输请求中，避免
+    # 在策略校验与套接字连接之间发生第二次、可被攻击者控制的 DNS 查询。
+    resolved_ip: str | None = field(default=None, repr=False)
+    server_hostname: str | None = field(default=None, repr=False)
 
     def __repr__(self) -> str:
         safe_url = self.url.partition("?")[0]
@@ -45,7 +48,7 @@ class NewsHttpTransport(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class FetchCursor:
-    """Conditional-request state that can be persisted by the scheduler."""
+    """可由调度器持久化的条件请求状态。"""
 
     etag: str | None = None
     last_modified: str | None = None
@@ -85,7 +88,7 @@ class NewsSource(Protocol):
 
 
 class DiscoveryQueryKind(StrEnum):
-    """Why a search is being made; results remain unverified discovery leads."""
+    """搜索目的；结果仍是未经验证的发现线索。"""
 
     STOCK = "stock"
     INDUSTRY = "industry"
@@ -93,7 +96,7 @@ class DiscoveryQueryKind(StrEnum):
 
 
 class DiscoveryTimeRange(StrEnum):
-    """Portable time ranges supported by both Tavily and SearXNG."""
+    """Tavily 与 SearXNG 均支持的可移植时间范围。"""
 
     DAY = "day"
     MONTH = "month"
@@ -102,7 +105,7 @@ class DiscoveryTimeRange(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class DiscoveryQuery:
-    """One bounded search request with entities carried into evidence metadata."""
+    """一个有界搜索请求，其实体会写入证据元数据。"""
 
     text: str = field(repr=False)
     kind: DiscoveryQueryKind
@@ -135,7 +138,7 @@ class DiscoveryQuery:
         time_range: DiscoveryTimeRange | None = DiscoveryTimeRange.DAY,
         max_results: int = 8,
     ) -> DiscoveryQuery:
-        """Build an A-share company/ETF news-and-announcement discovery query."""
+        """构建 A 股公司或 ETF 新闻与公告发现查询。"""
 
         symbol_value = symbol.strip().upper()
         name_value = name.strip()
@@ -158,7 +161,7 @@ class DiscoveryQuery:
         time_range: DiscoveryTimeRange | None = DiscoveryTimeRange.DAY,
         max_results: int = 8,
     ) -> DiscoveryQuery:
-        """Build a supply/demand, policy and constituent-industry query."""
+        """构建包含供需、政策与成分行业的查询。"""
 
         industry_value = industry.strip()
         market_value = market.strip()
@@ -183,7 +186,7 @@ class DiscoveryQuery:
         time_range: DiscoveryTimeRange | None = DiscoveryTimeRange.DAY,
         max_results: int = 8,
     ) -> DiscoveryQuery:
-        """Build a macro-policy and cross-market lead-discovery query."""
+        """构建宏观政策与跨市场线索发现查询。"""
 
         topic_value = topic.strip()
         market_value = market.strip()
@@ -201,7 +204,7 @@ class DiscoveryQuery:
 
 @dataclass(frozen=True, slots=True)
 class DiscoveryHit:
-    """Provider-returned search lead, not an assertion that the result is true."""
+    """提供方返回的搜索线索，并不代表其内容已被证实。"""
 
     provider_id: str
     url: str

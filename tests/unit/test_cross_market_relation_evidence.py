@@ -305,7 +305,7 @@ def test_less_than_120_common_returns_reports_stable_failure() -> None:
     target_dates = _business_dates(date(2025, 1, 2), 100)
     factor_dates = _business_dates(date(2024, 6, 3), 130)
     as_of = _late_as_of(target_dates)
-    # Ensure every factor observation is valid at the chosen analysis boundary.
+    # 确保每个因子观察值在所选分析边界上都有效。
     factor_dates = tuple(item for item in factor_dates if item <= target_dates[-1])
     if len(factor_dates) < 130:
         factor_dates = _business_dates(date(2024, 1, 2), 130)

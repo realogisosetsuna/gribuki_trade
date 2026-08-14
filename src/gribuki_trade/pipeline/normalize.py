@@ -1,4 +1,4 @@
-"""Small deterministic normalisers shared by source adapters."""
+"""供数据源适配器共享的小型确定性规范化工具。"""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ class _TextExtractor(HTMLParser):
 
 
 def normalise_text(value: str, *, limit: int | None = None) -> str:
-    """Remove markup and collapse Unicode whitespace without interpreting it."""
+    """移除标记并合并 Unicode 空白字符，不解释其语义。"""
 
     parser = _TextExtractor()
     try:
@@ -65,7 +65,7 @@ def _public_host(host: str) -> bool:
 
 
 def canonicalize_url(url: str, *, base_url: str | None = None) -> str:
-    """Canonicalise a public evidence URL and remove common tracking fields."""
+    """规范化公开证据 URL，并移除常见跟踪字段。"""
 
     absolute = urljoin(base_url, url) if base_url is not None else url
     parts = urlsplit(absolute.strip())
@@ -104,7 +104,7 @@ def parse_published_datetime(
     *,
     default_timezone: tzinfo = UTC,
 ) -> datetime | None:
-    """Parse RFC 2822, ISO-8601 and common publication timestamps."""
+    """解析 RFC 2822、ISO-8601 及常见的发布时间戳。"""
 
     if value is None or not value.strip():
         return None
@@ -126,6 +126,7 @@ def parse_published_datetime(
             "%Y/%m/%d %H:%M:%S",
             "%Y/%m/%d %H:%M",
             "%Y-%m-%d",
+            "%Y/%m/%d",
         ):
             try:
                 parsed = datetime.strptime(raw, pattern)

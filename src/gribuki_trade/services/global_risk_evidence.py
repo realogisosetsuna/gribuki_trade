@@ -1,4 +1,4 @@
-"""Convert official global-risk observations into bounded research evidence."""
+"""将官方全球风险观测转换为有界研究证据。"""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def build_vix_evidence(
     *,
     as_of: datetime,
 ) -> GlobalRiskEvidenceBundle:
-    """Build one official Cboe VIX EOD observation with a hard PIT cutoff."""
+    """使用严格时点截点构建一条 Cboe VIX 官方日终观测。"""
 
     _require_aware(as_of)
     latest = history.bars[-1]

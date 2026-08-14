@@ -1,4 +1,4 @@
-"""OS-keyring persistence for Schwab OAuth access and refresh tokens."""
+"""把 Schwab OAuth 访问令牌与刷新令牌持久化到 OS keyring。"""
 
 from __future__ import annotations
 
@@ -15,11 +15,10 @@ SCHWAB_OAUTH_TOKEN_SECRET = "schwab.oauth.token"
 
 
 class KeyringOAuthTokenStore:
-    """Persist one OAuth token document through a ``SecretProvider``.
+    """通过 ``SecretProvider`` 持久化一份 OAuth 令牌文档。
 
-    The default provider is expected to be ``KeyringSecretProvider``.  The
-    implementation accepts the protocol instead so it can be tested without
-    touching a machine credential vault.
+    默认提供者应为 ``KeyringSecretProvider``。此实现接收协议类型，从而可在
+    不接触本机凭据保险库的情况下进行测试。
     """
 
     def __init__(

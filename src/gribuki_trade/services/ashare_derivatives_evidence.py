@@ -1,9 +1,8 @@
-"""Convert official SSE ETF-share and option-risk observations into evidence.
+"""将上交所官方 ETF 份额与期权风险观测转换为证据。
 
-The converter is deliberately descriptive.  An ETF total-share observation is
-not NAV, assets under management, or a subscription/redemption flow.  Likewise,
-the option-risk snapshot is not averaged into a volatility signal: ATM IV,
-skew, and term structure require an explicit contract-selection methodology.
+转换器刻意只作描述。ETF 总份额观测并不等同于净值、资产管理规模或申购赎回流量。
+同样，期权风险快照不会经平均后变成波动率信号：平值隐含波动率、偏度与期限结构
+都需要明确的合约选择方法。
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ _SOURCE_TIER = 1
 
 @dataclass(frozen=True, slots=True)
 class AShareDerivativesEvidenceBundle:
-    """Aligned evidence, references, and human-readable report lines."""
+    """对齐后的证据、引用及人类可读报告行。"""
 
     items: tuple[EvidenceItem, ...]
     references: tuple[EvidenceReference, ...]
@@ -50,10 +49,10 @@ def build_ashare_derivatives_evidence(
     *,
     as_of: datetime,
 ) -> AShareDerivativesEvidenceBundle:
-    """Build deterministic, point-in-time official SSE evidence.
+    """构建具有时点约束的确定性上交所官方证据。
 
-    ``None`` means unavailable and remains unavailable.  The function performs
-    no network I/O, interpolation, imputation, or directional scoring.
+    ``None`` 表示不可用且始终保持不可用。本函数不执行网络 I/O、插值、缺失值填补
+    或方向性评分。
     """
 
     _require_aware(as_of, "as_of")

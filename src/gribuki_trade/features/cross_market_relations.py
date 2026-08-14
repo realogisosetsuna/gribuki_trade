@@ -1,22 +1,18 @@
-"""Point-in-time-safe descriptive cross-market relation calculations.
+"""符合时点安全要求的描述性跨市场关系计算。
 
-The caller owns source-market calendar conversion and point-in-time (PIT)
-alignment.  Each factor observation is keyed to an A-share decision date and
-must have been available no later than that date's ``decision_at`` timestamp.
-This module validates that contract before doing any calculation.
+调用方负责来源市场日历转换与时点对齐。每个因子观测都关联到一个 A 股决策日期，且必须
+不晚于该日 ``decision_at`` 时间戳可用。本模块在进行任何计算前校验该契约。
 
-``lag_0`` estimates ``target_return[t] ~ factor_return[t]``.  ``lag_1``
-estimates ``target_return[t] ~ factor_return[t-1]``, where ``t-1`` is the
-previous supplied A-share trading date rather than the previous calendar day.
+``lag_0`` 估计 ``target_return[t] ~ factor_return[t]``；``lag_1`` 估计
+``target_return[t] ~ factor_return[t-1]``，其中 ``t-1`` 是所提供的前一个 A 股交易日，
+而不是前一自然日。
 
-All correlations, regressions, and risk labels are descriptive associations.
-They do not establish causality, predictability, or an executable trading edge.
+所有相关、回归与风险标签都只是描述性关联，不能确立因果性、可预测性或可执行交易优势。
 
-Window correlations and OLS use the latest 20/60/120 common observations.
-EWMA correlations use all common observations, with age measured in supplied
-A-share sessions and half-lives of 20 and 60 sessions.  OLS is the univariate
-model ``target = alpha + beta * factor + error``; its beta t-statistic uses the
-classical IID/homoskedastic standard error and is not HAC/Newey-West adjusted.
+窗口相关与 OLS 使用最近 20/60/120 个共同观测。EWMA 相关使用全部共同观测，年龄按所提供
+A 股交易日计量，半衰期为 20 与 60 个交易日。OLS 是单变量模型
+``target = alpha + beta * factor + error``；其 beta t 统计量采用经典独立同分布/同方差
+标准误，未作 HAC/Newey-West 调整。
 """
 
 from __future__ import annotations
@@ -41,14 +37,14 @@ NON_CAUSALITY_NOTICE = (
 
 
 class CrossMarketRiskDirection(StrEnum):
-    """Meaning of a positive return in a factor series."""
+    """因子序列正收益的含义。"""
 
     POSITIVE_IS_RISK_ON = "POSITIVE_IS_RISK_ON"
     POSITIVE_IS_RISK_OFF = "POSITIVE_IS_RISK_OFF"
 
 
 class CrossMarketRiskAlignment(StrEnum):
-    """Target sensitivity after applying the factor's risk-direction convention."""
+    """应用因子风险方向约定后的目标敏感度。"""
 
     RISK_ON_SENSITIVE = "RISK_ON_SENSITIVE"
     RISK_OFF_SENSITIVE = "RISK_OFF_SENSITIVE"
@@ -71,7 +67,7 @@ class CrossMarketSignRegime(StrEnum):
 
 
 class CrossMarketRelationFailureReason(StrEnum):
-    """Stable machine-readable reasons for invalid or incomplete calculations."""
+    """计算无效或不完整时稳定且机器可读的原因。"""
 
     EMPTY_TARGET_SYMBOL = "EMPTY_TARGET_SYMBOL"
     EMPTY_TARGET_SERIES = "EMPTY_TARGET_SERIES"
@@ -95,7 +91,7 @@ class CrossMarketRelationFailureReason(StrEnum):
 
 
 class CrossMarketRelationInputError(ValueError):
-    """Invalid PIT relation input with a stable failure reason."""
+    """带稳定失败原因的无效时点关系输入。"""
 
     failure_reason: CrossMarketRelationFailureReason
 
@@ -110,7 +106,7 @@ class CrossMarketRelationInputError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class TargetCloseObservation:
-    """One completed A-share close and the timestamp of its decision point."""
+    """一次已完成 A 股收盘及其决策点时间戳。"""
 
     trade_date: date
     close: Numeric
@@ -119,7 +115,7 @@ class TargetCloseObservation:
 
 @dataclass(frozen=True, slots=True)
 class AlignedFactorReturn:
-    """A factor return already aligned to one A-share decision date by the caller."""
+    """由调用方对齐到一个 A 股决策日期的因子收益。"""
 
     target_trade_date: date
     value: Numeric
@@ -128,7 +124,7 @@ class AlignedFactorReturn:
 
 @dataclass(frozen=True, slots=True)
 class CrossMarketFactorSeries:
-    """One ordered, uniquely dated factor series and its risk convention."""
+    """一个有序、日期唯一的因子序列及其风险约定。"""
 
     factor_id: str
     risk_direction: CrossMarketRiskDirection
@@ -137,12 +133,11 @@ class CrossMarketFactorSeries:
 
 @dataclass(frozen=True, slots=True)
 class CrossMarketLagRelation:
-    """Latest descriptive metrics for one explicitly defined factor lag.
+    """一个明确定义因子滞后的最新描述性指标。
 
-    ``coverage`` is common observations divided by eligible target returns.
-    ``correlation_sign_stability`` is the modal sign frequency across the
-    20/60/120 Pearson correlations (1 means all three signs agree).  It is
-    unavailable if any window correlation is undefined.
+    ``coverage`` 是共同观测数除以合格目标收益数。``correlation_sign_stability``
+    是 20/60/120 个观测窗口 Pearson 相关符号的众数频率（1 表示三者符号一致）。
+    任一窗口相关未定义时，该值不可用。
     """
 
     lag: Literal[0, 1]
@@ -208,11 +203,10 @@ def build_cross_market_relations(
     target_closes: Sequence[TargetCloseObservation],
     factors: Sequence[CrossMarketFactorSeries],
 ) -> CrossMarketRelationsReport:
-    """Build lag-0 and lag-1 relations after enforcing the PIT input contract.
+    """强制执行时点输入契约后构建当期与滞后一期关系。
 
-    At least 120 common observations are required independently for each lag.
-    Missing factor dates reduce ``coverage`` and can therefore make one lag
-    unavailable without invalidating another factor's result.
+    每个滞后都独立要求至少 120 个共同观测。缺失因子日期会降低 ``coverage``，因此可以
+    只使一个滞后不可用，而不令其他因子的结果失效。
     """
 
     symbol = target_symbol.strip().upper()

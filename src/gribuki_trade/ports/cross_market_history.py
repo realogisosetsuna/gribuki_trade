@@ -1,8 +1,7 @@
-"""Point-in-time contracts for independently sourced cross-market history.
+"""独立来源跨市场历史数据的时点契约。
 
-The observations intentionally contain prices and provenance only.  They can
-support rolling correlation or relative-return features, but do not by
-themselves establish that one market caused a move in another market.
+这些观测刻意只包含价格与来源信息。它们可支持滚动相关性或相对收益特征，但本身不能
+证明一个市场导致另一个市场发生波动。
 """
 
 from __future__ import annotations
@@ -23,23 +22,23 @@ MINIMUM_CROSS_MARKET_HISTORY = 130
 
 
 class CrossMarketHistoryDataError(MarketDataUnavailableError):
-    """Base failure raised while collecting one historical market series."""
+    """收集单个历史市场序列时抛出的基础失败。"""
 
 
 class CrossMarketHistoryTimeoutError(MarketDataTimeoutError, CrossMarketHistoryDataError):
-    """One independently bounded upstream call exceeded its deadline."""
+    """一个独立设限的上游调用超过期限。"""
 
 
 class CrossMarketHistoryEndpointError(CrossMarketHistoryDataError):
-    """The installed provider does not expose the audited exact endpoint."""
+    """已安装的提供方未暴露经审计的精确端点。"""
 
 
 class CrossMarketHistoryPayloadError(CrossMarketHistoryDataError):
-    """One historical endpoint returned an incompatible payload."""
+    """某个历史数据端点返回了不兼容的载荷。"""
 
 
 class CrossMarketHistoryFailureCode(StrEnum):
-    """Stable reason codes for an explicitly absent historical series."""
+    """历史序列显式缺失时使用的稳定原因码。"""
 
     ENDPOINT_UNAVAILABLE = "ENDPOINT_UNAVAILABLE"
     TIMEOUT = "TIMEOUT"
@@ -50,7 +49,7 @@ class CrossMarketHistoryFailureCode(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class CrossMarketHistoryObservation:
-    """One daily close at the earliest configured point it may be consumed."""
+    """在已配置最早可消费时点上的一个日收盘观测。"""
 
     market_id: str
     session_date: date
@@ -78,7 +77,7 @@ class CrossMarketHistoryObservation:
 
 @dataclass(frozen=True, slots=True)
 class CrossMarketHistorySeries:
-    """A strictly ordered, single-source historical market series."""
+    """严格有序、来源单一的历史市场序列。"""
 
     market_id: str
     display_name: str
@@ -108,7 +107,7 @@ class CrossMarketHistorySeries:
 
 @dataclass(frozen=True, slots=True)
 class CrossMarketHistoryMissingSeries:
-    """A requested exact series that could not be safely supplied."""
+    """无法安全提供的请求精确序列。"""
 
     market_id: str
     display_name: str
@@ -129,7 +128,7 @@ class CrossMarketHistoryMissingSeries:
 
 @dataclass(frozen=True, slots=True)
 class CrossMarketHistorySnapshot:
-    """PIT-filtered histories with coverage failures preserved explicitly."""
+    """经过 PIT 过滤且显式保留覆盖失败的历史数据。"""
 
     as_of: datetime
     fetched_at: datetime

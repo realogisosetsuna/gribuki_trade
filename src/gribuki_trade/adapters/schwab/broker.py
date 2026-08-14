@@ -1,4 +1,4 @@
-"""BrokerAdapter implementation for Schwab limit orders."""
+"""面向 Schwab 限价单的 BrokerAdapter 实现。"""
 
 from __future__ import annotations
 
@@ -27,11 +27,10 @@ SCHWAB_ORDER_STATUS_EVENT = "ORDER_STATUS"
 
 @dataclass(frozen=True, slots=True)
 class SchwabOrderSpec:
-    """Broker-specific choices that are not present in ``OrderIntent``.
+    """``OrderIntent`` 中没有包含的经纪商专属选项。
 
-    The resolver is injectable because session/duration, option open-vs-close
-    instruction, product eligibility, and account permissions are application
-    decisions.  The default below is deliberately only an equity DAY order.
+    解析器可以注入，因为交易时段/有效期、期权开仓或平仓指令、产品资格与
+    账户权限都属于应用决策。下面的默认值刻意只支持股票当日单。
     """
 
     asset_type: str = "EQUITY"
@@ -47,7 +46,7 @@ OrderSpecResolver: TypeAlias = Callable[[OrderIntent], SchwabOrderSpec]
 
 @dataclass(frozen=True, slots=True)
 class SchwabOrderUpdate:
-    """Latest local view of a submitted Schwab order."""
+    """已提交 Schwab 订单的最新本地视图。"""
 
     order: OrderIntent
     status: OrderStatus
@@ -56,13 +55,12 @@ class SchwabOrderUpdate:
 
 
 class SchwabBroker:
-    """A conservative Schwab broker gateway.
+    """保守的 Schwab 经纪商网关。
 
-    ``connect`` obtains Schwab's raw-account-number to hash mapping.  It does
-    not infer account country, product permissions, or quota.  Each submitted
-    client ID is locally idempotent.  In particular, an ambiguous POST timeout,
-    transport interruption, or 5xx is recorded as ``UNKNOWN`` and a duplicate
-    call will not transmit the order again; reconciliation must query Schwab.
+    ``connect`` 获取 Schwab 原始账户号到哈希的映射，不推断账户国家、产品
+    权限或配额。每个已提交客户端编号在本地具有幂等性。尤其是结果不明的
+    POST 超时、传输中断或 5xx 会记为 ``UNKNOWN``，重复调用不会再次发送订单；
+    对账必须查询 Schwab。
     """
 
     def __init__(
@@ -87,7 +85,7 @@ class SchwabBroker:
         return self._orders.get(client_order_id)
 
     def account_hash(self, account_identifier: str) -> str:
-        """Resolve either a linked raw account number or its returned hash."""
+        """解析关联的原始账户号或返回的账户哈希。"""
 
         try:
             return self._account_hashes[account_identifier]
@@ -95,7 +93,7 @@ class SchwabBroker:
             raise KeyError("account is not present in Schwab accountNumbers") from error
 
     async def connect(self) -> None:
-        """Authenticate and obtain linked account hashes without assumptions."""
+        """完成身份验证并获取关联账户哈希，不作额外假设。"""
 
         async with self._lock:
             pairs = await self._api.account_numbers()
@@ -115,7 +113,7 @@ class SchwabBroker:
             self._account_hashes = {}
 
     async def submit_order(self, order: OrderIntent) -> None:
-        """Submit one limit order, conservatively recording uncertain outcomes."""
+        """提交一笔限价单，并保守记录不确定的结果。"""
 
         async with self._lock:
             existing = self._orders.get(order.client_order_id)
@@ -154,9 +152,8 @@ class SchwabBroker:
             try:
                 placed = await self._api.place_order(account_hash, payload)
             except SchwabRateLimitError:
-                # The 429 response is a definite non-acceptance with an
-                # explicit server retry time.  Preserve that exception and do
-                # not reserve the client ID, so the caller can retry later.
+            # 429 响应明确表示未接受，并给出服务器重试时间。保留该异常且不占用
+            # 客户端编号，以便调用方稍后重试。
                 raise
             except (SchwabServerError, TimeoutError, ConnectionError) as error:
                 self._record_unknown(order, error)
@@ -174,7 +171,7 @@ class SchwabBroker:
             self._record_accepted(order, placed)
 
     async def cancel_order(self, client_order_id: str) -> None:
-        """Cancel a known accepted order; ambiguous DELETE outcomes are UNKNOWN."""
+        """取消已知被接受的订单；结果不明的 DELETE 记为 UNKNOWN。"""
 
         async with self._lock:
             existing = self._orders.get(client_order_id)
@@ -262,7 +259,7 @@ class SchwabBroker:
 def build_limit_order_payload(
     order: OrderIntent, *, spec: SchwabOrderSpec | None = None
 ) -> dict[str, object]:
-    """Translate an OrderIntent without silently accepting fractional stock/options."""
+    """转换 OrderIntent，且不静默接受零股股票或零碎期权。"""
 
     spec = spec or SchwabOrderSpec()
     if order.order_type is not OrderType.LIMIT:

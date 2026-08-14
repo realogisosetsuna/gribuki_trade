@@ -1,8 +1,7 @@
-"""Strict AKShare adapters for non-executable A-share research context.
+"""面向不可执行 A 股研究上下文的严格 AKShare 适配器。
 
-The endpoints in this module are kept out of the existing cross-market quote
-adapter so a slow ETF table, ChinaMoney fixing, ChinaBond curve, or CFFEX CSV
-cannot corrupt the main quote snapshot's failure domain.
+本模块中的端点刻意与现有跨市场报价适配器分离，避免 ETF 表、ChinaMoney
+中间价、中国债券收益率曲线或 CFFEX CSV 变慢时污染主报价快照的失败域。
 """
 
 from __future__ import annotations
@@ -111,7 +110,7 @@ _T = TypeVar("_T")
 
 
 class AKShareETFContextAdapter:
-    """Collect one exact ETF row from AKShare's full Eastmoney ETF table."""
+    """从 AKShare 的东方财富全量 ETF 表中采集一条精确记录。"""
 
     def __init__(
         self,
@@ -178,11 +177,10 @@ class AKShareETFContextAdapter:
 
 
 class AKShareLiquidityContextAdapter:
-    """Collect FR, FDR, and the exact ChinaBond government yield curve.
+    """采集 FR、FDR 及精确的中国债券信息网国债收益率曲线。
 
-    Each upstream call is independently bounded and preserved as a missing
-    source if it fails.  FR007 and FDR007 are fixing series; this adapter never
-    relabels either one as the volume-weighted interbank DR007 rate.
+    每个上游调用均有独立时限，失败时按缺失来源保留。FR007 和 FDR007 是定盘
+    系列；本适配器绝不会把其中任何一个重新标记为成交量加权的银行间 DR007。
     """
 
     def __init__(
@@ -346,7 +344,7 @@ class AKShareLiquidityContextAdapter:
 
 
 class AKShareIFContextAdapter:
-    """Collect raw official CFFEX IF daily contracts for one session."""
+    """采集某交易日的中金所 IF 官方原始日合约。"""
 
     def __init__(
         self,

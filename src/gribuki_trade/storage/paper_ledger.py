@@ -1,4 +1,4 @@
-"""Tamper-evident append-only SQLite ledger for local A-share paper accounts."""
+"""用于本地 A 股模拟账户、可检出篡改的仅追加 SQLite 账本。"""
 
 from __future__ import annotations
 
@@ -19,28 +19,27 @@ from gribuki_trade.domain.paper_trading import (
 
 
 class PaperLedgerError(RuntimeError):
-    """Base class for persistent paper-ledger failures."""
+    """持久化模拟账本故障的基类。"""
 
 
 class PaperLedgerConflictError(PaperLedgerError):
-    """A command conflicts with an existing idempotency or event identifier."""
+    """命令与已有幂等标识或事件标识冲突。"""
 
 
 class PaperLedgerConcurrencyError(PaperLedgerError):
-    """The account changed after the caller projected its state."""
+    """调用方完成状态投影后账户又发生了变化。"""
 
 
 class PaperLedgerIntegrityError(PaperLedgerError):
-    """Stored payload or hash-chain validation failed."""
+    """存储载荷或哈希链校验失败。"""
 
 
 class SQLitePaperLedger:
-    """A single-node WAL ledger containing only immutable account events.
+    """仅包含不可变账户事件的单节点 WAL 账本。
 
-    There is deliberately no writable balance or position table.  The service
-    rebuilds those projections from this event stream, making restart behavior
-    and historical audit use the same code path.  Database triggers reject
-    accidental UPDATE and DELETE statements.
+    此处有意不设置可写的余额表或持仓表。服务从事件流重建这些投影，
+    使重启恢复与历史审计共用同一条代码路径。数据库触发器会拒绝意外的
+    UPDATE 与 DELETE 语句。
     """
 
     def __init__(self, path: str | PathLike[str]) -> None:
@@ -110,10 +109,10 @@ class SQLitePaperLedger:
         *,
         expected_sequence: int,
     ) -> tuple[PaperLedgerEvent, bool]:
-        """Append atomically using optimistic concurrency.
+        """使用乐观并发控制原子追加。
 
-        An exact idempotency replay returns the existing row and ``False``.
-        Reusing the key with different semantic content fails closed.
+        完全一致的幂等重放会返回已有记录与 ``False``；若同一键被用于不同
+        语义内容，则按闭锁原则失败。
         """
 
         if expected_sequence < 0:
@@ -200,7 +199,7 @@ class SQLitePaperLedger:
             return _row_to_event(row), True
 
     def events(self, account_id: str) -> tuple[PaperLedgerEvent, ...]:
-        """Read and verify one account's complete hash chain."""
+        """读取并校验一个账户的完整哈希链。"""
 
         normalized = account_id.strip()
         if not normalized:
@@ -223,7 +222,7 @@ class SQLitePaperLedger:
         account_id: str,
         idempotency_key: str,
     ) -> PaperLedgerEvent | None:
-        """Find one event, validating the complete account chain first."""
+        """先校验完整账户链，再查找指定事件。"""
 
         return next(
             (

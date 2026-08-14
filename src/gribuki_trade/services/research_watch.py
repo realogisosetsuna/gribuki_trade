@@ -1,9 +1,7 @@
-"""Finite, stoppable scheduling for multi-symbol A-share research.
+"""针对多标的 A 股研究的有限、可停止调度。
 
-The scheduler deliberately depends on a caller-supplied research callable.  It
-has no broker, account, order, or execution dependency, and therefore cannot
-turn a research result into a trade.  Failures are represented by stable error
-codes; provider exception objects and messages are never retained in reports.
+调度器刻意依赖调用方提供的研究可调用对象。它不依赖券商、账户、订单或执行，因此
+不能把研究结果变成交易。失败以稳定错误码表示；报告绝不保留供应商异常对象或消息。
 """
 
 from __future__ import annotations
@@ -23,14 +21,14 @@ ResearchWatchSleep = Callable[[float], Awaitable[None]]
 
 
 class ResearchSymbolStatus(StrEnum):
-    """Outcome of one isolated symbol evaluation."""
+    """一次隔离标的评估的结果。"""
 
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
 
 
 class ResearchWatchServiceError(RuntimeError):
-    """A stable scheduler failure that deliberately omits sensitive details."""
+    """刻意省略敏感细节的稳定调度失败。"""
 
     def __init__(self, code: str) -> None:
         super().__init__(f"research watch service failed ({code})")
@@ -38,7 +36,7 @@ class ResearchWatchServiceError(RuntimeError):
 
 
 class ResearchWatchAlreadyRunningError(RuntimeError):
-    """Raised when two callers try to run the same scheduler instance."""
+    """两个调用方尝试运行同一调度器实例时抛出。"""
 
     def __init__(self) -> None:
         super().__init__("research watch service is already running")
@@ -46,7 +44,7 @@ class ResearchWatchAlreadyRunningError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class ResearchSymbolRun(Generic[ResearchResultT]):
-    """Sanitized result of one symbol evaluation."""
+    """一次标的评估的脱敏结果。"""
 
     symbol: str
     status: ResearchSymbolStatus
@@ -58,7 +56,7 @@ class ResearchSymbolRun(Generic[ResearchResultT]):
 
 @dataclass(frozen=True, slots=True)
 class ResearchWatchCycle(Generic[ResearchResultT]):
-    """All attempted symbol evaluations in one scheduler cycle."""
+    """一个调度周期内尝试的全部标的评估。"""
 
     cycle_number: int
     started_at: datetime
@@ -70,7 +68,7 @@ class ResearchWatchCycle(Generic[ResearchResultT]):
 
 @dataclass(frozen=True, slots=True)
 class ResearchWatchStatistics(Generic[ResearchResultT]):
-    """Per-cycle details and aggregate counts for one bounded run."""
+    """一次有界运行的逐周期明细与汇总计数。"""
 
     started_at: datetime
     completed_at: datetime
@@ -84,14 +82,11 @@ class ResearchWatchStatistics(Generic[ResearchResultT]):
 
 
 class ResearchWatchService(Generic[ResearchResultT]):
-    """Schedule a research callable for each configured A-share symbol.
+    """为每个已配置 A 股标的调度研究可调用对象。
 
-    Symbols run sequentially inside each cycle.  This makes provider pressure
-    predictable and avoids unsafe concurrent use of caller-owned SQLite stores.
-    A failure for one symbol is converted to ``research_run_failed`` and the
-    remaining symbols continue.  ``request_stop`` interrupts an interval wait
-    and prevents new symbol evaluations, but never cancels an evaluation that
-    is already in progress.
+    每个周期内按顺序处理标的，使供应商压力可预测，并避免不安全地并发使用调用方拥有的
+    SQLite 存储。单个标的失败会转换为 ``research_run_failed``，其余标的继续执行。
+    ``request_stop`` 会中断间隔等待并阻止新的标的评估，但绝不取消正在进行的评估。
     """
 
     def __init__(
@@ -117,7 +112,7 @@ class ResearchWatchService(Generic[ResearchResultT]):
 
     @property
     def symbols(self) -> tuple[str, ...]:
-        """Canonical symbols scheduled in each complete cycle."""
+        """每个完整周期中调度的规范化标的。"""
 
         return self._symbols
 
@@ -130,12 +125,12 @@ class ResearchWatchService(Generic[ResearchResultT]):
         return self._running
 
     def request_stop(self) -> None:
-        """Prevent new work and interrupt the wait before the next cycle."""
+        """阻止新工作并中断下一周期前的等待。"""
 
         self._stop_requested.set()
 
     def reset_stop(self) -> None:
-        """Explicitly allow a later bounded run after a prior stop request."""
+        """在先前停止请求后显式允许后续有界运行。"""
 
         if self._running:
             raise ResearchWatchAlreadyRunningError()
@@ -147,7 +142,7 @@ class ResearchWatchService(Generic[ResearchResultT]):
         max_cycles: int,
         interval_seconds: float = 60.0,
     ) -> ResearchWatchStatistics[ResearchResultT]:
-        """Run at most ``max_cycles`` and return detailed sanitized statistics."""
+        """最多运行 ``max_cycles`` 个周期并返回详细的脱敏统计。"""
 
         if isinstance(max_cycles, bool) or not isinstance(max_cycles, int) or max_cycles < 1:
             raise ValueError("max_cycles must be positive")
@@ -156,8 +151,7 @@ class ResearchWatchService(Generic[ResearchResultT]):
         if self._running:
             raise ResearchWatchAlreadyRunningError()
 
-        # There is deliberately no await between the guard and assignment, so
-        # concurrent tasks on the same event loop cannot both enter the run.
+        # 防护检查与赋值之间刻意没有 await，因此同一事件循环上的并发任务无法同时进入运行。
         self._running = True
         try:
             started_at = self._now()
@@ -205,9 +199,8 @@ class ResearchWatchService(Generic[ResearchResultT]):
         started_at = self._now()
         result: ResearchResultT | None = None
         succeeded = False
-        # Exit the suppressed exception's handler before reading the clock or
-        # constructing the public result.  No exception message, traceback, or
-        # provider-specific class is retained by the report.
+        # 读取时钟或构造公开结果前先退出被抑制异常的处理器。报告不会保留异常消息、
+        # 回溯或供应商特定类。
         with suppress(Exception):
             result = await self._run_once(symbol)
             succeeded = True

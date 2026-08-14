@@ -1,4 +1,4 @@
-"""Broker-independent instrument metadata retained with research records."""
+"""与研究记录一同保留且独立于券商的标的元数据。"""
 
 from __future__ import annotations
 
@@ -8,11 +8,10 @@ from datetime import date
 
 @dataclass(frozen=True, slots=True)
 class ResearchInstrumentProfile:
-    """Point-in-time descriptive metadata for one researched instrument.
+    """单个研究标的具有时点约束的描述性元数据。
 
-    The profile is deliberately descriptive: it cannot identify an account or
-    authorize an order.  Keeping a snapshot on the recommendation makes old
-    reports reproducible when a watchlist classification is later revised.
+    档案刻意只作描述：不能识别账户，也不能授权订单。在推荐记录中保留快照，
+    可确保观察列表分类日后调整时旧报告仍可复现。
     """
 
     symbol: str

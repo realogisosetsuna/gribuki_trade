@@ -1,24 +1,23 @@
-"""A bounded point-in-time DSL for exploratory technical factors.
+"""用于探索性技术因子的有界时点 DSL。
 
-Expressions use familiar arithmetic and a very small function vocabulary.  They
-are parsed and interpreted; arbitrary Python is never evaluated.  Every operator
-is trailing-only, missing observations are propagated, and the required warm-up
-is computed before evaluation.
+表达式采用常见算术及极精简的函数集合。系统只解析并解释表达式，绝不求值
+任意 Python 代码。所有运算符只查看尾部历史，缺失观测会继续传播，并在
+评估前计算所需预热长度。
 
-Supported functions:
+支持的函数：
 
 ``lag(series, n)``
-    Value exactly ``n`` observations ago.
+    恰好 ``n`` 个观测之前的值。
 ``return(series, n)``
-    Simple trailing return over ``n`` observations.  ``ret`` is an alias because
-    ``return`` is a Python keyword.
+    最近 ``n`` 个观测的简单收益率。由于 ``return`` 是 Python 关键字，
+    ``ret`` 可作为其别名。
 ``ma(series, n)``
-    Trailing arithmetic mean.
+    尾部窗口算术平均值。
 ``vol(series, n)``
-    Trailing population standard deviation of the supplied series.  Express
-    return volatility explicitly as ``vol(return(close, 1), n)``.
+    所给序列尾部窗口的总体标准差。收益波动率须显式写为
+    ``vol(return(close, 1), n)``。
 ``zscore(series, n)``
-    Trailing z-score; a constant window yields zero.
+    尾部窗口标准分数；常数窗口结果为零。
 """
 
 from __future__ import annotations
@@ -34,7 +33,7 @@ from typing import TypeAlias
 
 
 class FactorExpressionError(ValueError):
-    """An expression violates the safe factor language contract."""
+    """表达式违反安全因子语言约定。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,15 +114,15 @@ def compile_factor_expression(
     expression: str,
     config: FactorDSLConfig | None = None,
 ) -> CompiledFactorExpression:
-    """Parse and validate an expression without compiling executable Python."""
+    """在不编译可执行 Python 的情况下解析并校验表达式。"""
 
     resolved = config or FactorDSLConfig()
     if not isinstance(expression, str) or not expression.strip():
         raise FactorExpressionError("expression must be a non-empty string")
     if len(expression) > 1_000:
         raise FactorExpressionError("expression exceeds the length limit")
-    # ``return`` cannot be parsed as a Python call, so normalize only this exact
-    # function token before parsing.  No user-controlled identifier is executed.
+    # ``return`` 无法被解析为 Python 调用，因此解析前只规范化这一精确的
+    # 函数词元；不会执行任何由用户控制的标识符。
     normalized = re.sub(r"\breturn\s*(?=\()", "ret", expression.strip())
     try:
         tree = ast.parse(normalized, mode="eval")
@@ -167,7 +166,7 @@ def evaluate_factor_expression(
     compiled: CompiledFactorExpression,
     columns: Mapping[str, Sequence[float | int | None]],
 ) -> FactorEvaluation:
-    """Interpret a validated expression using only trailing observations."""
+    """仅使用尾部历史观测解释已校验的表达式。"""
 
     missing = set(compiled.referenced_columns) - set(columns)
     if missing:

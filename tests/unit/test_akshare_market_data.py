@@ -399,8 +399,8 @@ def test_async_minute_primary_timeout_still_attempts_sina_fallback() -> None:
     )
     adapter = AKShareMarketDataAdapter(
         client,
-        # Leave enough scheduler headroom for the independent fallback worker
-        # on loaded Windows CI hosts while still proving the primary timeout.
+        # 为高负载 Windows CI 主机上的独立回退工作线程预留足够调度余量，
+        # 同时仍能证明主请求确实超时。
         timeout_seconds=0.20,
         now=lambda: datetime(2026, 8, 13, 10, 0, tzinfo=SHANGHAI),
     )

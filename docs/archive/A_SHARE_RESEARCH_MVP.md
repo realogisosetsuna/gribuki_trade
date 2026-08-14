@@ -1,9 +1,11 @@
 # A 股公开数据、资讯与研究建议 MVP
 
+> **历史归档（2026-08-15）**：本文是早期选型与 MVP 设计快照。当前系统已经新增 PAPER-day、双轨 LLM、GUI 集成管理、Markdown 附件交付、更多官方来源和 `live-sync`；本文中的状态表与待办不再代表现状。请以 [README](../../README.md) 和 [项目交接文档](../PROJECT_HANDOFF_260814.md) 为准。
+
 更新日期：2026-08-13
 
 全市场三层筛选、Tavily/SearXNG 配置、搜索线索晋级和宏观融合的最新实现边界，见
-[A 股全市场筛选、搜索发现与宏观融合边界](A_SHARE_SCREENING_AND_DISCOVERY.md)。
+[A 股全市场筛选、搜索发现与宏观融合边界](../A_SHARE_SCREENING_AND_DISCOVERY.md)。
 
 ## 1. 结论与当前边界
 
@@ -551,8 +553,8 @@ T+1，最小价格变动单位为 0.001 元。实现时以适用日期的交易�
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-.\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe -m ruff check src tests
+.\.venv\Scripts\python.exe -m pytest --temp-dir runtime/tmp -q
+.\.venv\Scripts\python.exe -m ruff check conftest.py src tests
 ```
 
 启动 PAPER 桌面：
@@ -653,7 +655,7 @@ py -3.12 -m venv .venv
   --cycles 3
 ```
 
-该命令故意要求正整数周期数，不提供隐藏的无限循环。长期运行应由 Windows 任务计划/服务监督器按小批次重启，使更新、休眠恢复和故障审计保持可控。
+该命令故意要求正整数周期数，不提供隐藏的无限循环。未来长期运行由统一应用运行框架按小批次推进，负责交易日历、休眠恢复和故障审计；不再使用 Windows 任务计划或独立 PowerShell 监督器。
 
 ### 5.5 NapCatQQ
 
@@ -809,7 +811,7 @@ py -3.12 -m venv .venv
 - 写入仓库内 `runtime/` 的原始档案、SQLite、日志和 outbox。
 - 访问 Windows Credential Manager/macOS Keychain 保存 API key 和 OneBot token。
 - 运行用户自行安装的 NapCatQQ/NTQQ，并允许 Python 访问其 loopback HTTP 端口。
-- P3 时允许配置 Windows 任务计划或登录自启动；在那之前不需要管理员权限或后台服务权限。
+- P3 常驻能力等待统一应用运行框架设计；不得用 Windows 任务计划、登录自启动或独立 PowerShell 监督器替代该框架。
 
 ### 8.4 当前不需要
 
@@ -823,7 +825,7 @@ py -3.12 -m venv .venv
 当前代码已经覆盖数据适配、资讯档案、确定性技术信号、受限宏观分析、推荐门禁、通知适配和 GUI 空状态，但距离“持续实时给出并同步建议”还缺少：
 
 - 巨潮公告已经接入；上交所、深交所及一手宏观源仍需接入并做长期字段漂移验证；
-- 有界多标的调度已完成；仍缺交易日历感知、任务计划/服务监督、休眠 misfire 恢复；
+- 有界多标的调度已完成；仍缺应用内交易日历感知、生命周期监督和休眠 misfire 恢复；
 - 新闻事件到行业/宏观主题的正式实体解析；标的与时间裁剪的 EvidencePack 已完成；
 - GUI 后台绑定与常驻任务管理；端到端一次性研究 CLI 和有限 outbox 派发 CLI 已完成；
 - OpenAI 模型真实访问、成本上限和回归评测；

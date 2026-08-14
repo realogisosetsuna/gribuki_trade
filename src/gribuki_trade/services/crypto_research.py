@@ -1,4 +1,4 @@
-"""Application service for an auditable Binance spot baseline backtest."""
+"""用于可审计 Binance 现货基线回测的应用服务。"""
 
 from __future__ import annotations
 
@@ -31,12 +31,12 @@ from gribuki_trade.strategy.crypto_trend import (
 
 
 class CryptoResearchError(RuntimeError):
-    """Archived data cannot be replayed under the requested assumptions."""
+    """归档数据无法按请求的假设回放。"""
 
 
 @dataclass(frozen=True, slots=True)
 class CryptoResearchRequest:
-    """Inputs and declared assumptions for one reproducible replay."""
+    """一次可复现回放的输入与声明假设。"""
 
     environment: BinanceEnvironment | str
     symbol: str
@@ -108,7 +108,7 @@ class CryptoResearchRequest:
 
 @dataclass(frozen=True, slots=True)
 class CryptoBacktestSummary:
-    """Small, serialization-friendly subset of the full replay report."""
+    """完整回放报告中便于序列化的小型子集。"""
 
     environment: BinanceEnvironment
     symbol: str
@@ -129,7 +129,7 @@ class CryptoBacktestSummary:
     pending_order_count: int
 
     def as_dict(self) -> dict[str, str | int]:
-        """Return values that can be emitted directly as JSON."""
+        """返回可直接输出为 JSON 的值。"""
 
         return {
             "environment": self.environment.value,
@@ -154,7 +154,7 @@ class CryptoBacktestSummary:
 
 @dataclass(frozen=True, slots=True)
 class CryptoResearchRun:
-    """Data provenance, converted bars and full result from one replay."""
+    """一次回放的数据来源、转换后行情柱与完整结果。"""
 
     request: CryptoResearchRequest
     dataset: KlineDataset
@@ -165,7 +165,7 @@ class CryptoResearchRun:
 
 
 class CryptoResearchService:
-    """Load immutable Binance klines and execute the baseline strategy."""
+    """加载不可变 Binance K 线并执行基线策略。"""
 
     def __init__(self, archive: BinanceKlineArchive) -> None:
         self._archive = archive
@@ -251,14 +251,14 @@ def binance_klines_to_crypto_bars(
     symbol: str,
     klines: Sequence[Kline],
 ) -> tuple[CryptoBar, ...]:
-    """Convert Binance's inclusive close timestamp to a candle availability time."""
+    """将 Binance 含端点的收盘时间戳转换为 K 线可用时间。"""
 
     normalized_symbol = normalize_symbol(symbol)
     converted: list[CryptoBar] = []
     for kline in klines:
         open_time = _datetime_from_milliseconds(kline.open_time_ms)
-        # Binance closeTime is the final included millisecond.  The completed bar
-        # becomes observable one millisecond later, normally at the next boundary.
+        # Binance closeTime 是最后一个包含在内的毫秒。已完成行情柱在一毫秒后可观测，
+        # 通常正好位于下一边界。
         available_at = _datetime_from_milliseconds(kline.close_time_ms + 1)
         converted.append(
             CryptoBar(
@@ -281,7 +281,7 @@ def binance_klines_to_crypto_bars(
 
 
 def format_crypto_backtest_summary(summary: CryptoBacktestSummary) -> str:
-    """Render a compact operator-facing report without hiding exact values."""
+    """渲染面向运维人员且不隐藏精确值的紧凑报告。"""
 
     return "\n".join(
         (

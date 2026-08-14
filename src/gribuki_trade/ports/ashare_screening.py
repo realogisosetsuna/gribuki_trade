@@ -1,12 +1,10 @@
-"""Point-in-time ports for an all-A-share screening funnel.
+"""面向全 A 股筛选漏斗的时点端口。
 
-The contracts split the cheap universe snapshot from the more expensive
-historical-factor enrichment.  A screening service can therefore hard-filter
-the whole market before requesting histories for the surviving symbols.
+契约将低成本标的全集快照与成本较高的历史因子增强分离，因此筛选服务可以先硬过滤
+整个市场，再为通过的标的请求历史。
 
-``available_at`` is part of both batch contracts.  Providers must return the
-revision that was knowable at ``known_at``; a recent download timestamp is not
-proof that a historical value was available at an earlier decision time.
+``available_at`` 是两个批次契约的一部分。供应商必须返回在 ``known_at`` 时点可知的
+版本；较新的下载时间戳不能证明历史值在更早决策时点已经可用。
 """
 
 from __future__ import annotations
@@ -22,7 +20,7 @@ from typing import Protocol, runtime_checkable
 
 
 class AShareBoard(StrEnum):
-    """A-share listing boards supported by the screening domain."""
+    """筛选领域支持的 A 股上市板块。"""
 
     SSE_MAIN = "SSE_MAIN"
     SZSE_MAIN = "SZSE_MAIN"
@@ -32,19 +30,17 @@ class AShareBoard(StrEnum):
 
 
 class ScreeningSourceQuality(StrEnum):
-    """Whether a source met its preferred semantics without fallback."""
+    """来源是否未回退且满足首选语义。"""
 
     COMPLETE = "COMPLETE"
     DEGRADED = "DEGRADED"
 
 
 class ScreeningHistoryPolicy(StrEnum):
-    """Corporate-action policy used to construct historical factors.
+    """构建历史因子所用的公司行动策略。
 
-    ``CURRENTLY_ADJUSTED`` is intentionally represented so adapters can report
-    what an upstream endpoint returned.  The service rejects that policy for a
-    historical point-in-time run because future corporate actions can rewrite
-    past values.
+    刻意表示 ``CURRENTLY_ADJUSTED``，使适配器能够报告上游端点的返回内容。历史时点
+    运行会拒绝该策略，因为未来公司行动可能重写过去数值。
     """
 
     UNADJUSTED_WITH_CORPORATE_ACTION_GUARD = (
@@ -55,7 +51,7 @@ class ScreeningHistoryPolicy(StrEnum):
 
 
 class ScreeningFactorId(StrEnum):
-    """Stable raw factors accepted by the v1 cross-sectional scorer."""
+    """第一版横截面评分器接受的稳定原始因子。"""
 
     MOMENTUM_20 = "MOMENTUM_20"
     MOMENTUM_60 = "MOMENTUM_60"
@@ -71,12 +67,10 @@ class ScreeningFactorId(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class AShareUniverseRecord:
-    """Cheap end-of-session snapshot fields used by the hard-filter layer.
+    """硬过滤层使用的低成本交易日结束快照字段。
 
-    Nullable status fields are deliberate.  ``False`` and "provider did not
-    say" are different states; the hard filter fails closed on the latter.
-    Numeric range checks belong to the filter so exclusions retain a readable
-    reason instead of disappearing during transport parsing.
+    状态字段刻意允许为空。``False`` 与“供应商未说明”是不同状态；对后者，硬过滤按
+    失败关闭处理。数值范围检查属于过滤器，使排除项保留可读原因，而不会在传输解析时消失。
     """
 
     symbol: str
@@ -111,7 +105,7 @@ class AShareUniverseRecord:
 
 @dataclass(frozen=True, slots=True)
 class AShareUniverseSnapshot:
-    """One complete-market snapshot revision known at a precise time."""
+    """在精确时点可知的一份全市场快照版本。"""
 
     as_of: date
     available_at: datetime
@@ -134,22 +128,21 @@ class AShareUniverseSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class AShareFactorValue:
-    """One raw factor; ``None`` means absent and is never neutral-filled."""
+    """一个原始因子；``None`` 表示缺失且绝不以中性值填充。"""
 
     factor_id: ScreeningFactorId
     value: float | None
 
     def __post_init__(self) -> None:
-        # Non-finite provider values remain representable so the feature layer
-        # can surface an auditable INVALID_FACTOR degradation instead of
-        # crashing or silently deleting the symbol.
+        # 保持可表示供应商的非有限值，使特征层能够公开可审计的 INVALID_FACTOR 降级，
+        # 而不是崩溃或静默删除标的。
         if self.value is not None and not isinstance(self.value, (int, float)):
             raise TypeError("factor value must be numeric or None")
 
 
 @dataclass(frozen=True, slots=True)
 class AShareFactorRecord:
-    """Historical factors for one symbol, calculated only through ``as_of``."""
+    """单个标的仅计算至 ``as_of`` 时点的历史因子。"""
 
     symbol: str
     values: tuple[AShareFactorValue, ...]
@@ -163,7 +156,7 @@ class AShareFactorRecord:
         _validate_warnings(self.warnings)
 
     def value_for(self, factor_id: ScreeningFactorId) -> float | None:
-        """Return the raw value without manufacturing a default."""
+        """返回原始值且不制造默认值。"""
 
         return next(
             (item.value for item in self.values if item.factor_id is factor_id),
@@ -173,7 +166,7 @@ class AShareFactorRecord:
 
 @dataclass(frozen=True, slots=True)
 class AShareFactorSnapshot:
-    """Expensive factor batch for hard-filter survivors only."""
+    """仅面向硬过滤通过者的高成本因子批次。"""
 
     as_of: date
     available_at: datetime
@@ -200,7 +193,7 @@ class AShareFactorSnapshot:
 
 @runtime_checkable
 class AsyncAShareScreeningData(Protocol):
-    """Two-stage point-in-time input for the all-market funnel."""
+    """全市场漏斗的两阶段时点输入。"""
 
     async def fetch_universe_snapshot(
         self,
@@ -267,6 +260,6 @@ def _validate_warnings(warnings: tuple[str, ...]) -> None:
 
 
 def is_finite_factor_value(value: float | None) -> bool:
-    """Public helper for adapters that want the scorer's finite-value rule."""
+    """供需要评分器有限值规则的适配器使用的公共辅助函数。"""
 
     return value is not None and math.isfinite(value)

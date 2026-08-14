@@ -1,10 +1,8 @@
-"""Credential-free Binance Spot PAPER/SHADOW runtime.
+"""无需凭据的 Binance 现货 PAPER/SHADOW 运行时。
 
-This module deliberately has no private Binance gateway dependency.  It can
-consume either Testnet or Live *public* market data, but every generated order
-is routed exclusively to the local :class:`PaperBroker` and durable SQLite
-OMS.  The environment watermark carried by every run report makes that safety
-boundary visible to callers and the GUI.
+本模块刻意不依赖 Binance 私有网关。它可以消费测试网或实盘的公共市场数据，但生成的
+每张订单都只路由至本地 :class:`PaperBroker` 与持久化 SQLite OMS。每份运行报告携带的
+环境水印会向调用方与 GUI 明示该安全边界。
 """
 
 from __future__ import annotations
@@ -61,15 +59,15 @@ _ALLOWED_SYMBOL_ASSETS: Mapping[str, SpotSymbolAssets] = {
 
 
 class ShadowMarketIntegrityError(RuntimeError):
-    """Public market data is unsafe to use as a strategy decision input."""
+    """公共市场数据不满足作为策略决策输入的安全条件。"""
 
 
 class ShadowRecoveryError(RuntimeError):
-    """Persisted paper state cannot be recovered without guessing."""
+    """无法在不作猜测的情况下恢复已持久化模拟状态。"""
 
 
 class ShadowTermination(StrEnum):
-    """Why one bounded or long-running shadow session stopped."""
+    """一次有界或长时间影子会话停止的原因。"""
 
     STREAM_ENDED = "STREAM_ENDED"
     MAXIMUM_CLOSED_BARS = "MAXIMUM_CLOSED_BARS"
@@ -80,7 +78,7 @@ class ShadowTermination(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class ShadowEnvironmentWatermark:
-    """A permanent, machine-readable no-remote-order watermark."""
+    """永久且机器可读的禁止远程下单水印。"""
 
     public_market_environment: BinanceEnvironment
     execution_mode: str = field(default="PAPER_SHADOW", init=False)
@@ -97,7 +95,7 @@ class ShadowEnvironmentWatermark:
 
 @dataclass(frozen=True, slots=True)
 class BinanceShadowConfig:
-    """Runtime, execution-adapter, and local risk settings for one Spot pair."""
+    """单个现货交易对的运行时、执行适配器与本地风险设置。"""
 
     symbol: str = "BTCUSDT"
     interval: str = "1m"
@@ -199,7 +197,7 @@ class BinanceShadowStatistics:
 
 
 class _GuardedShadowMarket(BinanceMarketSource):
-    """Interruptible public source with quote cache and fail-closed bar checks."""
+    """带报价缓存及失败关闭行情柱检查的可中断公共数据源。"""
 
     def __init__(
         self,
@@ -336,8 +334,8 @@ class _GuardedShadowMarket(BinanceMarketSource):
         expected_start = (
             previous.close_time_ms + 1
             if previous is not None
-            # CryptoBar uses a half-open [open, close) interval, whereas
-            # Binance's wire closeTime is the final included millisecond.
+            # CryptoBar 使用左闭右开 [open, close) 区间，而 Binance 线上协议的
+            # closeTime 是最后一个包含在内的毫秒。
             else self._seed_close_ms
         )
         if expected_start is not None and event.start_time_ms != expected_start:
@@ -350,7 +348,7 @@ class _GuardedShadowMarket(BinanceMarketSource):
 
 
 class ShadowTrendDecisionAdapter:
-    """Translate point-in-time trend targets into marketable local limits."""
+    """将具有时点约束的趋势目标转换为可成交的本地限价单。"""
 
     def __init__(
         self,
@@ -480,7 +478,7 @@ class ShadowTrendDecisionAdapter:
 
 
 class BinanceShadowSession:
-    """One-shot supervisor for a bounded or long-running local shadow run."""
+    """用于有界或长时间本地影子运行的单次监督器。"""
 
     def __init__(
         self,
@@ -527,7 +525,7 @@ class BinanceShadowSession:
         initial_history: Sequence[CryptoBar] = (),
         clock: Callable[[], datetime] | None = None,
     ) -> BinanceShadowSession:
-        """Construct a credential-free combined public book/kline session."""
+        """构造无需凭据的公共盘口/K 线组合会话。"""
 
         resolved = config or BinanceShadowConfig()
         market = BinanceSpotMarketStream(
@@ -722,9 +720,8 @@ class BinanceShadowSession:
                 claimed = self._oms.claim_command(recovered_command.command_id, now=now)
                 claimed_command_id = claimed.command_id
             try:
-                # This hydrates only the process-local PaperBroker. UNKNOWN is
-                # authoritative here because no remote venue can have received
-                # a shadow command.
+                # 此操作只恢复进程内 PaperBroker。此处 UNKNOWN 具有权威性，因为任何远程
+                # 场所都不可能收到影子命令。
                 await self._broker.submit_order(snapshot.order)
             except BaseException:
                 if claimed_command_id is not None:
@@ -878,7 +875,7 @@ def _datetime_ms(value: datetime) -> int:
 
 
 def _shadow_order_id(account_id: str, bar_open: datetime, side: Side) -> str:
-    """Build a stable ID without collisions across PAPER account profiles."""
+    """构建跨 PAPER 账户档案无冲突的稳定标识。"""
 
     account_digest = hashlib.sha256(account_id.encode("utf-8")).hexdigest()[:8]
     side_code = "b" if side is Side.BUY else "s"

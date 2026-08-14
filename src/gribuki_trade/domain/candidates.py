@@ -1,8 +1,7 @@
-"""Point-in-time candidate-universe domain models.
+"""具有时点约束的候选标的全集领域模型。
 
-A candidate is a research input, never an order, allocation, or authorization to
-trade.  The models deliberately retain every discovery provenance so that a
-symbol found by several independent scanners is merged without losing lineage.
+候选标的只是研究输入，绝不是订单、资金配置或交易授权。模型刻意保留每一条发现来源，
+以便合并由多个独立扫描器发现的同一标的而不丢失血缘。
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ _RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/+\-]{0,127}$")
 
 
 class CandidateSource(StrEnum):
-    """Supported ways for a symbol to enter the research universe."""
+    """标的进入研究全集的受支持方式。"""
 
     MANUAL = "manual"
     CLOSE_SCREEN = "close_screen"
@@ -27,7 +26,7 @@ class CandidateSource(StrEnum):
 
 
 class CandidatePriority(IntEnum):
-    """Coarse scheduling priority; it is not a position-size recommendation."""
+    """粗粒度调度优先级；并非仓位规模建议。"""
 
     LOW = 10
     NORMAL = 20
@@ -36,7 +35,7 @@ class CandidatePriority(IntEnum):
 
 
 class CandidateStatus(StrEnum):
-    """Projected lifecycle state at a specific point in time."""
+    """在特定时点投影出的生命周期状态。"""
 
     ACTIVE = "active"
     COOLING = "cooling"
@@ -45,7 +44,7 @@ class CandidateStatus(StrEnum):
 
 
 class CandidateControlAction(StrEnum):
-    """Explicit lifecycle actions retained in the append-only audit log."""
+    """保留在仅追加审计日志中的显式生命周期操作。"""
 
     COOL = "cool"
     ACTIVATE = "activate"
@@ -54,11 +53,10 @@ class CandidateControlAction(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class CandidateObservation:
-    """One immutable discovery made by one source run.
+    """一次来源运行产生的一条不可变发现。
 
-    ``discovered_at`` describes when the upstream signal says the candidate was
-    discovered. ``observed_at`` is when this system first knew that signal and
-    is therefore the timestamp used by point-in-time replay.
+    ``discovered_at`` 表示上游信号声称发现候选标的的时间；``observed_at`` 表示
+    本系统首次知晓该信号的时间，因此是时点回放采用的时间戳。
     """
 
     symbol: str
@@ -101,7 +99,7 @@ class CandidateObservation:
 
     @property
     def observation_id(self) -> str:
-        """Stable idempotency identity for one source-run/symbol pair."""
+        """一个来源运行/标的组合的稳定幂等标识。"""
 
         material = (
             f"candidate-observation@1\0{self.symbol}\0{self.source.value}"
@@ -112,7 +110,7 @@ class CandidateObservation:
 
 @dataclass(frozen=True, slots=True)
 class CandidateControlEvent:
-    """One explicit cooling, activation, or removal instruction."""
+    """一条显式的冷却、激活或移除指令。"""
 
     symbol: str
     action: CandidateControlAction
@@ -158,7 +156,7 @@ class CandidateControlEvent:
 
 @dataclass(frozen=True, slots=True)
 class CandidateProvenance:
-    """Read model for one retained discovery event."""
+    """一条已保留发现事件的读取模型。"""
 
     observation_id: str
     source: CandidateSource
@@ -173,7 +171,7 @@ class CandidateProvenance:
 
 @dataclass(frozen=True, slots=True)
 class CandidateRecord:
-    """Merged candidate state projected at ``as_of`` from immutable events."""
+    """由不可变事件在 ``as_of`` 时点投影出的合并候选状态。"""
 
     symbol: str
     as_of: datetime
@@ -191,14 +189,14 @@ class CandidateRecord:
 
     @property
     def is_trackable(self) -> bool:
-        """Whether research monitoring may include this symbol right now."""
+        """研究监控当前是否可以纳入该标的。"""
 
         return self.status is CandidateStatus.ACTIVE
 
 
 @dataclass(frozen=True, slots=True)
 class CandidateAuditRecord:
-    """Public metadata for one immutable row in the candidate event log."""
+    """候选事件日志中一条不可变记录的公开元数据。"""
 
     sequence: int
     event_id: str
@@ -210,7 +208,7 @@ class CandidateAuditRecord:
 
 
 def canonical_ashare_symbol(symbol: str) -> str:
-    """Return the canonical six-digit A-share/ETF symbol with exchange suffix."""
+    """返回带交易所后缀的规范六位 A 股/ETF 代码。"""
 
     value = symbol.strip().upper()
     if len(value) == 6 and value.isdigit():

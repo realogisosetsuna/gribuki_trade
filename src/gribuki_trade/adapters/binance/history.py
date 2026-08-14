@@ -1,4 +1,4 @@
-"""Point-in-time-safe Binance kline collection and immutable local archive."""
+"""具备时点安全性的 Binance K 线采集与不可变本地归档。"""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ class BinanceKlineSource(Protocol):
 
 
 class KlineArchiveError(RuntimeError):
-    """Historical market data violated an immutability or ordering invariant."""
+    """历史市场数据违反不可变性或顺序约束。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +89,7 @@ _FIXED_INTERVAL_MS = {
 
 
 class BinanceKlineArchive:
-    """SQLite WAL archive that never overwrites conflicting historical bars."""
+    """绝不覆盖冲突历史 K 线的 SQLite WAL 归档。"""
 
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
@@ -132,7 +132,7 @@ class BinanceKlineArchive:
         interval: str,
         bars: Sequence[Kline],
     ) -> int:
-        """Atomically append bars, accepting exact replays but rejecting revisions."""
+        """原子追加 K 线；接受完全一致的重放，拒绝历史修订。"""
 
         selected = _environment(environment)
         normalized_symbol = normalize_symbol(symbol)
@@ -286,7 +286,7 @@ class BinanceKlineArchive:
 
 
 class BinanceKlineCollector:
-    """Paginate completed REST klines into an immutable archive."""
+    """分页获取已完成的 REST K 线并写入不可变归档。"""
 
     def __init__(
         self,

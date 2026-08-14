@@ -144,8 +144,8 @@ class _LeakageSpyEvaluator:
     ) -> PerformanceMetrics:
         self.calls.append((weights.fingerprint, observation_indices, cost_scenario.scenario_id))
         momentum = dict(weights.technical)["momentum"]
-        # The final holdout deliberately favors the opposite candidate.  If it
-        # leaked into model selection the test below would select the wrong one.
+        # 最终留出集刻意偏向相反候选项；若它泄漏进模型选择，下面的测试就会
+        # 选中错误候选项。
         base = Decimal("1") - momentum if observation_indices == self.test_indices else momentum
         cost_penalty = (
             cost_scenario.commission_bps
@@ -238,7 +238,8 @@ def test_selection_uses_validation_only_then_touches_holdout_once_per_locked_str
         for call in evaluator.calls
         if call[1] == experiment.walk_forward_plan.test_indices
     ]
-    assert len(holdout_calls) == 4  # selected + preregistered baseline, two cost scenarios each
+    # 入选候选项与预注册基线各自运行两种成本情景。
+    assert len(holdout_calls) == 4
     assert {call[0] for call in holdout_calls} == {
         high_momentum.fingerprint,
         baseline.fingerprint,

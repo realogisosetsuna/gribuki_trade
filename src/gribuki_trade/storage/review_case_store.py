@@ -1,4 +1,4 @@
-"""Append-only SQLite storage for recommendation review cases."""
+"""用于建议审核案件的仅追加 SQLite 存储。"""
 
 from __future__ import annotations
 
@@ -33,19 +33,19 @@ _OPENED = "OPENED"
 
 
 class ReviewCaseEventCollisionError(ValueError):
-    """An immutable review event identity was reused with different content."""
+    """同一不可变审核事件标识被复用于不同内容。"""
 
 
 class ReviewCaseNotFoundError(LookupError):
-    """A transition targeted an unknown review case."""
+    """一次状态迁移指向了未知审核案件。"""
 
 
 class InvalidReviewCaseTransitionError(RuntimeError):
-    """Only a visible, unexpired pending case may enter a terminal state."""
+    """只有可见、未过期的待处理案件才能进入终态。"""
 
 
 class SQLiteReviewCaseStore:
-    """SQLite WAL event store with deterministic point-in-time projections."""
+    """具有确定性时点投影的 SQLite WAL 事件存储。"""
 
     def __init__(self, path: str | PathLike[str]) -> None:
         self._lock = threading.RLock()
@@ -106,7 +106,7 @@ class SQLiteReviewCaseStore:
             )
 
     def append_opened(self, item: ReviewCaseOpened) -> bool:
-        """Create a case once; exact replays are idempotent."""
+        """仅创建一次案件；精确重放具有幂等性。"""
 
         payload = _json_bytes(_opened_document(item))
         digest = hashlib.sha256(payload).hexdigest()
@@ -148,7 +148,7 @@ class SQLiteReviewCaseStore:
         return True
 
     def append_transition(self, item: ReviewCaseTransition) -> bool:
-        """Move a pending case to one terminal research-review state."""
+        """将待处理案件迁移至一个研究审核终态。"""
 
         payload = _json_bytes(_transition_document(item))
         digest = hashlib.sha256(payload).hexdigest()

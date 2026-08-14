@@ -1,4 +1,4 @@
-"""Transactional SQLite outbox for reliable outbound notifications."""
+"""用于可靠发送外部通知的事务型 SQLite 发件箱。"""
 
 from __future__ import annotations
 
@@ -52,12 +52,11 @@ class DispatchSummary:
 
 
 class SQLiteOutbox:
-    """A process-local SQLite outbox with transactional claims and leases.
+    """带事务认领与租约机制的进程本地 SQLite 发件箱。
 
-    A worker increments ``attempt_count`` while claiming an item.  If it dies
-    before recording the result, another worker can reclaim the item after the
-    lease expires.  Delivery is therefore at-least-once; the unique
-    ``idempotency_key`` prevents duplicate enqueue operations.
+    工作进程认领条目时会递增 ``attempt_count``。若它在记录结果前终止，
+    其他工作进程可在租约到期后重新认领该条目。因此投递语义为至少一次；
+    唯一的 ``idempotency_key`` 可避免重复入队。
     """
 
     def __init__(
@@ -131,7 +130,7 @@ class SQLiteOutbox:
             )
 
     def enqueue(self, notification: OutboundNotification) -> OutboxItem:
-        """Insert once, returning the existing row for an identical key/payload."""
+        """仅插入一次；键与载荷完全相同时返回已有记录。"""
 
         values = (
             notification.idempotency_key,
@@ -191,14 +190,23 @@ class SQLiteOutbox:
         now: datetime | None = None,
         limit: int = 50,
         lease_for: timedelta = timedelta(seconds=30),
+        target_kind: NotificationTargetKind | None = None,
+        target_id: str | None = None,
+        channels: Sequence[str] | None = None,
     ) -> Sequence[OutboxItem]:
-        """Atomically lease due items to one dispatcher."""
+        """原子领取到期消息；可把工作进程严格限定到一个目标。"""
 
         instant = _normalize_time(now or datetime.now(UTC), "now")
         if limit < 1:
             raise ValueError("limit must be positive")
         if lease_for <= timedelta(0):
             raise ValueError("lease_for must be positive")
+        if (target_kind is None) != (target_id is None):
+            raise ValueError("target_kind and target_id must be configured together")
+        if target_id is not None and not target_id.strip():
+            raise ValueError("target_id must not be blank")
+        if channels is not None and any(not item.strip() for item in channels):
+            raise ValueError("channels must not contain blank values")
         serialized_now = _serialize_time(instant)
         lease_until = _serialize_time(instant + lease_for)
 
@@ -218,9 +226,8 @@ class SQLiteOutbox:
                     serialized_now,
                 ),
             )
-            # Do not steal an active worker's lease merely because the TTL was
-            # crossed while its HTTP call was in progress.  An expired lease,
-            # however, can be finalized safely instead of being retried.
+            # 不能仅因该工作进程创建认领后缩短了 TTL，就在其 HTTP 调用
+            # 期间越过期限时抢占租约；但已到期租约可安全终结而不必重试。
             connection.execute(
                 """
                 UPDATE notification_outbox
@@ -265,12 +272,30 @@ class SQLiteOutbox:
                     self._max_attempts,
                 ),
             )
+            target_filter = ""
+            target_parameters: tuple[str, ...] = ()
+            if target_kind is not None and target_id is not None:
+                target_filter = " AND target_kind = ? AND target_id = ?"
+                target_parameters = (target_kind.value, target_id)
+            channel_filter = ""
+            channel_parameters: tuple[str, ...] = ()
+            if channels is not None:
+                unique_channels = tuple(sorted(set(channels)))
+                if not unique_channels:
+                    channel_filter = " AND 1 = 0"
+                else:
+                    channel_filter = " AND channel IN (" + ",".join(
+                        "?" for _ in unique_channels
+                    ) + ")"
+                    channel_parameters = unique_channels
             selected = connection.execute(
-                """
+                f"""
                 SELECT id FROM notification_outbox
                 WHERE status IN (?, ?) AND next_attempt_at <= ?
                   AND attempt_count < ?
                   AND (expires_at IS NULL OR expires_at > ?)
+                  {target_filter}
+                  {channel_filter}
                 ORDER BY next_attempt_at, id
                 LIMIT ?
                 """,
@@ -280,6 +305,8 @@ class SQLiteOutbox:
                     serialized_now,
                     self._max_attempts,
                     serialized_now,
+                    *target_parameters,
+                    *channel_parameters,
                     limit,
                 ),
             ).fetchall()
@@ -442,17 +469,26 @@ class SQLiteOutbox:
 
 
 class OutboxDispatcher:
-    """Deliver one claimed batch through channel-specific notifier ports."""
+    """通过各渠道专用的通知端口投递一批已认领条目。"""
 
     def __init__(
         self,
         outbox: SQLiteOutbox,
         notifiers: Mapping[str, Notifier],
         *,
+        target_kind: NotificationTargetKind | None = None,
+        target_id: str | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
+        if (target_kind is None) != (target_id is None):
+            raise ValueError("target_kind and target_id must be configured together")
+        if target_id is not None and not target_id.strip():
+            raise ValueError("target_id must not be blank")
         self._outbox = outbox
         self._notifiers = dict(notifiers)
+        self._target_kind = target_kind
+        self._target_id = target_id
+        self._channels = tuple(sorted(self._notifiers)) if target_kind is not None else None
         self._clock = clock
 
     async def run_once(
@@ -461,7 +497,14 @@ class OutboxDispatcher:
         limit: int = 50,
         lease_for: timedelta = timedelta(seconds=30),
     ) -> DispatchSummary:
-        items = self._outbox.claim_due(now=self._clock(), limit=limit, lease_for=lease_for)
+        items = self._outbox.claim_due(
+            now=self._clock(),
+            limit=limit,
+            lease_for=lease_for,
+            target_kind=self._target_kind,
+            target_id=self._target_id,
+            channels=self._channels,
+        )
         sent = retry_scheduled = dead = expired = 0
         for item in items:
             attempt_time = self._clock()
@@ -494,9 +537,8 @@ class OutboxDispatcher:
                         now=self._clock(),
                     )
                 except Exception:
-                    # Adapter bugs and temporary dependency failures must not
-                    # drop the item.  Persist only a stable code, never the
-                    # exception text (which could contain message contents).
+                    # 适配器缺陷与临时依赖故障不得丢弃条目。仅持久化稳定
+                    # 代码，绝不保存可能含消息内容的异常文本。
                     result = self._outbox.mark_failed(
                         item.id,
                         "unexpected_notifier_error",

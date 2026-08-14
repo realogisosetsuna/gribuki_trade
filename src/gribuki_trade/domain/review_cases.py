@@ -1,8 +1,7 @@
-"""Broker-independent recommendation review-case domain models.
+"""独立于券商的推荐复核案例领域模型。
 
-A confirmed review is an approval of a research conclusion only.  None of the
-types in this module represents an order, allocation, account instruction, or
-permission to execute a trade.
+确认复核只代表认可研究结论。本模块中的任何类型都不表示订单、资金配置、账户指令
+或执行交易的许可。
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/+\-]{0,159}$")
 
 
 class ReviewCaseStatus(StrEnum):
-    """Point-in-time state of a recommendation review."""
+    """推荐复核在特定时点的状态。"""
 
     PENDING_REVIEW = "PENDING_REVIEW"
     CONFIRMED = "CONFIRMED"
@@ -35,7 +34,7 @@ class ReviewCaseStatus(StrEnum):
 
 
 class ReviewActor(StrEnum):
-    """Auditable actor classes allowed to open or resolve a review."""
+    """允许发起或解决复核的可审计参与者类别。"""
 
     LOCAL_USER = "LOCAL_USER"
     SYSTEM = "SYSTEM"
@@ -52,7 +51,7 @@ TERMINAL_REVIEW_STATUSES = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class CandidateProvenanceSummary:
-    """Immutable summary of the candidate state used to request review."""
+    """用于请求复核的候选状态不可变摘要。"""
 
     symbol: str
     candidate_as_of: datetime
@@ -104,7 +103,7 @@ class CandidateProvenanceSummary:
 
     @classmethod
     def from_candidate(cls, candidate: CandidateRecord) -> CandidateProvenanceSummary:
-        """Create a compact snapshot without retaining mutable store objects."""
+        """创建紧凑快照且不保留可变存储对象。"""
 
         return cls(
             symbol=candidate.symbol,
@@ -125,7 +124,7 @@ class CandidateProvenanceSummary:
 
 @dataclass(frozen=True, slots=True)
 class ReviewCaseOpened:
-    """Immutable creation event for one recommendation review case."""
+    """一个推荐复核案例的不可变创建事件。"""
 
     recommendation_id: str
     symbol: str
@@ -184,7 +183,7 @@ class ReviewCaseOpened:
 
 @dataclass(frozen=True, slots=True)
 class ReviewCaseTransition:
-    """One attempted terminal transition retained in the audit log."""
+    """保留在审计日志中的一次终态转换尝试。"""
 
     case_id: str
     target_status: ReviewCaseStatus
@@ -227,7 +226,7 @@ class ReviewCaseTransition:
 
 @dataclass(frozen=True, slots=True)
 class ReviewResolution:
-    """Terminal research-review decision visible in a projected case."""
+    """在案例投影中可见的研究复核终态决定。"""
 
     status: ReviewCaseStatus
     actor: ReviewActor
@@ -240,7 +239,7 @@ class ReviewResolution:
 
 @dataclass(frozen=True, slots=True)
 class RecommendationReviewCase:
-    """Point-in-time projection of one review case."""
+    """一个复核案例的时点投影。"""
 
     case_id: str
     recommendation_id: str
@@ -259,14 +258,14 @@ class RecommendationReviewCase:
 
     @property
     def is_research_approved(self) -> bool:
-        """Whether research was confirmed; this never authorizes execution."""
+        """研究是否已确认；该结果绝不授权执行。"""
 
         return self.status is ReviewCaseStatus.CONFIRMED
 
 
 @dataclass(frozen=True, slots=True)
 class ReviewCaseAuditRecord:
-    """Public integrity metadata for one append-only review event."""
+    """一条仅追加复核事件的公开完整性元数据。"""
 
     sequence: int
     event_id: str

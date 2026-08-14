@@ -1,10 +1,10 @@
-"""Three-layer all-A-share screening orchestration.
+"""面向全部 A 股的三层筛选编排。
 
-The service performs no LLM analysis and has no broker dependency:
+本服务不执行 LLM 分析，也不依赖券商：
 
-1. fetch a cheap, point-in-time full-market snapshot and hard-filter it;
-2. fetch historical factors only for survivors and rank the cross-section;
-3. expose the deterministic Top-N as inputs to a later deep-research service.
+1. 拉取低成本、符合时点约束的全市场快照并执行硬过滤；
+2. 仅为通过者拉取历史因子并进行横截面排序；
+3. 将确定性的前 N 名作为后续深度研究服务的输入。
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ class AShareScreeningRunStatus(StrEnum):
 
 
 class AShareScreeningPointInTimeError(RuntimeError):
-    """The source batch cannot be used at the requested decision time."""
+    """源数据批次在请求的决策时点不可使用。"""
 
     def __init__(self, code: str) -> None:
         super().__init__(f"A-share screening point-in-time check failed ({code})")
@@ -54,7 +54,7 @@ class AShareScreeningPointInTimeError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class AShareScreeningRun:
-    """Auditable funnel output; ``top_candidates`` are research inputs only."""
+    """可审计的漏斗输出；``top_candidates`` 仅为研究输入。"""
 
     as_of: date
     decision_at: datetime
@@ -78,7 +78,7 @@ class AShareScreeningRun:
 
 
 class AShareScreeningService:
-    """Coordinate a bounded all-market screen without creating a trade."""
+    """协调有界的全市场筛选且不创建交易。"""
 
     def __init__(
         self,
@@ -99,7 +99,7 @@ class AShareScreeningService:
         as_of: date,
         decision_at: datetime,
     ) -> AShareScreeningRun:
-        """Run all three layers using only data knowable at ``decision_at``."""
+        """仅使用在 ``decision_at`` 时点可知的数据运行全部三层。"""
 
         _validate_decision_time(as_of=as_of, decision_at=decision_at)
         universe = await self._data_source.fetch_universe_snapshot(
@@ -294,7 +294,7 @@ def _validate_snapshot_clock(
 
 
 def _required_session_amount(record: AShareUniverseRecord) -> int:
-    """Return an exact sortable amount after the hard filter proved presence."""
+    """硬过滤确认数值存在后返回可精确排序的金额。"""
 
     if record.session_amount_cny is None:
         raise ValueError("hard-filter survivor must have a session amount")

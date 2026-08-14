@@ -1,4 +1,4 @@
-"""Binance Spot public market data and signed Testnet/Live REST gateway."""
+"""Binance 现货公共行情与签名测试/生产 REST 网关。"""
 
 from __future__ import annotations
 
@@ -51,23 +51,23 @@ from .rules import (
 
 
 class BinanceError(RuntimeError):
-    """Base class for safe-to-log Binance adapter failures."""
+    """可安全记录日志的 Binance 适配器失败基类。"""
 
 
 class BinanceConfigurationError(BinanceError):
-    """The selected environment or signed endpoint is not configured safely."""
+    """所选环境或签名端点未得到安全配置。"""
 
 
 class BinanceProtocolError(BinanceError):
-    """Binance or a transport returned a malformed response."""
+    """Binance 或传输层返回了格式错误的响应。"""
 
 
 class BinanceTransportError(BinanceError):
-    """An HTTP request failed; no request URL or credential is retained."""
+    """HTTP 请求失败；不保留请求 URL 或凭据。"""
 
 
 class BinanceAPIError(BinanceError):
-    """A known Binance API rejection with a sanitized message."""
+    """消息已净化的已知 Binance API 拒绝。"""
 
     def __init__(self, *, status_code: int, code: int | None, message: str) -> None:
         self.status_code = status_code
@@ -78,7 +78,7 @@ class BinanceAPIError(BinanceError):
 
 
 class BinanceUncertainResultError(BinanceAPIError):
-    """The exchange may have executed a request and reconciliation is required."""
+    """交易所可能已经执行请求，必须进行对账。"""
 
 
 _CLIENT_ORDER_ID = re.compile(r"^[A-Za-z0-9._:/-]{1,36}$")
@@ -88,7 +88,7 @@ _SENSITIVE_ASSIGNMENT = re.compile(
 
 
 def sign_hmac_sha256(secret_key: str, payload: str) -> str:
-    """Return the lowercase hexadecimal HMAC-SHA256 Binance signature."""
+    """返回小写十六进制 HMAC-SHA256 Binance 签名。"""
 
     return hmac.new(secret_key.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
@@ -111,15 +111,13 @@ class _TrackedOrder:
 
 
 class BinanceSpotGateway:
-    """Asynchronous Binance Spot REST adapter.
+    """异步 Binance 现货 REST 适配器。
 
-    Public methods never require credentials. Signed methods use HMAC-SHA256
-    and the ``X-MBX-APIKEY`` header. LIVE construction is rejected unless
-    ``allow_live=True`` is supplied explicitly.
+    公共方法从不需要凭据。签名方法使用 HMAC-SHA256 和 ``X-MBX-APIKEY``
+    请求头。除非明确提供 ``allow_live=True``，否则拒绝构造生产环境实例。
 
-    The gateway never automatically retries a submit or cancel request. A
-    transport failure, HTTP 5xx, or Binance ``-1007`` produces an ``UNKNOWN``
-    order event; callers must reconcile it through :meth:`query_order`.
+    网关绝不自动重试提交或取消请求。传输失败、HTTP 5xx 或 Binance ``-1007``
+    会产生 ``UNKNOWN`` 订单事件；调用方必须通过 :meth:`query_order` 对账。
     """
 
     def __init__(
@@ -188,24 +186,22 @@ class BinanceSpotGateway:
 
     @property
     def rate_limit_usage(self) -> BinanceRateLimitUsage:
-        """Return the most recent exchange rate-limit counters.
+        """返回最近一次交易所限流计数器。
 
-        Binance applies request-weight limits by IP and order limits by
-        account.  Keeping these counters visible lets the engine fail closed
-        before an HTTP 429/418 rather than treating rate limiting as an
-        ordinary transient error.
+        Binance 按 IP 应用请求权重限制，按账户应用订单限制。持续暴露这些计数器
+        可让引擎在 HTTP 429/418 之前关闭失败，而不是把限流视为普通瞬态错误。
         """
 
         return self._rate_limit_usage
 
     async def connect(self) -> None:
-        """Enable order mutations without making a network request."""
+        """启用订单变更，但不发起网络请求。"""
 
         async with self._lock:
             self._connected = True
 
     async def disconnect(self) -> None:
-        """Disable new order mutations while preserving reconciliation state."""
+        """禁用新的订单变更，同时保留对账状态。"""
 
         async with self._lock:
             self._connected = False
@@ -233,16 +229,15 @@ class BinanceSpotGateway:
 
     @property
     def server_time_offset_ms(self) -> int:
-        """Most recently measured ``server - local`` clock offset in milliseconds."""
+        """最近测得的 ``服务器 - 本地`` 时钟偏移，单位为毫秒。"""
 
         return self._server_time_offset_ms
 
     async def synchronize_time(self) -> int:
-        """Measure Binance clock offset using the local request midpoint.
+        """使用本地请求中点测量 Binance 时钟偏移。
 
-        This keeps signed requests inside ``recvWindow`` without changing the
-        operating-system clock.  It is safe to call at startup and after an
-        explicit Binance ``-1021`` timestamp rejection.
+        这样无需修改操作系统时钟，就能使签名请求保持在 ``recvWindow`` 内。
+        可在启动时以及 Binance 明确以 ``-1021`` 拒绝时间戳后安全调用。
         """
 
         started_ms = self._clock_ms()
@@ -269,7 +264,7 @@ class BinanceSpotGateway:
         return result
 
     def cache_exchange_info(self, payload: Mapping[str, Any]) -> tuple[SymbolRules, ...]:
-        """Parse and cache symbol filters, useful for startup and offline tests."""
+        """解析并缓存交易代码过滤器，供启动和离线测试使用。"""
 
         symbols = payload.get("symbols")
         if not isinstance(symbols, list):
@@ -365,12 +360,11 @@ class BinanceSpotGateway:
     get_klines = klines
 
     async def validate_order_on_exchange(self, order: OrderIntent) -> None:
-        """Validate a limit order through Binance without placing it.
+        """通过 Binance 验证限价单，但不实际下单。
 
-        Binance's ``/api/v3/order/test`` endpoint performs signature, account,
-        symbol-filter, and order-schema checks but never enters the matching
-        engine. This method intentionally does not reserve the client order ID
-        in the local OMS.
+        Binance 的 ``/api/v3/order/test`` 端点会检查签名、账户、交易代码过滤器
+        和订单架构，但绝不进入撮合引擎。此方法刻意不在本地订单管理系统中
+        预留客户端订单编号。
         """
 
         if not self._connected:
@@ -402,7 +396,7 @@ class BinanceSpotGateway:
     test_order = validate_order_on_exchange
 
     async def submit_order(self, order: OrderIntent) -> None:
-        """Validate and place one idempotent GTC limit order."""
+        """验证并提交一笔幂等的撤销前有效限价单。"""
 
         async with self._lock:
             existing = self._orders.get(order.client_order_id)
@@ -412,7 +406,7 @@ class BinanceSpotGateway:
                         f"client_order_id {order.client_order_id!r} is already used "
                         "for a different order"
                     )
-                # Includes UNKNOWN: reconciliation is required, never a blind resubmit.
+                # 包括 UNKNOWN：必须先对账，绝不能盲目重新提交。
                 return
             if not self._connected:
                 update = BinanceOrderUpdate(
@@ -494,7 +488,7 @@ class BinanceSpotGateway:
             self._record_snapshot(tracked, snapshot)
 
     async def cancel_order(self, client_order_id: str) -> None:
-        """Cancel a locally tracked order without automatic retries."""
+        """取消本地跟踪的订单，且不自动重试。"""
 
         async with self._lock:
             tracked = self._orders.get(client_order_id)
@@ -510,13 +504,12 @@ class BinanceSpotGateway:
         symbol: str,
         client_order_id: str,
     ) -> BinanceOrderSnapshot:
-        """Cancel by durable exchange identity, even after a process restart.
+        """按持久交易所身份取消订单，即使进程已经重启也可执行。
 
-        Unlike :meth:`cancel_order`, this method does not require the order to
-        have been submitted by this gateway instance.  It performs exactly one
-        signed DELETE.  An uncertain transport/protocol result is returned as
-        ``UNKNOWN`` and is remembered, so repeating the call cannot blindly
-        send a second cancellation before :meth:`get_order` reconciles it.
+        与 :meth:`cancel_order` 不同，此方法不要求订单由当前网关实例提交。
+        它只执行一次签名 DELETE。结果不确定的传输/协议响应会以 ``UNKNOWN``
+        返回并被记住，因此在 :meth:`get_order` 对账前，重复调用不能盲目发送
+        第二次取消。
         """
 
         async with self._lock:
@@ -547,7 +540,7 @@ class BinanceSpotGateway:
             }:
                 return self._snapshot_from_tracked(tracked)
             if tracked.cancellation_attempted:
-                # An UNKNOWN cancellation must be queried before another attempt.
+                # UNKNOWN 取消必须先查询，才能再次尝试。
                 return self._snapshot_from_tracked(tracked)
             if tracked.update.status is OrderStatus.UNKNOWN:
                 raise ValueError(
@@ -604,8 +597,7 @@ class BinanceSpotGateway:
                 )
             return snapshot
         except BinanceAPIError:
-            # A known rejection did not execute. There is no hidden retry;
-            # expose it so the caller can decide what to do next.
+            # 已知拒绝并未执行。这里没有隐藏重试；向上暴露，让调用方决定后续。
             if tracked is not None:
                 tracked.cancellation_attempted = False
             raise
@@ -614,9 +606,8 @@ class BinanceSpotGateway:
             snapshot.client_order_id is not None
             and snapshot.client_order_id != client_order_id
         ):
-            # The DELETE reached Binance, so a mismatched/malformed identity is
-            # still an uncertain execution result.  Quarantine it exactly like
-            # a transport failure instead of allowing a blind second request.
+            # DELETE 已经到达 Binance，因此身份不匹配或格式错误仍属于执行结果
+            # 不确定。应像传输失败一样隔离，不能允许盲目发送第二次请求。
             snapshot = BinanceOrderSnapshot(
                 symbol=normalized,
                 client_order_id=client_order_id,
@@ -654,7 +645,7 @@ class BinanceSpotGateway:
         *,
         symbol: str | None = None,
     ) -> BinanceOrderSnapshot:
-        """Reconcile an order by client id, including an UNKNOWN submission."""
+        """按客户端编号对账订单，包括 UNKNOWN 提交。"""
 
         tracked = self._orders.get(client_order_id)
         if symbol is None:
@@ -672,7 +663,7 @@ class BinanceSpotGateway:
         client_order_id: str | None = None,
         order_id: int | None = None,
     ) -> BinanceOrderSnapshot:
-        """Query Binance directly by exactly one exchange or client order id."""
+        """仅使用交易所订单编号或客户端订单编号之一直接查询 Binance。"""
 
         if (client_order_id is None) == (order_id is None):
             raise ValueError("provide exactly one of client_order_id or order_id")
@@ -726,14 +717,14 @@ class BinanceSpotGateway:
             OrderStatus.ACCEPTED,
             OrderStatus.PARTIALLY_FILLED,
         }:
-            # A successful query proves a previous standalone UNKNOWN cancel
-            # left the order open, permitting one deliberate new cancel.
+            # 查询成功证明此前独立 UNKNOWN 取消后订单仍为未结，因此允许再明确
+            # 发起一次取消。
             self._standalone_cancel_results.pop((normalized, client_order_id), None)
         if tracked is not None:
             self._record_snapshot(tracked, snapshot)
             if snapshot.status in {OrderStatus.ACCEPTED, OrderStatus.PARTIALLY_FILLED}:
-                # A successful query proves a previous UNKNOWN cancel did not
-                # leave this order terminal, so a deliberate new cancel is safe.
+            # 查询成功证明此前 UNKNOWN 取消没有使订单进入终态，因此可以安全地
+            # 再明确发起一次取消。
                 tracked.cancellation_attempted = False
         return snapshot
 
@@ -741,7 +732,7 @@ class BinanceSpotGateway:
         self,
         symbol: str | None = None,
     ) -> tuple[BinanceOrderSnapshot, ...]:
-        """Return all currently open Spot orders, optionally for one symbol."""
+        """返回当前所有未结现货订单，可选限定单个交易代码。"""
 
         self._require_credentials()
         params: tuple[tuple[str, object], ...] = ()
@@ -767,7 +758,7 @@ class BinanceSpotGateway:
         end_time_ms: int | None = None,
         limit: int = 500,
     ) -> tuple[BinanceOrderSnapshot, ...]:
-        """Return Spot order history for startup and periodic reconciliation."""
+        """返回供启动和定期对账使用的现货订单历史。"""
 
         if not 1 <= limit <= 1_000:
             raise ValueError("order-history limit must be between 1 and 1000")
@@ -811,7 +802,7 @@ class BinanceSpotGateway:
         end_time_ms: int | None = None,
         limit: int = 500,
     ) -> tuple[BinanceTrade, ...]:
-        """Return immutable account trades used to recover missed user events."""
+        """返回用于恢复遗漏用户事件的不可变账户成交。"""
 
         if not 1 <= limit <= 1_000:
             raise ValueError("trade-history limit must be between 1 and 1000")
@@ -849,7 +840,7 @@ class BinanceSpotGateway:
             raise BinanceProtocolError("Binance account trades response is malformed") from None
 
     async def commission_rate(self, symbol: str) -> BinanceCommissionRate:
-        """Query account-specific Spot commission rates for one symbol."""
+        """查询账户针对某一交易代码的现货佣金率。"""
 
         normalized = self._normalize_symbol(symbol)
         self._require_credentials()
@@ -886,7 +877,7 @@ class BinanceSpotGateway:
     get_commission_rate = commission_rate
 
     async def account(self) -> BinanceAccount:
-        """Return signed Spot account balances and permissions."""
+        """返回经签名查询的现货账户余额和权限。"""
 
         self._require_credentials()
         payload = await self._request_json(
@@ -993,8 +984,8 @@ class BinanceSpotGateway:
         try:
             response = await self._transport.request(request)
         except Exception:
-            # An injected transport might include the full request in its own
-            # exception. Replace it with a stable, credential-free error.
+            # 注入的传输层可能在自身异常中包含完整请求；将其替换为稳定且不含
+            # 凭据的错误。
             raise BinanceTransportError("Binance HTTP request failed") from None
         if not isinstance(response, HttpResponse):
             raise BinanceProtocolError("HTTP transport returned an invalid response")

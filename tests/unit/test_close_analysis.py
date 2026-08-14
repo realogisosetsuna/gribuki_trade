@@ -555,8 +555,8 @@ def test_short_and_swing_views_distinguish_fast_reversal_from_slow_trend() -> No
 
 
 def test_wilder_adx_14_matches_golden_ohlc_fixture() -> None:
-    # Golden values are fixed from the canonical Wilder seed-and-recurrence
-    # worksheet for this deterministic 40-bar OHLC fixture.
+    # 黄金值取自标准 Wilder 初始值与递推工作表，并针对这个确定性的
+    # 40 根 OHLC K 线夹具固定下来。
     adx, positive_di, negative_di = _wilder_adx(
         daily_bars(count=40, trend="up", breakout=False),
         14,

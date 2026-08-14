@@ -1,4 +1,4 @@
-"""Broker adapter port shared by paper, backtest, and live gateways."""
+"""由模拟、回测与实盘网关共享的券商适配器端口。"""
 
 from __future__ import annotations
 
@@ -28,4 +28,3 @@ class BrokerAdapter(Protocol):
     async def cancel_order(self, client_order_id: str) -> None: ...
 
     def events(self) -> AsyncIterator[BrokerEvent]: ...
-

@@ -1,4 +1,4 @@
-"""Read-only, representation-safe DeepSeek API health probe."""
+"""只读且不泄露表示层细节的 DeepSeek API 健康探测器。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ _MAX_MODEL_COUNT = 1_000
 
 
 class DeepSeekHealthErrorCode(StrEnum):
-    """Stable public error categories with no provider response details."""
+    """不暴露供应商响应细节的稳定公开错误分类。"""
 
     AUTHENTICATION_FAILED = "AUTHENTICATION_FAILED"
     INSUFFICIENT_BALANCE = "INSUFFICIENT_BALANCE"
@@ -31,7 +31,7 @@ class DeepSeekHealthErrorCode(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class DeepSeekHealthResult:
-    """The only provider state permitted to leave the health boundary."""
+    """允许穿过健康检查边界的唯一供应商状态投影。"""
 
     available_model_ids: tuple[str, ...]
     deepseek_v4_pro_available: bool
@@ -51,7 +51,7 @@ class DeepSeekHealthResult:
 
 
 class DeepSeekHealthClient:
-    """Check the authenticated, read-only DeepSeek ``GET /models`` endpoint."""
+    """检查带鉴权且只读的 DeepSeek ``GET /models`` 端点。"""
 
     def __init__(
         self,

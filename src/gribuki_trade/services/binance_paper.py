@@ -1,4 +1,4 @@
-"""Long-running Binance market-data to paper-trading orchestration."""
+"""从 Binance 市场数据到模拟交易的长时间运行编排。"""
 
 from __future__ import annotations
 
@@ -74,12 +74,11 @@ class PaperEngineSnapshot:
 
 
 class BinancePaperEngine:
-    """Drive a deterministic paper broker from Binance public streams.
+    """使用 Binance 公共数据流驱动确定性模拟券商。
 
-    Closed kline events are the only strategy decision points.  Top-of-book
-    events only match already accepted limits.  Every accepted intent is
-    persisted together with a durable submit command before the in-memory
-    paper broker receives it, mirroring the live delivery boundary.
+    已收盘 K 线事件是唯一的策略决策点。盘口最优价事件只匹配已受理的限价单。
+    每个获准意图都会连同持久化提交命令一并落库，之后才交给内存模拟券商，
+    以映射实盘交付边界。
     """
 
     def __init__(

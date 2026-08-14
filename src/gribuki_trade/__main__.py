@@ -1,4 +1,4 @@
-"""Launch the desktop GUI or an explicit integration check."""
+"""启动桌面 GUI 或显式集成检查。"""
 
 from gribuki_trade.cli import main
 

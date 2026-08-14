@@ -1,10 +1,9 @@
-"""Resolve point-in-time A-share close-analysis sessions from a real calendar.
+"""依据真实日历解析符合时点约束的 A 股收盘分析交易日。
 
-The resolver deliberately never infers exchange sessions from weekdays.  It
-loads an inclusive natural-day calendar through :class:`AsyncTradingCalendar`,
-validates the provider payload, and then applies Shanghai exchange clock
-boundaries.  This keeps after-close research from accidentally targeting a
-weekend, holiday, or a session that has already opened.
+解析器刻意不根据工作日推断交易所交易日。它通过
+:class:`AsyncTradingCalendar` 加载包含首尾日期的自然日日历，校验供应商载荷，
+再应用上海交易所的时钟边界。这样可避免盘后研究误将周末、节假日或已经开盘的
+交易日作为目标。
 """
 
 from __future__ import annotations
@@ -21,14 +20,14 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 class CloseAnalysisMode(StrEnum):
-    """Clock mode in which a next-session analysis is being prepared."""
+    """准备下一交易日分析时所处的时钟模式。"""
 
     POST_CLOSE = "post_close"
     PREOPEN = "preopen"
 
 
 class CloseSessionResolutionError(RuntimeError):
-    """A stable, sanitized session-resolution failure."""
+    """稳定且已脱敏的交易日解析失败。"""
 
     def __init__(self, code: str) -> None:
         super().__init__(f"A-share close-session resolution failed ({code})")
@@ -36,28 +35,28 @@ class CloseSessionResolutionError(RuntimeError):
 
 
 class MarketSessionNotClosedError(CloseSessionResolutionError):
-    """The current Shanghai trading session has not produced a final bar yet."""
+    """上海市场当前交易日尚未生成最终行情柱。"""
 
     def __init__(self) -> None:
         super().__init__("MARKET_SESSION_NOT_CLOSED")
 
 
 class TradingCalendarUnavailableError(CloseSessionResolutionError):
-    """The calendar provider failed or returned a structurally invalid payload."""
+    """日历供应商调用失败或返回了结构无效的载荷。"""
 
     def __init__(self) -> None:
         super().__init__("TRADING_CALENDAR_UNAVAILABLE")
 
 
 class TradingCalendarCoverageError(CloseSessionResolutionError):
-    """A valid calendar payload did not contain a required trading session."""
+    """结构有效的日历载荷中缺少所需交易日。"""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
 
 
 class InvalidCloseSessionOverrideError(CloseSessionResolutionError):
-    """A caller-supplied session violates calendar or point-in-time rules."""
+    """调用方提供的交易日违反日历或时点规则。"""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -65,7 +64,7 @@ class InvalidCloseSessionOverrideError(CloseSessionResolutionError):
 
 @dataclass(frozen=True, slots=True)
 class CloseSessionResolution:
-    """Verified completed and target sessions for one close-analysis run."""
+    """单次收盘分析中经核验的已完成交易日与目标交易日。"""
 
     as_of: datetime
     latest_completed_session: date
@@ -75,7 +74,7 @@ class CloseSessionResolution:
 
 
 class AShareCloseSessionResolver:
-    """Resolve close-analysis boundaries using a provider's official calendar."""
+    """使用供应商的官方日历解析收盘分析边界。"""
 
     def __init__(
         self,
@@ -105,12 +104,10 @@ class AShareCloseSessionResolver:
         latest_completed_session: date | None = None,
         next_session: date | None = None,
     ) -> CloseSessionResolution:
-        """Resolve and verify the completed/target session pair at ``now``.
+        """在 ``now`` 时点解析并核验已完成/目标交易日对。
 
-        Overrides are useful for deterministic replay and operator checks, but
-        are not trust inputs: both dates are still checked against the fetched
-        exchange calendar, must be adjacent trading sessions, and must obey the
-        current point-in-time boundary.
+        覆盖参数可用于确定性回放与运维检查，但不能作为可信输入：两个日期仍须与
+        拉取的交易所日历核对，必须是相邻交易日，并遵守当前时点边界。
         """
 
         if now.tzinfo is None or now.utcoffset() is None:

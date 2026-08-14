@@ -1,8 +1,7 @@
-"""Stable outbound-notification port.
+"""稳定的出站通知端口。
 
-Notifications are deliberately one-way.  Implementations may deliver messages
-to an external service, but this port has no concept of inbound commands and no
-method that can reach the broker or strategy layers.
+通知刻意设计为单向。实现可以向外部服务交付消息，但此端口没有入站命令概念，
+也不提供任何可触及券商层或策略层的方法。
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ from typing import Protocol
 
 
 class NotificationTargetKind(StrEnum):
-    """Kinds of destinations supported by the notification boundary."""
+    """通知边界支持的目标类型。"""
 
     PRIVATE = "private"
     GROUP = "group"
@@ -22,10 +21,9 @@ class NotificationTargetKind(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class OutboundNotification:
-    """A text-only message ready for delivery.
+    """已准备交付的纯文本消息。
 
-    ``target_id`` and ``text`` are redacted from the generated representation:
-    QQ identifiers and research alerts should not leak into logs by accident.
+    生成的表示会隐藏 ``target_id`` 和 ``text``：QQ 标识符与研究提醒不应意外泄漏到日志中。
     """
 
     idempotency_key: str
@@ -56,7 +54,7 @@ class OutboundNotification:
 
 @dataclass(frozen=True, slots=True)
 class DeliveryReceipt:
-    """Sanitized result returned by a notifier implementation."""
+    """通知器实现返回的已脱敏结果。"""
 
     channel: str
     provider_message_id: str | None = None
@@ -64,7 +62,7 @@ class DeliveryReceipt:
 
 
 class NotificationDeliveryError(RuntimeError):
-    """A delivery failure with a stable, log-safe classification."""
+    """具有稳定且日志安全分类的交付失败。"""
 
     def __init__(self, code: str, *, retryable: bool) -> None:
         super().__init__(f"notification delivery failed ({code})")
@@ -73,7 +71,7 @@ class NotificationDeliveryError(RuntimeError):
 
 
 class Notifier(Protocol):
-    """One-way outbound delivery boundary."""
+    """单向出站交付边界。"""
 
     @property
     def channel(self) -> str: ...

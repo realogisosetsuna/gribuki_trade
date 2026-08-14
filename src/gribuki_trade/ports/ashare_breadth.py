@@ -21,28 +21,28 @@ from gribuki_trade.ports.market_data import (
 
 
 class AShareBreadthDataError(MarketDataUnavailableError):
-    """Base failure raised by a close-breadth adapter."""
+    """收盘市场宽度适配器抛出的基础失败。"""
 
 
 class AShareBreadthTimeoutError(MarketDataTimeoutError, AShareBreadthDataError):
-    """One independently bounded public snapshot call timed out."""
+    """一次独立有界的公共快照调用超时。"""
 
 
 class AShareBreadthEndpointError(AShareBreadthDataError):
-    """The installed AKShare client does not expose a required endpoint."""
+    """已安装的 AKShare 客户端未公开所需端点。"""
 
 
 class AShareBreadthPayloadError(AShareBreadthDataError):
-    """A provider payload cannot be parsed without ambiguity."""
+    """供应商载荷无法无歧义地解析。"""
 
 
 class AShareBreadthCoverageError(AShareBreadthDataError):
-    """A parsed payload failed the minimum-universe completeness gate."""
+    """已解析载荷未通过最小标的全集完整度门控。"""
 
 
 @dataclass(frozen=True, slots=True)
 class AShareBreadthSourceFailure:
-    """Stable, non-secret diagnostic for one failed provider attempt."""
+    """一次供应商尝试失败的稳定非秘密诊断。"""
 
     source_id: str
     failure_code: str
@@ -54,7 +54,7 @@ class AShareBreadthSourceFailure:
 
 
 class AShareBreadthSourcesExhaustedError(AShareBreadthDataError):
-    """All configured breadth sources failed independently."""
+    """所有已配置市场宽度来源均独立失败。"""
 
     def __init__(self, failures: tuple[AShareBreadthSourceFailure, ...]) -> None:
         if not failures:
@@ -81,7 +81,7 @@ class AShareExchangeCount:
 
 @dataclass(frozen=True, slots=True)
 class AShareBreadthMeta:
-    """Provenance and first-seen state for a secondary public-web snapshot."""
+    """辅助公共网络快照的来源与首次可见状态。"""
 
     source_id: str
     source_url: str

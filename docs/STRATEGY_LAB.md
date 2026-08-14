@@ -61,9 +61,37 @@ A 股日线 `StrategyEvaluator`。它不会凭空生成可靠标签，也不是�
 - 根据最终测试集继续选择候选；
 - 将一次显著结果解释为真实 alpha。
 
-后续应增加数据快照构建器和统一事件驱动回测器，然后做组合层容量/换手约束、横截面中性化、
+当前已经提供严格的冻结退出样本 JSON 加载器和实验 CLI；后续仍应增加“原始全市场行情 →
+已成交 PIT episode”的数据快照构建器和统一事件驱动组合回测器，然后做组合层容量/换手约束、横截面中性化、
 deflated Sharpe / PBO 等统计诊断。每轮新搜索都需要新的未见数据或 shadow 期，不能反复消费同一
 最终测试集。
+
+## 退出策略 walk-forward 实验入口
+
+`strategy-exit-evaluate` 把退出评价器变成一个可从命令行重复执行、但没有生产晋升权限的流程：
+
+```powershell
+.\.venv\Scripts\python.exe -m gribuki_trade strategy-exit-evaluate `
+  --dataset runtime/strategy/exit-dataset.json `
+  --specification runtime/strategy/exit-experiment-spec.json `
+  --output runtime/strategy/exit-trial-registry.json `
+  --confirm RESEARCH_ONLY
+```
+
+数据集必须使用 `exit-policy-dataset@1`，按入场交易日与 episode ID 排序。每个 episode 明确保存
+买入时点、买价、数量、当时 ATR/结构低点、特征可知时点、来源 revision，以及 T+1 之后逐日的
+完整 OHLC、成交量、停牌状态、真实涨跌停边界和数据完成时点。实验规格使用
+`exit-policy-experiment-spec@1`，包含数据集内容 SHA-256、有限搜索空间、登记基线、费用/滑点、
+walk-forward 的训练/验证/测试/purge/embargo 长度、排序目标和最小样本数。
+
+退出 evaluator 中的 train sessions 只用于时间切分、样本隔离和最低覆盖校验；候选排序指标只读取
+validation，锁定参数后才允许打开一次最终 holdout。这里不存在用训练期收益先筛一遍参数的隐藏通路。
+
+加载器拒绝未知或重复字段、JSON 浮点数、非时区时间、符号链接、过大文件和数据集哈希漂移。
+输出原子写入完整 trial registry，包含文件哈希、数据内容哈希、计划哈希、全部合法/非法候选、
+每折与逐笔结果、最终 holdout 和成本假设，并固定声明 `research_only=true`、
+`promotion_authorized=false`、`execution_authority=false`。`--overwrite` 只允许替换研究产物，
+不能修改 PAPER/实盘运行配置。
 
 ## 受控候选发现
 

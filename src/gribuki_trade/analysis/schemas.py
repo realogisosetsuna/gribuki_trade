@@ -1,4 +1,4 @@
-"""Strict domain schemas for evidence-bound LLM macro analysis."""
+"""受证据约束的 LLM 宏观分析严格领域模式。"""
 
 from __future__ import annotations
 
@@ -39,8 +39,8 @@ class EvidenceItem:
         if not 0 <= self.source_tier <= 4:
             raise ValueError("source_tier must be between 0 and 4")
         if self.first_seen_at < self.published_at:
-            # Source timestamps are sometimes later corrected, so tolerate only
-            # equal/later observations and fail closed on impossible chronology.
+            # 来源时间戳有时会在事后修正，因此只容许相同或更晚的观测时间；
+            # 对不可能成立的时间顺序采用失败关闭。
             raise ValueError("first_seen_at must not precede published_at")
 
 
@@ -96,7 +96,7 @@ class MacroAnalysis:
     model_version: str
 
     def validate_against(self, request: MacroAnalysisRequest) -> None:
-        """Reject references to absent/future evidence and malformed probabilities."""
+        """拒绝引用缺失或未来证据，以及格式错误的概率。"""
 
         if self.analysis_id != request.analysis_id or self.as_of != request.as_of:
             raise ValueError("analysis response identity/as_of mismatch")

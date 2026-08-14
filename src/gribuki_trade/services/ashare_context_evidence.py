@@ -1,8 +1,7 @@
-"""Pure point-in-time conversion of A-share context into research evidence.
+"""将 A 股时点上下文纯转换为研究证据。
 
-The converter performs no I/O and makes no directional inference.  Missing
-observations remain missing, vendor order-size labels remain vendor labels,
-and an IF basis is calculated only against a same-session CSI 300 spot quote.
+转换器不执行 I/O，也不作方向性推断。缺失的观测仍保持缺失，供应商的订单规模
+标签保持原样；只有取得同一交易日的沪深 300 现货报价时才计算 IF 基差。
 """
 
 from __future__ import annotations
@@ -36,7 +35,7 @@ _CSI_300_URL = "https://quote.eastmoney.com/zs000300.html"
 
 @dataclass(frozen=True, slots=True)
 class AShareContextEvidenceBundle:
-    """Evidence and human-readable lines derived from one PIT input set."""
+    """由一组时点输入派生的证据及人类可读文本行。"""
 
     items: tuple[EvidenceItem, ...]
     references: tuple[EvidenceReference, ...]
@@ -60,7 +59,7 @@ def build_ashare_context_evidence(
     *,
     etf_expected: bool = True,
 ) -> AShareContextEvidenceBundle:
-    """Return deterministic evidence after enforcing a hard first-seen cutoff."""
+    """强制执行首次可见时间硬截点后返回确定性证据。"""
 
     _require_aware(as_of, "as_of")
     cutoff = as_of.astimezone(UTC)

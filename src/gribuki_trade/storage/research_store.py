@@ -1,4 +1,4 @@
-"""Durable, idempotent research recommendations and outcome observations."""
+"""持久化、幂等的研究建议与结果观测。"""
 
 from __future__ import annotations
 
@@ -27,11 +27,11 @@ from gribuki_trade.domain.recommendations import (
 
 
 class ResearchRecordCollisionError(ValueError):
-    """An immutable record ID was reused with different content."""
+    """同一不可变记录 ID 被复用于不同内容。"""
 
 
 class SQLiteResearchStore:
-    """SQLite WAL store with immutable recommendation identities."""
+    """带不可变建议标识的 SQLite WAL 存储。"""
 
     def __init__(self, path: str | PathLike[str]) -> None:
         self._lock = threading.RLock()
@@ -90,7 +90,7 @@ class SQLiteResearchStore:
             )
 
     def append_recommendation(self, item: ResearchRecommendation) -> bool:
-        """Insert once; return False for an exact replay and reject collisions."""
+        """仅插入一次；精确重放返回 False，并拒绝冲突。"""
 
         payload = _json_bytes(_recommendation_document(item))
         digest = hashlib.sha256(payload).hexdigest()

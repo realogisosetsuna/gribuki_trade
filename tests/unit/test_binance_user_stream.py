@@ -233,7 +233,7 @@ class BinanceUserStreamValueTests(TestCase):
 class BinanceUserStreamIterationTests(IsolatedAsyncioTestCase):
     async def test_subscription_and_event_share_connection_and_route_by_id(self) -> None:
         credentials = BinanceCredentials("public-api-key", "private-secret")
-        # A notification is allowed to race ahead of the subscription response.
+        # 通知允许与订阅响应竞速并先于后者到达。
         socket = FakeConnection(
             envelope(account_position()),
             subscription_response(),

@@ -1,4 +1,4 @@
-"""Append-only audit storage for bounded screening and research runs."""
+"""用于有界筛选与研究运行的仅追加审计存储。"""
 
 from __future__ import annotations
 
@@ -20,12 +20,12 @@ JSONValue: TypeAlias = JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
 
 
 class ResearchRunCollisionError(ValueError):
-    """A logical run identity was reused with different immutable content."""
+    """逻辑运行标识被用于不同的不可变内容。"""
 
 
 @dataclass(frozen=True, slots=True)
 class StoredResearchRun:
-    """Sanitized lineage plus exact canonical config and output documents."""
+    """脱敏血缘信息，以及精确的规范配置和输出文档。"""
 
     run_id: str
     run_type: str
@@ -48,7 +48,7 @@ class StoredResearchRun:
         return {str(key): value for key, value in parsed.items()}
 
     def config_document(self) -> dict[str, JSONValue] | None:
-        """Return the frozen config, or ``None`` for a legacy preview row."""
+        """返回冻结配置；旧版预览记录则返回 ``None``。"""
 
         if self.config_json is None:
             return None
@@ -59,12 +59,11 @@ class StoredResearchRun:
 
 
 class SQLiteResearchRunStore:
-    """WAL-backed immutable registry for finite operational research runs.
+    """由 WAL 支持、用于有限次运行研究的不可变登记簿。
 
-    This store retains outputs and lineage.  It does not claim to archive the
-    provider's complete raw response; raw replay remains a separate data-store
-    responsibility.  The distinction prevents an output summary from being
-    misrepresented as a point-in-time input dataset.
+    本存储保留输出与血缘信息，但不声称归档提供方的完整原始响应；原始
+    重放仍由独立数据存储负责。这一区分可防止输出摘要被误称为时点输入
+    数据集。
     """
 
     def __init__(self, path: str | PathLike[str]) -> None:
@@ -110,8 +109,8 @@ class SQLiteResearchRunStore:
                 for row in connection.execute("PRAGMA table_info(research_runs)")
             }
             if "config_json" not in columns:
-                # A short-lived preview schema retained only the digest.  Keep
-                # those rows readable without fabricating their lost config.
+                # 一个短暂使用的预览结构只保留了摘要；应继续支持读取这些
+                # 记录，但不得凭空补造已经丢失的配置。
                 connection.execute(
                     "ALTER TABLE research_runs ADD COLUMN config_json TEXT"
                 )
@@ -153,7 +152,7 @@ class SQLiteResearchRunStore:
         strategy_version: str | None = None,
         source_revisions: Sequence[tuple[str, str]] = (),
     ) -> bool:
-        """Append one run; return false for an exact idempotent replay."""
+        """追加一次运行；完全一致的幂等重放返回假值。"""
 
         resolved_type = _nonempty(run_type, "run_type")
         resolved_key = _nonempty(logical_key, "logical_key")
@@ -328,7 +327,7 @@ def _canonical_json(value: object) -> str:
 
 
 def research_run_id(run_type: str, logical_key: str) -> str:
-    """Return the stable identity shared by writers and audit callers."""
+    """返回写入方与审计调用方共享的稳定标识。"""
 
     resolved_type = _nonempty(run_type, "run_type")
     resolved_key = _nonempty(logical_key, "logical_key")
@@ -338,7 +337,7 @@ def research_run_id(run_type: str, logical_key: str) -> str:
 
 
 def research_run_document_sha256(document: Mapping[str, object]) -> str:
-    """Hash a config or output using the registry's canonical JSON rules."""
+    """按登记簿的规范 JSON 规则计算配置或输出的哈希。"""
 
     return hashlib.sha256(_canonical_json(dict(document)).encode("utf-8")).hexdigest()
 

@@ -1,7 +1,6 @@
-"""Broker-independent research recommendation domain objects.
+"""独立于券商的研究推荐领域对象。
 
-Recommendations are evidence-backed research records.  They deliberately do
-not contain an executable order, account identifier, or broker operation.
+推荐是由证据支撑的研究记录，刻意不包含可执行订单、账户标识或券商操作。
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ from gribuki_trade.domain.instruments import ResearchInstrumentProfile
 
 
 class RecommendationDecision(StrEnum):
-    """A deliberately small, non-executable recommendation vocabulary."""
+    """刻意保持精简且不可执行的推荐词汇表。"""
 
     ENTER_CANDIDATE = "ENTER_CANDIDATE"
     WATCH = "WATCH"
@@ -24,14 +23,14 @@ class RecommendationDecision(StrEnum):
 
 
 class RecommendationHorizon(StrEnum):
-    """Research horizon rather than an order time-in-force."""
+    """研究期限，而非订单有效期。"""
 
     SHORT_1_TO_5_DAYS = "SHORT_1_TO_5_DAYS"
     SWING_1_TO_8_WEEKS = "SWING_1_TO_8_WEEKS"
 
 
 class ConfidenceBand(StrEnum):
-    """Coarse confidence before a statistically valid calibration exists."""
+    """在具备统计有效校准前使用的粗粒度置信等级。"""
 
     LOW = "LOW"
     MEDIUM = "MEDIUM"
@@ -41,7 +40,7 @@ class ConfidenceBand(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class EvidenceReference:
-    """A compact reference to evidence retained by the evidence store."""
+    """对证据存储中已保留证据的紧凑引用。"""
 
     evidence_id: str
     title: str
@@ -63,7 +62,7 @@ class EvidenceReference:
 
 @dataclass(frozen=True, slots=True)
 class ResearchRecommendation:
-    """Immutable recommendation emitted after policy and evidence validation."""
+    """经策略与证据校验后生成的不可变推荐。"""
 
     recommendation_id: str
     symbol: str

@@ -1,4 +1,4 @@
-"""Backtest primitives shared by strategies and simulators."""
+"""供策略与模拟器共用的回测基础组件。"""
 
 from gribuki_trade.backtest.costs import (
     InstrumentType,

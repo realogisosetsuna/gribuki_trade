@@ -1,4 +1,4 @@
-"""Evidence-bound macro analysis services."""
+"""受证据约束的宏观分析服务。"""
 
 from .schemas import (
     EvidenceItem,
@@ -17,4 +17,3 @@ __all__ = [
     "MacroClaim",
     "MacroScenario",
 ]
-

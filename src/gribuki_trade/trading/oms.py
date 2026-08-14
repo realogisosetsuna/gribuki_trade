@@ -1,4 +1,4 @@
-"""SQLite WAL order management, durable commands, and minimal ledgers."""
+"""SQLite WAL 订单管理、持久化命令与最小账本。"""
 
 from __future__ import annotations
 
@@ -66,12 +66,11 @@ _SAFE_ERROR_CODE = re.compile(r"^[a-z0-9_.-]{1,64}$")
 
 
 class SQLiteOrderManagementStore:
-    """Single-node persistent OMS shared by paper, Testnet, and live modes.
+    """供 PAPER、Testnet 与实时模式共用的单节点持久化 OMS。
 
-    Every order is inserted in the same SQLite transaction as its submit
-    command.  A claimed command that may have crossed the process boundary is
-    never automatically retried after a crash or timeout: it becomes
-    ``UNKNOWN`` and must be reconciled by ``client_order_id``.
+    每个订单均与其提交命令在同一 SQLite 事务内写入。已认领、且可能已经跨越
+    进程边界的命令，在崩溃或超时后绝不自动重试：它会变为 ``UNKNOWN``，必须
+    按 ``client_order_id`` 对账。
     """
 
     def __init__(self, path: str | PathLike[str]) -> None:
@@ -229,7 +228,7 @@ class SQLiteOrderManagementStore:
         command_id: str | None = None,
         event_id: str | None = None,
     ) -> OrderSnapshot:
-        """Atomically persist a new order and its still-unsent submit command."""
+        """原子化持久化新订单及其尚未发送的提交命令。"""
 
         _validate_order_time(order)
         resolved_command_id = _identifier(
@@ -328,7 +327,7 @@ class SQLiteOrderManagementStore:
         command_id: str | None = None,
         event_id: str | None = None,
     ) -> TradingCommand:
-        """Atomically move an open order to cancel-pending and enqueue once."""
+        """原子化地将开放订单转为待撤销，并只入队一次。"""
 
         client_order_id = _identifier(client_order_id, "client_order_id")
         occurred_at = _utc(occurred_at, "occurred_at")
@@ -416,7 +415,7 @@ class SQLiteOrderManagementStore:
         account_id: str | None = None,
         symbols: Iterable[str] | None = None,
     ) -> tuple[TradingCommand, ...]:
-        """Lease unsent commands, optionally restricted to one account."""
+        """租赁未发送命令，可选限制在一个账户内。"""
 
         now = _utc(now, "now")
         normalized_account = (
@@ -491,7 +490,7 @@ class SQLiteOrderManagementStore:
         now: datetime,
         lease_for: timedelta = timedelta(seconds=30),
     ) -> TradingCommand:
-        """Lease one exact command without claiming unrelated account work."""
+        """租赁一条精确命令，不认领无关账户的工作。"""
 
         command_id = _identifier(command_id, "command_id")
         now = _utc(now, "now")
@@ -528,7 +527,7 @@ class SQLiteOrderManagementStore:
     def mark_command_sent(
         self, command_id: str, *, occurred_at: datetime
     ) -> TradingCommand:
-        """Record that the adapter call returned without an ambiguous failure."""
+        """记录适配器调用返回，且未发生不明确的失败。"""
 
         return self._set_command_status(
             command_id,
@@ -545,7 +544,7 @@ class SQLiteOrderManagementStore:
         occurred_at: datetime,
         error_code: str = "ambiguous_delivery",
     ) -> TradingCommand:
-        """Quarantine an ambiguous send until REST reconciliation resolves it."""
+        """隔离一次不明确的发送，直至 REST 对账将其解决。"""
 
         command_id = _identifier(command_id, "command_id")
         occurred_at = _utc(occurred_at, "occurred_at")
@@ -573,7 +572,7 @@ class SQLiteOrderManagementStore:
         account_id: str | None = None,
         symbols: Iterable[str] | None = None,
     ) -> tuple[TradingCommand, ...]:
-        """Quarantine abandoned sends, optionally restricted to one account."""
+        """隔离被遗弃的发送，可选限制在一个账户内。"""
 
         now = _utc(now, "now")
         normalized_account = (
@@ -614,7 +613,7 @@ class SQLiteOrderManagementStore:
         reason: str | None = None,
         event_type: str = ORDER_STATUS_EVENT,
     ) -> OrderSnapshot:
-        """Append an idempotent status event and update its materialized order."""
+        """追加幂等状态事件，并更新其物化订单。"""
 
         client_order_id = _identifier(client_order_id, "client_order_id")
         event_id = _identifier(event_id, "event_id")
@@ -721,7 +720,7 @@ class SQLiteOrderManagementStore:
         reason: str | None = None,
         event_id: str | None = None,
     ) -> OrderSnapshot:
-        """Apply an authoritative REST snapshot and resolve unknown commands."""
+        """应用权威 REST 快照，并解决未知命令。"""
 
         resolved_event_id = event_id or f"reconcile:{client_order_id}:{uuid4()}"
         snapshot = self.record_order_update(
@@ -751,7 +750,7 @@ class SQLiteOrderManagementStore:
         return snapshot
 
     def record_fill(self, fill: ExecutionFill, *, event_id: str | None = None) -> ExecutionFill:
-        """Insert a fill once and atomically update order and net position."""
+        """仅插入一次成交记录，并原子化更新订单与净持仓。"""
 
         resolved_event_id = _identifier(event_id or f"fill:{fill.fill_id}", "event_id")
         with self._transaction() as connection:
@@ -856,7 +855,7 @@ class SQLiteOrderManagementStore:
         return fill
 
     def record_broker_event(self, event: BrokerEvent) -> OrderSnapshot | ExecutionFill:
-        """Persist the existing broker port's status and paper-fill payloads."""
+        """持久化既有券商端口的状态和 PAPER 成交载荷。"""
 
         if event.event_type == ORDER_STATUS_EVENT:
             payload = event.payload
@@ -910,7 +909,7 @@ class SQLiteOrderManagementStore:
         occurred_at: datetime,
         full_snapshot: bool = True,
     ) -> tuple[AssetBalance, ...]:
-        """Record an idempotent full or partial authoritative balance snapshot."""
+        """记录幂等的完整或部分权威余额快照。"""
 
         account_id = _identifier(account_id, "account_id")
         event_id = _identifier(event_id, "event_id")

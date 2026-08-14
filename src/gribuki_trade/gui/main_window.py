@@ -1,7 +1,6 @@
-"""The PAPER-only desktop workstation shell.
+"""仅供 PAPER 使用的桌面工作台外壳。
 
-The widgets deliberately use local demonstration data.  No broker adapter is
-imported here and no control can submit a real order.
+这些组件刻意使用本地演示数据。此处不导入券商适配器，任何控件也不能提交真实订单。
 """
 
 from __future__ import annotations
@@ -39,6 +38,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from .integrations import IntegrationDependencies, IntegrationsPanel
 
 _STYLE = """
 QMainWindow, QWidget {
@@ -151,7 +152,7 @@ QScrollBar::handle:vertical { background: #2c405b; border-radius: 5px; min-heigh
 
 
 class MetricCard(QFrame):
-    """Compact overview metric."""
+    """紧凑的概览指标。"""
 
     def __init__(self, title: str, value: str, detail: str, tone: str = "neutral") -> None:
         super().__init__()
@@ -173,11 +174,16 @@ class MetricCard(QFrame):
 
 
 class TradingMainWindow(QMainWindow):
-    """PAPER-only main window used by the desktop prototype."""
+    """供桌面原型使用的仅 PAPER 主窗口。"""
 
     message_requested = Signal(str)
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        integration_dependencies: IntegrationDependencies | None = None,
+        integration_auto_refresh: bool = True,
+    ) -> None:
         super().__init__()
         self.setObjectName("tradingMainWindow")
         self.setWindowTitle("Gribuki Trade · PAPER 工作台")
@@ -205,6 +211,14 @@ class TradingMainWindow(QMainWindow):
         self._tabs.addTab(self._build_backtest_tab(), "回测报告")
         self._tabs.addTab(self._build_orders_tab(), "订单 / 成交")
         self._tabs.addTab(self._build_risk_tab(), "风控 / 日志")
+        self._integrations_panel = IntegrationsPanel(
+            integration_dependencies,
+            auto_refresh=integration_auto_refresh,
+        )
+        self._integrations_panel.napcat_summary_changed.connect(
+            self._napcat_research_status.setText
+        )
+        self._tabs.addTab(self._integrations_panel, "集成管理")
 
         status = QStatusBar()
         status.showMessage("PAPER 环境 · 本地演示数据 · 未连接任何券商")
@@ -219,7 +233,7 @@ class TradingMainWindow(QMainWindow):
 
     @property
     def workspace_tabs(self) -> QTabWidget:
-        """Expose the workspace tabs for UI tests and automation."""
+        """为 UI 测试与自动化暴露工作区标签页。"""
 
         return self._tabs
 
@@ -472,10 +486,10 @@ class TradingMainWindow(QMainWindow):
 
         notification = QGroupBox("NapCatQQ 通知")
         notification_layout = QHBoxLayout(notification)
-        napcat_status = QLabel("未配置 · 未连接 OneBot · 未发送任何消息")
-        napcat_status.setObjectName("napcatStatus")
-        napcat_status.setStyleSheet("color:#e8b967")
-        notification_layout.addWidget(napcat_status)
+        self._napcat_research_status = QLabel("等待集成管理页后台检查…")
+        self._napcat_research_status.setObjectName("napcatStatus")
+        self._napcat_research_status.setStyleSheet("color:#e8b967")
+        notification_layout.addWidget(self._napcat_research_status)
         notification_layout.addStretch()
         layout.addWidget(notification)
         layout.addStretch()
@@ -676,11 +690,12 @@ class TradingMainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         self._clock_timer.stop()
+        self._integrations_panel.shutdown()
         super().closeEvent(event)
 
 
 def preview() -> int:
-    """Run this module directly while developing the UI."""
+    """开发 UI 时直接运行此模块。"""
 
     app = QApplication.instance() or QApplication([])
     window = TradingMainWindow()

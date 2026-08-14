@@ -1,4 +1,4 @@
-"""Content-addressed, append-only raw response archive."""
+"""按内容寻址的仅追加原始响应归档。"""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from gribuki_trade.domain.events import RawDocument
 
 
 class BodyNotRetainedError(FileNotFoundError):
-    """The metadata exists but source policy disabled body retention."""
+    """元数据存在，但来源策略禁用了正文保留。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +44,7 @@ def _atomic_write(path: Path, content: bytes) -> None:
 
 
 class FileRawDocumentStore:
-    """Store bodies by content hash and one immutable metadata record per URL revision."""
+    """按内容哈希存储正文，并为每个 URL 修订保存一条不可变元数据记录。"""
 
     def __init__(self, root: Path) -> None:
         self._root = root.resolve()

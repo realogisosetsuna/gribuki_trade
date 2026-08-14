@@ -1,4 +1,4 @@
-"""Convert official SAFE and Shibor observations into bounded evidence."""
+"""将外汇管理局与 Shibor 官方观测转换为有界证据。"""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def build_official_rates_evidence(
     *,
     as_of: datetime,
 ) -> OfficialRatesEvidenceBundle:
-    """Build official numerical evidence without changing source units."""
+    """在不改变来源单位的情况下构建官方数值证据。"""
 
     _require_aware(as_of)
     items: list[EvidenceItem] = []

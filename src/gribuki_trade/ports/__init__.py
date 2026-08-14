@@ -1,4 +1,4 @@
-"""Stable interfaces implemented by infrastructure adapters."""
+"""由基础设施适配器实现的稳定接口。"""
 
 from .ashare_breadth import (
     AShareBreadthCoverageError,
@@ -126,6 +126,7 @@ from .global_risk import (
     VIXDailyBar,
     VIXDailyHistory,
 )
+from .llm_analyzer import AnalyzerAuditIdentity, AuditableMacroAnalyzer, MacroAnalyzer
 from .news import (
     DiscoveryHit,
     DiscoveryQuery,
@@ -209,6 +210,8 @@ __all__ = [
     "AsyncSafeCentralParityData",
     "AsyncShiborData",
     "AsyncVIXDailyData",
+    "AnalyzerAuditIdentity",
+    "AuditableMacroAnalyzer",
     "BrokerAdapter",
     "BrokerEvent",
     "AsyncCrossMarketData",
@@ -260,6 +263,7 @@ __all__ = [
     "InterestRateUnit",
     "LiquidityContextData",
     "LiquidityContextSnapshot",
+    "MacroAnalyzer",
     "NotificationDeliveryError",
     "NotificationTargetKind",
     "Notifier",

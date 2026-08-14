@@ -1,6 +1,8 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+/.tmp*/
+/tmp/
 .mypy_cache/
 .reference/
 .ruff_cache/

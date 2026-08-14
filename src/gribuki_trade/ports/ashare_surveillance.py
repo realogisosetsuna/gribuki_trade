@@ -1,8 +1,7 @@
-"""Point-in-time contracts for current-session A-share surveillance.
+"""当前 A 股交易时段监控的时点契约。
 
-The surveillance port intentionally differs from the post-close screener.  It
-describes one *incomplete current-session* public snapshot and never labels the
-records as closed bars, exchange ticks, or executable quotes.
+监控端口刻意区别于盘后筛选器。它描述的是一个“当前交易时段尚未完成”的公开快照，
+绝不会将其中记录标为闭合 K 线、交易所逐笔数据或可执行报价。
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ class SurveillanceSourceQuality(StrEnum):
 
 
 class AShareSurveillanceDataError(RuntimeError):
-    """Stable provider boundary for a whole-market intraday snapshot."""
+    """全市场盘中快照的稳定提供方边界。"""
 
     def __init__(self, code: str) -> None:
         normalized = code.strip()
@@ -35,7 +34,7 @@ class AShareSurveillanceDataError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class AShareIntradayUniverseRecord:
-    """One research-grade quote row with explicit nullable fields."""
+    """一条具有显式可空字段的研究级行情记录。"""
 
     symbol: str
     name: str
@@ -74,7 +73,7 @@ class AShareIntradayUniverseRecord:
 
 @dataclass(frozen=True, slots=True)
 class AShareIntradayUniverseSnapshot:
-    """A complete-market observation first visible at ``available_at``."""
+    """首次在 ``available_at`` 可见的全市场观测。"""
 
     session_date: date
     available_at: datetime

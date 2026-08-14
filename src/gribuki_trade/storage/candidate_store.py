@@ -1,4 +1,4 @@
-"""Append-only SQLite storage for the point-in-time candidate universe."""
+"""面向时点一致候选池的仅追加 SQLite 存储。"""
 
 from __future__ import annotations
 
@@ -29,18 +29,17 @@ _OBSERVED_EVENT = "observed"
 
 
 class CandidateEventCollisionError(ValueError):
-    """An immutable event identity was reused with different content."""
+    """同一不可变事件标识被复用于不同内容。"""
 
 
 class CandidateNotFoundError(LookupError):
-    """A lifecycle event targeted a symbol with no visible discovery."""
+    """生命周期事件指向了没有可见发现记录的标的。"""
 
 
 class SQLiteCandidateStore:
-    """SQLite WAL event store with deterministic point-in-time projections.
+    """具有确定性时点投影的 SQLite WAL 事件存储。
 
-    The append log is authoritative. Candidate rows are reconstructed at the
-    requested decision time and are not connected to an OMS or broker adapter.
+    仅追加日志是权威来源。候选行在请求的决策时点重建，且不连接 OMS 或券商适配器。
     """
 
     def __init__(self, path: str | PathLike[str]) -> None:
@@ -88,7 +87,7 @@ class SQLiteCandidateStore:
             )
 
     def append_observation(self, item: CandidateObservation) -> bool:
-        """Append a discovery; exact source-run replays return ``False``."""
+        """追加一条发现记录；精确来源运行重放返回 ``False``。"""
 
         payload = _json_bytes(_observation_document(item))
         return self._append(
@@ -101,7 +100,7 @@ class SQLiteCandidateStore:
         )
 
     def append_control(self, item: CandidateControlEvent) -> bool:
-        """Append an explicit lifecycle control after verifying its parent."""
+        """验证其父记录后，追加显式生命周期控制。"""
 
         payload = _json_bytes(_control_document(item))
         digest = hashlib.sha256(payload).hexdigest()
@@ -155,7 +154,7 @@ class SQLiteCandidateStore:
         *,
         as_of: datetime,
     ) -> CandidateRecord | None:
-        """Return the state visible at ``as_of`` without look-ahead."""
+        """返回在 ``as_of`` 可见、没有前视的状态。"""
 
         canonical = canonical_ashare_symbol(symbol)
         cutoff = _utc(as_of, "as_of").isoformat()
@@ -178,7 +177,7 @@ class SQLiteCandidateStore:
         statuses: frozenset[CandidateStatus] | None = None,
         limit: int = 500,
     ) -> tuple[CandidateRecord, ...]:
-        """Project and rank all candidates visible at ``as_of``."""
+        """投影并排序在 ``as_of`` 可见的全部候选。"""
 
         if limit < 1:
             raise ValueError("limit must be positive")
@@ -218,7 +217,7 @@ class SQLiteCandidateStore:
         as_of: datetime | None = None,
         limit: int = 1_000,
     ) -> tuple[CandidateAuditRecord, ...]:
-        """Return immutable audit metadata in append order."""
+        """按追加顺序返回不可变审计元数据。"""
 
         if limit < 1:
             raise ValueError("limit must be positive")

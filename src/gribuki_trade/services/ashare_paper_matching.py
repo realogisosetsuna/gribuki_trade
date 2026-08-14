@@ -1,11 +1,10 @@
-"""Conservative deterministic daily-bar matcher for A-share PAPER orders.
+"""用于 A 股 PAPER 订单的保守确定性日线匹配器。
 
-The matcher models neither an order-book queue nor broker acceptance latency.
-It consumes only explicit, unadjusted OHLC/volume/price-band inputs and sends
-deterministic fills through :class:`ASharePaperTradingService`.
+匹配器既不模拟订单簿队列，也不模拟券商受理延迟。它只使用显式、未复权的
+OHLC/成交量/价格区间输入，并通过 :class:`ASharePaperTradingService` 提交确定性成交。
 
-Order state is process-local in this class.  The durable wrapper in
-``ashare_paper_recovery`` restores snapshots and bar-run sagas around it.
+本类中的订单状态只在进程内存在；``ashare_paper_recovery`` 中的持久化封装负责恢复
+其外围快照与行情柱运行 Saga。
 """
 
 from __future__ import annotations
@@ -45,23 +44,23 @@ from gribuki_trade.services.ashare_paper import (
 
 
 class PaperMatchingError(RuntimeError):
-    """Base class for deterministic paper matching failures."""
+    """确定性模拟匹配失败的基类。"""
 
 
 class PaperOrderConflictError(PaperMatchingError):
-    """A client order identifier was reused with different contents."""
+    """同一客户端订单标识被用于不同内容。"""
 
 
 class PaperBarConflictError(PaperMatchingError):
-    """The same symbol/session was replayed with a different bar revision."""
+    """同一标的/交易日被使用不同版本的行情柱重放。"""
 
 
 class PaperMatchingSequenceError(PaperMatchingError):
-    """A bar or command timestamp would move state backwards."""
+    """行情柱或命令时间戳会导致状态时间倒退。"""
 
 
 class ASharePaperOrderMatcher:
-    """Process-local FIFO paper order book backed by the durable fill ledger."""
+    """由持久化成交账本支撑的进程内先进先出模拟订单簿。"""
 
     def __init__(
         self,
@@ -79,10 +78,9 @@ class ASharePaperOrderMatcher:
         return self._config
 
     def submit_order(self, intent: ASharePaperOrderIntent) -> PaperOrderSnapshot:
-        """Validate and reserve a conservative cash/share budget.
+        """校验并预留保守的现金/股份预算。
 
-        Exact repeated submission is idempotent.  Business rejections are
-        retained as terminal order snapshots rather than raised as exceptions.
+        完全相同的重复提交具有幂等性。业务拒绝会保留为终态订单快照，而非抛出异常。
         """
 
         client_order_id = intent.order.client_order_id
@@ -205,12 +203,10 @@ class ASharePaperOrderMatcher:
         )
 
     def restore_order_snapshot(self, snapshot: PaperOrderSnapshot) -> None:
-        """Restore an audited snapshot without re-running reservation checks.
+        """恢复经审计的快照且不重新运行预留检查。
 
-        This is intentionally narrower than order submission and exists only
-        for crash recovery from the append-only paper-order event store.  A
-        conflicting snapshot fails closed; callers should construct a fresh
-        matcher when rebuilding a complete durable projection.
+        此操作刻意比订单提交更受限，只用于从仅追加模拟订单事件存储中进行崩溃恢复。
+        快照冲突时按失败关闭处理；重建完整持久化投影时，调用方应创建新的匹配器。
         """
 
         client_order_id = snapshot.intent.order.client_order_id
@@ -227,7 +223,7 @@ class ASharePaperOrderMatcher:
         *,
         cancelled_at: datetime,
     ) -> PaperOrderSnapshot:
-        """Cancel an open order and release its process-local reservation."""
+        """取消未完成订单并释放其进程内预留。"""
 
         order = self._required_order(client_order_id)
         if not order.is_open:
@@ -250,7 +246,7 @@ class ASharePaperOrderMatcher:
         *,
         expired_at: datetime,
     ) -> PaperOrderSnapshot:
-        """Explicitly expire an open order and release reservations."""
+        """显式令未完成订单过期并释放预留。"""
 
         order = self._required_order(client_order_id)
         if not order.is_open:
@@ -266,7 +262,7 @@ class ASharePaperOrderMatcher:
         return updated
 
     def process_bar(self, bar: SimulatedDailyBar) -> PaperBarMatchRun:
-        """Apply one daily bar at most once, FIFO across eligible orders."""
+        """一根日线柱最多应用一次，并按先进先出顺序处理合格订单。"""
 
         key = (bar.symbol, bar.trade_date)
         previous_run = self._runs.get(key)

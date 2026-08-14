@@ -1,9 +1,8 @@
-"""Research-grade news leads exposed through AKShare.
+"""通过 AKShare 获取、供研究使用的新闻线索。
 
-AKShare wraps several public finance-news pages but does not provide a stable
-news-service SLA. This adapter therefore treats every row as a lead: it
-records point-in-time observation and provenance, validates the schema, and
-never turns provider text into instructions or follows linked articles.
+AKShare 封装了若干公开财经新闻页面，但不提供稳定的新闻服务等级承诺。
+因此本适配器将每条记录都视为线索：记录时点观测与来源，校验数据结构，
+绝不把提供方文本当作指令，也不跟随文章链接。
 """
 
 from __future__ import annotations
@@ -33,11 +32,11 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 class AKShareNewsError(RuntimeError):
-    """A provider call or provider payload failed validation."""
+    """提供方调用或其载荷未通过校验。"""
 
 
 class AKShareNewsTimeoutError(AKShareNewsError):
-    """The caller-visible timeout elapsed."""
+    """调用方可见的超时时间已耗尽。"""
 
 
 class AKShareNewsFeed(StrEnum):
@@ -89,7 +88,7 @@ class AKShareNewsConfig:
 
 
 class AKShareNewsSource:
-    """Collect one AKShare news table without blocking an asyncio scheduler."""
+    """采集一张 AKShare 新闻表，且不阻塞 asyncio 调度器。"""
 
     def __init__(
         self,
@@ -213,8 +212,8 @@ class AKShareNewsSource:
             fields.published_at,
             default_timezone=SHANGHAI,
         )
-        # A future publisher timestamp is not evidence available now. Keep the
-        # row but make the conservative availability the first-seen time.
+        # 发布方给出的未来时间戳不是当前可用证据；保留该记录，但将首次
+        # 观测时间作为保守的可用时间。
         if published is not None and published > document.first_seen_at:
             published = None
         try:

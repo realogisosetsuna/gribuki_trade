@@ -1,9 +1,8 @@
-"""A deterministic, registration-free broker for local paper trading.
+"""面向本地 PAPER 交易的确定性、免注册券商适配器。
 
-The adapter deliberately models only the broker-facing part of an order's
-lifecycle.  It accepts valid limit-order intents, keeps their latest state in
-memory, and publishes immutable status updates through the same asynchronous
-event port that a live broker adapter will use later.
+该适配器刻意只建模订单生命周期中面向券商的一侧：它接收合法限价单意图，
+在内存中维护最新状态，并通过未来真实券商也会复用的异步事件端口发布
+不可变状态更新。
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ ORDER_FILL_EVENT = "ORDER_FILL"
 
 @dataclass(frozen=True, slots=True)
 class PaperOrderUpdate:
-    """The latest paper-broker state for an immutable order intent."""
+    """不可变订单意图在模拟经纪商中的最新状态。"""
 
     order: OrderIntent
     status: OrderStatus
@@ -35,7 +34,7 @@ class PaperOrderUpdate:
 
 @dataclass(frozen=True, slots=True)
 class PaperFill:
-    """One immutable simulated execution, deduplicated by ``fill_id``."""
+    """一笔不可变的模拟成交，按 ``fill_id`` 去重。"""
 
     fill_id: str
     client_order_id: str
@@ -47,15 +46,14 @@ class PaperFill:
 
 
 class PaperBroker:
-    """Minimal asynchronous paper broker with idempotent submissions.
+    """支持幂等提交的最小异步模拟经纪商。
 
-    An order identifier is reserved on its first submission, including when
-    that submission is rejected because the broker is disconnected.  A retry
-    therefore needs a new ``client_order_id``, just as it would after an
-    uncertain live-broker outcome.
+    订单标识符会在首次提交时被占用，即使该提交因经纪商断开连接而遭拒也是
+    如此。因此重试必须使用新的 ``client_order_id``，这与真实经纪商结果不明
+    时的处理方式一致。
 
-    ``events`` is a single-consumer stream.  A production event dispatcher can
-    fan it out to the OMS, persistence layer, and GUI.
+    ``events`` 是单消费者流。生产事件分发器可将其分发给订单管理系统、
+    持久化层和图形界面。
     """
 
     def __init__(self) -> None:
@@ -67,38 +65,37 @@ class PaperBroker:
 
     @property
     def connected(self) -> bool:
-        """Whether the paper session currently accepts broker operations."""
+        """模拟会话当前是否接受经纪商操作。"""
 
         return self._connected
 
     def order_update(self, client_order_id: str) -> PaperOrderUpdate | None:
-        """Return the latest immutable update for tests and reconciliation."""
+        """返回用于测试和对账的最新不可变更新。"""
 
         return self._orders.get(client_order_id)
 
     def fills(self) -> tuple[PaperFill, ...]:
-        """Return all simulated fills in insertion order for reconciliation."""
+        """按插入顺序返回所有模拟成交，供对账使用。"""
 
         return tuple(self._fills.values())
 
     async def connect(self) -> None:
-        """Open the local paper session; repeated calls are harmless."""
+        """打开本地模拟会话；重复调用无害。"""
 
         async with self._lock:
             self._connected = True
 
     async def disconnect(self) -> None:
-        """Close the local paper session without discarding its order book."""
+        """关闭本地模拟会话，但不丢弃其订单簿。"""
 
         async with self._lock:
             self._connected = False
 
     async def submit_order(self, order: OrderIntent) -> None:
-        """Accept a new limit order or publish a disconnected rejection.
+        """接受新的限价单，或发布断线拒绝事件。
 
-        Repeating the exact same intent is a no-op.  Reusing an identifier for
-        different order contents raises ``ValueError`` because silently
-        accepting that conflict would break idempotency guarantees.
+        重复提交完全相同的意图不会产生操作。若把同一标识符用于不同的订单
+        内容，则抛出 ``ValueError``；静默接受该冲突会破坏幂等性保证。
         """
 
         async with self._lock:
@@ -124,7 +121,7 @@ class PaperBroker:
             self._publish(update)
 
     async def cancel_order(self, client_order_id: str) -> None:
-        """Cancel an accepted order immediately in the paper order book."""
+        """立即在模拟订单簿中取消已接受的订单。"""
 
         async with self._lock:
             existing = self._orders.get(client_order_id)
@@ -158,11 +155,10 @@ class PaperBroker:
         fill_id: str | None = None,
         occurred_at: datetime | None = None,
     ) -> PaperFill:
-        """Apply one deterministic simulated fill and update the order state.
+        """应用一笔确定性模拟成交并更新订单状态。
 
-        Replaying the same ``fill_id`` is idempotent.  Overfills and fills for
-        terminal orders are rejected so test and shadow runs exercise the same
-        accounting invariants expected from a live execution adapter.
+        重放相同的 ``fill_id`` 具有幂等性。系统会拒绝超额成交以及终态订单的
+        成交，使测试和影子运行遵循与真实执行适配器相同的账务不变量。
         """
 
         normalized_quantity = Decimal(str(quantity))
@@ -233,7 +229,7 @@ class PaperBroker:
         bid: Decimal | str,
         ask: Decimal | str,
     ) -> tuple[PaperFill, ...]:
-        """Fill marketable open limit orders against one synthetic top quote."""
+        """依据一档合成报价成交可执行的未结限价单。"""
 
         normalized_bid = Decimal(str(bid))
         normalized_ask = Decimal(str(ask))
@@ -265,7 +261,7 @@ class PaperBroker:
         return tuple(fills)
 
     async def events(self) -> AsyncIterator[BrokerEvent]:
-        """Yield broker events in the exact order in which they were emitted."""
+        """严格按发出顺序产生经纪商事件。"""
 
         while True:
             yield await self._events.get()

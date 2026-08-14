@@ -24,7 +24,7 @@ from gribuki_trade.adapters.binance import (
 
 
 def book_payload(update_id: int = 400900217) -> dict[str, object]:
-    # Binance bookTicker intentionally has no event-type field on the wire.
+    # Binance 的 bookTicker 在线路协议中有意不包含事件类型字段。
     return {
         "u": update_id,
         "s": "BTCUSDT",

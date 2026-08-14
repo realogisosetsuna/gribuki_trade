@@ -1,4 +1,4 @@
-"""Combine deterministic signals and optional macro analysis conservatively."""
+"""以保守方式融合确定性信号与可选宏观分析。"""
 
 from __future__ import annotations
 
@@ -21,13 +21,11 @@ from gribuki_trade.features.technical import TechnicalSignal
 
 @dataclass(frozen=True, slots=True)
 class RecommendationGateConfig:
-    """Conservative, auditable technical/macro score fusion parameters.
+    """保守且可审计的技术面/宏观评分融合参数。
 
-    The weights are deliberately constrained to sum to one.  A macro score is
-    only admitted when it is backed by retained evidence and the macro model
-    did not abstain.  ``WATCH`` macro analyses receive a smaller effective
-    weight because they explicitly communicate lower directional conviction.
-    None of these scores are calibrated probabilities.
+    各权重被有意约束为总和等于一。只有宏观评分受到已保留证据支持，且宏观模型未选择
+    弃权时，才会纳入融合。``WATCH`` 宏观分析明确表达较低的方向确信度，因此采用较小
+    的有效权重。这里的所有评分都不是经过校准的概率。
     """
 
     technical_weight: Decimal = Decimal("0.75")
@@ -80,7 +78,7 @@ def build_recommendation(
     macro: MacroAnalysis | None = None,
     config: RecommendationGateConfig | None = None,
 ) -> ResearchRecommendation:
-    """Apply the publication gate without turning a recommendation into an order."""
+    """应用发布门禁，但不把研究建议转化为订单。"""
 
     resolved = config or RecommendationGateConfig()
     decision = technical.decision
@@ -170,9 +168,8 @@ def build_recommendation(
                 decision is not RecommendationDecision.ENTER_CANDIDATE
                 and combined_score >= resolved.entry_combined_score_threshold
             ):
-                # Macro context may confirm or strengthen a technical setup,
-                # but can never manufacture an entry that the deterministic
-                # technical policy did not independently admit.
+                # 宏观背景可以确认或强化技术形态，但绝不能凭空制造一个
+                # 未经确定性技术策略独立放行的入场机会。
                 fusion_reasons.append("TECHNICAL_ENTRY_GATE_NOT_MET")
 
     ttl = (
@@ -232,7 +229,7 @@ def _macro_evidence_coverage(
     macro: MacroAnalysis,
     evidence: tuple[EvidenceReference, ...],
 ) -> tuple[Decimal, bool, bool]:
-    """Return retained-evidence coverage and reference integrity flags."""
+    """返回已保留证据覆盖率及引用完整性标志。"""
 
     referenced = {
         evidence_id

@@ -1,4 +1,4 @@
-"""HTTP boundary and production ``httpx`` transport for the Schwab adapter."""
+"""Schwab 适配器的 HTTP 边界与生产级 ``httpx`` 传输实现。"""
 
 from __future__ import annotations
 
@@ -13,10 +13,10 @@ from .errors import SchwabTransportError
 
 @dataclass(frozen=True, slots=True)
 class HttpRequest:
-    """A transport-neutral HTTP request.
+    """与具体传输实现无关的 HTTP 请求。
 
-    Headers and bodies are excluded from ``repr`` because both can contain
-    bearer tokens, OAuth codes, account data, or order details.
+    请求头和正文均不进入 ``repr``，因为其中可能含有不记名令牌、OAuth
+    授权码、账户数据或订单详情。
     """
 
     method: str
@@ -36,7 +36,7 @@ class HttpRequest:
 
 @dataclass(frozen=True, slots=True)
 class HttpResponse:
-    """The minimum response surface required from an injected transport."""
+    """注入式传输实现必须提供的最小响应接口。"""
 
     status_code: int
     headers: dict[str, str] = field(default_factory=dict)
@@ -56,17 +56,16 @@ class HttpResponse:
 
 
 class AsyncHttpTransport(Protocol):
-    """Injectable asynchronous HTTP transport."""
+    """可注入的异步 HTTP 传输协议。"""
 
     async def send(self, request: HttpRequest) -> HttpResponse: ...
 
 
 class HttpxAsyncHttpTransport:
-    """Reusable production transport with sanitized network failures.
+    """可复用且会净化网络异常的生产传输实现。
 
-    An ``httpx.AsyncClient`` may be injected for deterministic tests or shared
-    connection pooling. Redirects remain disabled because silently following
-    an OAuth or order redirect can cross an authentication boundary.
+    可以注入 ``httpx.AsyncClient``，用于确定性测试或共享连接池。重定向保持
+    禁用，因为静默跟随 OAuth 或订单重定向可能跨越身份验证边界。
     """
 
     def __init__(self, client: httpx.AsyncClient | None = None) -> None:
@@ -87,8 +86,8 @@ class HttpxAsyncHttpTransport:
                 follow_redirects=False,
             )
         except (httpx.HTTPError, OSError):
-            # httpx errors may include a URL or request object. Never retain
-            # them as exception context around an authenticated request.
+            # httpx 异常可能包含 URL 或请求对象；处理已认证请求时，绝不能
+            # 把它们保留为异常上下文。
             raise SchwabTransportError("Schwab HTTP request failed") from None
         return HttpResponse(
             status_code=response.status_code,

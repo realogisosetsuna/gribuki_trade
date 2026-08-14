@@ -1,8 +1,7 @@
-"""Unified candidate-universe orchestration for research workflows.
+"""研究工作流的统一候选标的全集编排。
 
-This service accepts discoveries from manual selection and scanners, applies
-explicit TTL policy, and exposes a tracked symbol set.  It has deliberately no
-dependency on orders, accounts, brokers, or execution services.
+本服务接收手工选择与扫描器发现，应用明确的 TTL 策略，并公开受跟踪的标的集合。
+它刻意不依赖订单、账户、券商或执行服务。
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ if TYPE_CHECKING:
 
 
 class CandidateRepository(Protocol):
-    """Storage boundary needed by the candidate-universe service."""
+    """候选标的全集服务所需的存储边界。"""
 
     def append_observation(self, item: CandidateObservation) -> bool: ...
 
@@ -52,12 +51,12 @@ class CandidateRepository(Protocol):
 
 
 class CandidateLifecycleError(RuntimeError):
-    """The requested lifecycle transition is not meaningful at that time."""
+    """请求的生命周期转换在该时点没有意义。"""
 
 
 @dataclass(frozen=True, slots=True)
 class CandidateDiscovery:
-    """Unpersisted discovery submitted by one scanner or human workflow."""
+    """由单个扫描器或人工工作流提交、尚未持久化的发现。"""
 
     symbol: str
     source: CandidateSource
@@ -72,7 +71,7 @@ class CandidateDiscovery:
 
 @dataclass(frozen=True, slots=True)
 class CandidateMutation:
-    """Result of an idempotent mutation and the resulting point-in-time state."""
+    """幂等变更的结果及由此产生的时点状态。"""
 
     candidate: CandidateRecord
     appended: bool
@@ -80,7 +79,7 @@ class CandidateMutation:
 
 @dataclass(frozen=True, slots=True)
 class CandidateUniversePolicy:
-    """Initial, explicit TTL and priority policy for every discovery source."""
+    """每种发现来源的初始显式 TTL 与优先级策略。"""
 
     close_screen_ttl: timedelta = timedelta(days=4)
     intraday_anomaly_ttl: timedelta = timedelta(hours=8)
@@ -124,7 +123,7 @@ class CandidateUniversePolicy:
 
 
 class CandidateUniverseService:
-    """Merge candidate discoveries while preserving immutable provenance."""
+    """合并候选发现，同时保留不可变来源信息。"""
 
     def __init__(
         self,
@@ -142,7 +141,7 @@ class CandidateUniverseService:
         return self._policy
 
     def upsert(self, discovery: CandidateDiscovery) -> CandidateMutation:
-        """Idempotently add one source-run discovery to the merged universe."""
+        """将一次来源运行的发现幂等加入合并标的全集。"""
 
         observed_at = discovery.observed_at or self._now()
         ttl = self._policy.ttl_for(discovery.source)
@@ -173,7 +172,7 @@ class CandidateUniverseService:
         self,
         discoveries: Sequence[CandidateDiscovery],
     ) -> tuple[CandidateMutation, ...]:
-        """Upsert a bounded caller-owned batch in deterministic input order."""
+        """按确定性输入顺序更新或插入调用方拥有的有界批次。"""
 
         return tuple(self.upsert(item) for item in discoveries)
 
@@ -183,7 +182,7 @@ class CandidateUniverseService:
         *,
         expires_at: datetime | None = None,
     ) -> tuple[CandidateMutation, ...]:
-        """Promote one deterministic screen's Top-N into research candidates."""
+        """将一次确定性筛选的前 N 名提升为研究候选标的。"""
 
         run_id = _screening_run_id(run)
         discoveries: list[CandidateDiscovery] = []
@@ -220,7 +219,7 @@ class CandidateUniverseService:
         *,
         expires_at: datetime | None = None,
     ) -> tuple[CandidateMutation, ...]:
-        """Promote an intraday anomaly ranking into short-lived candidates."""
+        """将盘中异常排名提升为短期候选标的。"""
 
         run_id = _surveillance_run_id(run)
         discoveries = tuple(
@@ -257,7 +256,7 @@ class CandidateUniverseService:
         until: datetime | None = None,
         operation_id: str | None = None,
     ) -> CandidateMutation:
-        """Temporarily suppress active monitoring without losing provenance."""
+        """暂时抑制主动监控且不丢失来源信息。"""
 
         occurred_at = at or self._now()
         candidate = self._required_candidate(symbol, as_of=occurred_at)
@@ -283,7 +282,7 @@ class CandidateUniverseService:
         at: datetime | None = None,
         operation_id: str | None = None,
     ) -> CandidateMutation:
-        """Explicitly clear removal/cooling; expired provenance stays expired."""
+        """显式清除移除/冷却状态；已过期来源仍保持过期。"""
 
         occurred_at = at or self._now()
         self._required_candidate(symbol, as_of=occurred_at)
@@ -304,7 +303,7 @@ class CandidateUniverseService:
         at: datetime | None = None,
         operation_id: str | None = None,
     ) -> CandidateMutation:
-        """Explicitly tombstone a symbol until a later explicit activation."""
+        """显式为标的设置墓碑，直至后续明确激活。"""
 
         occurred_at = at or self._now()
         self._required_candidate(symbol, as_of=occurred_at)
@@ -332,7 +331,7 @@ class CandidateUniverseService:
         include_cooling: bool = False,
         limit: int = 500,
     ) -> tuple[CandidateRecord, ...]:
-        """Return scheduling inputs; cooling records are opt-in diagnostics."""
+        """返回调度输入；冷却记录只作为可选诊断信息。"""
 
         statuses = {CandidateStatus.ACTIVE}
         if include_cooling:

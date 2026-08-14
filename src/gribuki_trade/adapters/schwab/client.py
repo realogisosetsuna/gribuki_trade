@@ -1,4 +1,4 @@
-"""Async Charles Schwab Market Data and Trader API client skeleton."""
+"""异步 Charles Schwab 行情与交易者 API 客户端骨架。"""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ class SchwabEnvironment(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class SchwabEndpoints:
-    """Endpoint set with an explicit production-network safety interlock."""
+    """带有明确生产网络安全联锁的端点集合。"""
 
     environment: SchwabEnvironment = SchwabEnvironment.LIVE
     market_data_base_url: str = "https://api.schwabapi.com/marketdata/v1"
@@ -81,7 +81,7 @@ class SchwabEndpoints:
 
 @dataclass(frozen=True, slots=True, repr=False)
 class AccountNumberHash:
-    """Raw-to-hash association returned by ``/accounts/accountNumbers``."""
+    """``/accounts/accountNumbers`` 返回的原始账户号到哈希关联。"""
 
     account_number: str
     hash_value: str
@@ -92,20 +92,18 @@ class AccountNumberHash:
 
 @dataclass(frozen=True, slots=True)
 class PlacedOrder:
-    """The identifiers from a successful Schwab order response."""
+    """Schwab 订单成功响应中的标识符。"""
 
     order_id: str | None
     location: str | None = field(repr=False)
 
 
 class SchwabApiClient:
-    """Thin typed façade over Schwab's Market Data and Trader REST APIs.
+    """Schwab 行情与交易者 REST API 的轻量类型化外观。
 
-    The client deliberately has no built-in transport, retries, quota values,
-    account geography assumptions, or permission assumptions.  It performs
-    exactly one special replay: a 401 refreshes the token and retries once.
-    A 429 is surfaced with parsed ``Retry-After`` data, and 5xx responses are
-    never retried here.
+    客户端刻意不内置传输、重试、配额值、账户地域假设或权限假设。它只执行
+    一种特殊重放：遇到 401 时刷新令牌并重试一次。429 会连同解析后的
+    ``Retry-After`` 数据向上抛出；此处绝不重试 5xx 响应。
     """
 
     def __init__(
@@ -117,8 +115,8 @@ class SchwabApiClient:
         clock: Callable[[], datetime] | None = None,
         request_timeout: float | None = 30,
     ) -> None:
-        # The default resolves to LIVE and therefore raises until the caller
-        # constructs SchwabEndpoints.production(allow_live=True) explicitly.
+        # 默认值会解析为生产环境，因此在调用方明确构造
+        # SchwabEndpoints.production(allow_live=True) 前始终抛出异常。
         self.endpoints = endpoints or SchwabEndpoints.production()
         self._oauth = oauth
         self._transport = transport
@@ -216,7 +214,7 @@ class SchwabApiClient:
         )
 
     async def positions(self, account_hash: str) -> object:
-        """Return the account representation including its positions field."""
+        """返回包含持仓字段的账户表示。"""
 
         return await self.account(account_hash, include_positions=True)
 
@@ -285,8 +283,7 @@ class SchwabApiClient:
             f"/accounts/{quote(account_hash, safe='')}/orders/{quote(str(order_id), safe='')}",
         )
 
-    # Explicit get_* aliases make the public surface easy to discover without
-    # choosing one naming convention for callers.
+    # 明确的 get_* 别名让公共接口便于发现，同时不强迫调用方采用单一命名约定。
     get_quotes = quotes
     get_price_history = price_history
     get_option_chain = option_chain
@@ -342,8 +339,8 @@ class SchwabApiClient:
             if response.status_code != 401:
                 return self._validate_response(method, url, response)
             if auth_attempt == 0:
-                # A concrete 401 indicates authorization failed; unlike an
-                # ambiguous timeout/5xx, it is safe to refresh and replay once.
+                # 明确的 401 表示授权失败；与结果不明的超时/5xx 不同，可以安全地刷新
+                # 并重放一次。
                 token = await self._oauth.refresh(expected_access_token=token.access_token)
                 continue
             raise SchwabAuthenticationError(401, method, url)

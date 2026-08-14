@@ -1,4 +1,4 @@
-"""Broker-neutral order domain types."""
+"""与券商无关的订单领域类型。"""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ class OrderStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class OrderIntent:
-    """An immutable request before exchange rules and risk validation."""
+    """应用交易所规则与风险校验前的不可变请求。"""
 
     client_order_id: str
     account_id: str

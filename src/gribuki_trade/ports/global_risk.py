@@ -1,8 +1,7 @@
-"""Provider-neutral, read-only global risk-market data contracts.
+"""与提供方无关、只读的全球风险市场数据契约。
 
-The contracts in this module are deliberately separate from executable market
-data.  They describe point-in-time research observations and a caller-owned
-HTTP cache token; they never authorize an order or persist remote content.
+本模块契约刻意与可执行市场数据分离。它们描述时点研究观测与调用方持有的 HTTP 缓存
+令牌；绝不授权订单，也不持久化远程内容。
 """
 
 from __future__ import annotations
@@ -15,19 +14,19 @@ from typing import Protocol, runtime_checkable
 
 
 class GlobalRiskDataError(RuntimeError):
-    """Base failure raised by an official global-risk data adapter."""
+    """官方全球风险数据适配器抛出的基础失败。"""
 
 
 class GlobalRiskTimeoutError(TimeoutError, GlobalRiskDataError):
-    """The official endpoint did not answer within the configured deadline."""
+    """官方端点未在已配置期限内响应。"""
 
 
 class GlobalRiskTransportError(ConnectionError, GlobalRiskDataError):
-    """The official endpoint could not be reached."""
+    """无法访问官方端点。"""
 
 
 class GlobalRiskHTTPStatusError(GlobalRiskDataError):
-    """The official endpoint returned an unacceptable HTTP status."""
+    """官方端点返回了不可接受的 HTTP 状态。"""
 
     def __init__(self, status_code: int) -> None:
         self.status_code = status_code
@@ -35,24 +34,22 @@ class GlobalRiskHTTPStatusError(GlobalRiskDataError):
 
 
 class GlobalRiskSchemaError(GlobalRiskDataError):
-    """The official payload cannot be parsed without ambiguity."""
+    """无法无歧义地解析官方载荷。"""
 
 
 class GlobalRiskNoDataError(GlobalRiskDataError):
-    """No completed observation was visible at the requested point in time."""
+    """请求时点没有可见的已完成观测。"""
 
 
 class GlobalRiskCacheError(GlobalRiskDataError):
-    """A conditional response could not be resolved from caller-owned cache."""
+    """无法从调用方持有的缓存解析条件响应。"""
 
 
 @dataclass(frozen=True, slots=True)
 class GlobalRiskCacheEntry:
-    """Opaque response bytes plus validators that a scheduler may persist.
+    """不透明响应字节及调度器可持久化的验证信息。
 
-    The adapter only consumes and returns this value.  It does not write a
-    cache itself, which keeps the market-data boundary deterministic and
-    read-only.
+    适配器只消费并返回此值，自身不写入缓存，从而保持市场数据边界的确定性与只读性。
     """
 
     source_url: str
@@ -79,7 +76,7 @@ class GlobalRiskCacheEntry:
 
 @dataclass(frozen=True, slots=True)
 class GlobalRiskSourceMeta:
-    """Provenance, visibility, freshness, and HTTP cache metadata."""
+    """来源、可见性、新鲜度与 HTTP 缓存元数据。"""
 
     source_id: str
     source_url: str
@@ -114,7 +111,7 @@ class GlobalRiskSourceMeta:
 
 @dataclass(frozen=True, slots=True)
 class VIXDailyBar:
-    """One official Cboe VIX daily OHLC row."""
+    """一条 Cboe 官方 VIX 日频 OHLC 记录。"""
 
     session_date: date
     open: Decimal
@@ -142,7 +139,7 @@ class VIXDailyBar:
 
 @dataclass(frozen=True, slots=True)
 class VIXDailyHistory:
-    """Strictly ordered VIX bars visible at one point in time."""
+    """在一个时点可见的严格有序 VIX K 线。"""
 
     as_of: datetime
     bars: tuple[VIXDailyBar, ...]

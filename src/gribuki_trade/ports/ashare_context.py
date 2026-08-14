@@ -1,9 +1,7 @@
-"""Provider-neutral point-in-time context used by A-share research.
+"""A 股研究使用的供应商无关时点上下文。
 
-These contracts keep contextual observations separate from executable market
-data.  A public ETF quote, a fixing rate, a yield curve, or a futures daily row
-may enrich research evidence, but none of them authorizes an order or proves a
-causal relationship.
+这些契约将上下文观测与可执行市场数据分开。公共 ETF 报价、定盘利率、收益率曲线或
+期货日线记录可以丰富研究证据，但都不能授权订单或证明因果关系。
 """
 
 from __future__ import annotations
@@ -21,23 +19,23 @@ from gribuki_trade.ports.market_data import (
 
 
 class AShareContextDataError(MarketDataUnavailableError):
-    """Base failure raised by an A-share contextual-data adapter."""
+    """A 股上下文数据适配器抛出的基础失败。"""
 
 
 class AShareContextTimeoutError(MarketDataTimeoutError, AShareContextDataError):
-    """One independently bounded upstream call exceeded its deadline."""
+    """一次独立有界的上游调用超过截止时间。"""
 
 
 class AShareContextEndpointError(AShareContextDataError):
-    """The installed provider does not expose the audited endpoint."""
+    """已安装供应商未公开经审计的端点。"""
 
 
 class AShareContextPayloadError(AShareContextDataError):
-    """An upstream response cannot be parsed without ambiguity."""
+    """上游响应无法无歧义地解析。"""
 
 
 class AShareContextNoDataError(AShareContextDataError):
-    """The endpoint returned no eligible observation."""
+    """端点未返回合格观测。"""
 
 
 class AShareContextFailureCode(StrEnum):
@@ -50,7 +48,7 @@ class AShareContextFailureCode(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class AShareContextMeta:
-    """Provenance and first-seen timing for one contextual observation."""
+    """一条上下文观测的来源与首次可见时间。"""
 
     source_id: str
     source_url: str
@@ -78,12 +76,11 @@ class AShareContextMeta:
 
 @dataclass(frozen=True, slots=True)
 class ETFContextSnapshot:
-    """One exact ETF row from a public full-market snapshot.
+    """来自公共全市场快照的一条精确 ETF 记录。
 
-    Percent fields preserve the provider's percentage-point unit.  For
-    example, ``discount_rate_percent=-0.05`` means minus 0.05%, not -5%.
-    Vendor-classified order-size flows are observational and are never treated
-    as exchange participant identities.
+    百分比字段保留供应商的百分点单位。例如，``discount_rate_percent=-0.05``
+    表示负 0.05%，而不是负 5%。供应商分类的订单规模流量只用于观测，绝不视为
+    交易所参与者身份。
     """
 
     symbol: str
@@ -131,7 +128,7 @@ class ETFContextSnapshot:
 
 
 class RepoFixingFamily(StrEnum):
-    """Exact ChinaMoney fixing families; neither value means DR007."""
+    """精确的中国货币网定盘品种；两个值都不代表 DR007。"""
 
     FR = "FR"
     FDR = "FDR"
@@ -139,7 +136,7 @@ class RepoFixingFamily(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class RepoFixingObservation:
-    """One daily FR or FDR fixing row, with rates in percent."""
+    """一条 FR 或 FDR 每日定盘记录，利率单位为百分比。"""
 
     family: RepoFixingFamily
     session_date: date
@@ -161,7 +158,7 @@ class RepoFixingObservation:
 
 @dataclass(frozen=True, slots=True)
 class GovernmentBondYieldPoint:
-    """One tenor on the ChinaBond government-bond curve, in percent."""
+    """中债国债收益率曲线上的一个期限，单位为百分比。"""
 
     tenor_years: Decimal
     yield_percent: Decimal
@@ -211,7 +208,7 @@ class AShareContextMissingSource:
 
 @dataclass(frozen=True, slots=True)
 class LiquidityContextSnapshot:
-    """Fail-soft collection of two fixing families and one sovereign curve."""
+    """对两个定盘品种与一条主权曲线执行软失败采集。"""
 
     fetched_at: datetime
     cutoff_date: date
@@ -240,7 +237,7 @@ class LiquidityContextSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class IFContractDailyObservation:
-    """One official CFFEX IF contract daily row; no spot basis is inferred."""
+    """一条中金所 IF 合约官方日线记录；不推断现货基差。"""
 
     symbol: str
     session_date: date
@@ -273,7 +270,7 @@ class IFContractDailyObservation:
 
 @dataclass(frozen=True, slots=True)
 class IFDailyContextSnapshot:
-    """Official IF daily contracts; an aligned CSI 300 spot must be supplied later."""
+    """官方 IF 日合约；后续必须提供已对齐的沪深 300 现货。"""
 
     session_date: date
     fetched_at: datetime

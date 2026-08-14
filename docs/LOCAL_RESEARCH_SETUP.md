@@ -116,19 +116,15 @@ ATR14、5/20 日收益和 20 日波动率；`macro` 包含 DeepSeek 的证据化
 - 两枚随机 token 已写入 Windows 凭据管理器；NapCat 所需副本位于被 Git 忽略的
   runtime config 中。
 
-启动命令：
+显式启动与登录入口：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_napcat.ps1
+.\.venv\Scripts\python.exe -m gribuki_trade gui
 ```
 
-启动脚本会在当前进程内把控制台统一为 UTF-8，并为旧版 Console Host 启用 ANSI
-转义解析，避免中文、终端二维码以及 `[33m` 等颜色控制码乱码。该设置不会修改
-Windows 区域选项或 PowerShell 全局配置。
-
-脚本仅启动工作区内的腾讯签名 QQ 和官方 Shell，不安装系统级 QQ。首次启动会在
-`vendor/NapCatQQ-shell-v4.18.18/cache/qrcode.png` 生成二维码；使用专用 QQ Bot
-账号扫码，并在手机 QQ 完成设备确认。登录后可打开 `http://127.0.0.1:6099`。
+进入“集成管理”页，选择 `vendor/NapCatQQ-shell-v4.18.18`，保存 OneBot 令牌，点击
+“启动本地 NapCat”，再点击“打开 WebUI 登录”。GUI 只启动工作区内的腾讯签名 QQ 和
+官方 Shell，不安装系统级 QQ；登录后会持续显示 OneBot 可达性和 QQ 登录状态。
 不要把 QQ 密码、短信验证码、cookie、OneBot token 或 WebUI token 发给项目。
 
 扫码成功后，回到项目目录执行：
@@ -146,15 +142,15 @@ Windows 区域选项或 PowerShell 全局配置。
 
 1. 保存正在编辑的聊天内容。若 Bot 账号正由普通 QQ 登录，先从系统托盘完整退出该
    Bot 实例；其他 QQ 账号可以保留。
-2. 在项目根目录单独打开一个 PowerShell 窗口并运行：
+2. 在项目根目录启动 GUI：
 
    ```powershell
-   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_napcat.ps1
+   .\.venv\Scripts\python.exe -m gribuki_trade gui
    ```
 
-3. 首次或登录态失效时，不传 QQ 号。等待 QQ 窗口或控制台二维码出现，用手机 QQ 中
-   的专用 Bot 账号扫码，并在手机端确认新设备登录。启动窗口需要保持运行。
-4. 打开 `http://127.0.0.1:6099/webui/`。WebUI token 只从启动控制台或本地
+3. 在“集成管理”选择运行目录并点击启动，再通过“打开 WebUI 登录”完成扫码和设备确认。
+   GUI 窗口可以保留以持续监看，但不会隐式控制交易系统。
+4. WebUI token 只从本地
    `vendor/NapCatQQ-shell-v4.18.18/config/webui.json` 读取，不要粘贴到聊天或命令行。
 5. 在 WebUI 的网络配置中核对 `gribuki-local` HTTP 服务端已经启用，地址为
    `127.0.0.1`、端口为 `3000`。不要启用公网监听、CORS、反向 WebSocket 或入站命令。
@@ -168,14 +164,7 @@ Windows 区域选项或 PowerShell 全局配置。
 
    预期两个 `TcpTestSucceeded` 均为 `True`，状态结果中 `good` 和 `online` 均为
    `true`。服务未启动时命令会返回结构化的 `error_code=transport_error`，不会再打印
-   traceback，并在 `next_action` 中直接给出本项目的启动命令。
-
-首次扫码成功后可以用已登录过的 Bot 号快速启动：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass `
-  -File .\scripts\start_napcat.ps1 -QQAccount 你的BotQQ号
-```
+    traceback，并在 `next_action` 中提示使用 GUI“集成管理”页显式启动和登录。
 
 常见状态的含义：
 
@@ -190,38 +179,32 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 - 端口被占用：以控制台显示的实际端口为准，并为 CLI 显式传 `--base-url`；不要把服务
   改为公网地址。
 
-#### 图片、Markdown 与文件报告
+#### Markdown 交付与本地 PNG 产物
 
-NapCat/OneBot 可以发送图片，也支持 `upload_private_file` 和 `upload_group_file`。
-`.md` 可以作为普通文件上传，但 QQ 客户端是否直接预览 Markdown、表格或公式取决于
-接收端版本。NapCat 的原生 `markdown` 消息段不能可靠地像普通消息一样直发；官方兼容
-说明将它限定在双层合并转发内，因此不作为生产默认方案。
+NapCat/OneBot 底层可以发送图片和普通文件，但当前用户侧 `napcat-send-artifact` 已收紧为
+“报告契约校验后的 Markdown 文件”：只接受 `.md/.markdown`、`--artifact-kind file`，并强制
+`--report-kind`。底层适配器支持图片不等于该 CLI 对任意图片开放。
 
-报告采用三层降级设计：聊天内发送短文本摘要；把完整报告分页渲染为 PNG 供手机直接
-阅读；同时上传 UTF-8 `.md` 文件供搜索、复制和电脑端查看。公式在 PNG 中由本地渲染器
-排版，不依赖 QQ 客户端的 LaTeX 能力。任何附件只能来自项目的报告目录，不能由新闻或
-模型文本指定任意本地路径或远程 URL。
+生产交付采用固定报告契约：日报发送短摘要并上传完整 UTF-8 Markdown；其他报告的短文本/
+Markdown 组合由各自契约决定。分页 PNG 仍可由研究报告生成器留作本地阅读产物，但当前
+`napcat-send-artifact` 不上传 PNG。任何附件只能来自项目的报告目录，不能由新闻或模型文本
+指定任意本地路径或远程 URL。
 
 `ashare-close-research-once` 默认把 Markdown 与 PNG 页写到 `runtime/reports`，并在
-JSON 结果的 `report_markdown`、`report_images` 中返回精确路径。NapCat 恢复在线后，
-可以逐个显式发送；下面的 `--artifact` 应使用相对于报告根目录的文件名：
+JSON 结果的 `report_markdown`、`report_images` 中返回精确路径。需要显式上传时只能选择
+Markdown；下面的 `--artifact` 使用相对于报告根目录的文件名：
 
 ```powershell
-# 发送一页 PNG
+# 校验为单标的深研报告后，耐久上传完整 Markdown
 .\.venv\Scripts\python.exe -m gribuki_trade napcat-send-artifact `
   --target-kind private --target-id 你的目标QQ号 `
-  --artifact-kind image --artifact-root runtime/reports `
-  --artifact 510300.SH-示例-page-01.png --confirm SEND_ARTIFACT
-
-# 上传完整 Markdown 文件
-.\.venv\Scripts\python.exe -m gribuki_trade napcat-send-artifact `
-  --target-kind private --target-id 你的目标QQ号 `
-  --artifact-kind file --artifact-root runtime/reports `
+  --artifact-kind file --report-kind INSTRUMENT_RESEARCH `
+  --artifact-root runtime/reports `
   --artifact 510300.SH-示例.md --confirm SEND_ARTIFACT
 ```
 
-附件发送只允许报告根目录内的普通文件，拒绝 URL、UNC、路径穿越、符号链接、伪造扩展
-和超限文件；私聊或群聊目标仍必须逐次进入精确白名单。
+附件发送只允许报告根目录内、通过对应章节契约的 Markdown 普通文件，拒绝 URL、UNC、
+路径穿越、符号链接、伪造扩展和超限文件；私聊或群聊目标仍必须逐次进入精确白名单。
 
 发送收盘报告采用“先持久入箱、再派发”的两步方式。`ABSTAIN` 也会作为状态报告
 发送，但不会产生交易动作：
@@ -230,11 +213,11 @@ JSON 结果的 `report_markdown`、`report_images` 中返回精确路径。NapCa
 .\.venv\Scripts\python.exe -m gribuki_trade ashare-close-research-once `
   --symbol 510300.SH `
   --notify-target-kind private `
-  --notify-target-id 1320017950
+  --notify-target-id "YOUR_QQ_ID"
 
 .\.venv\Scripts\python.exe -m gribuki_trade napcat-dispatch `
   --target-kind private `
-  --target-id 1320017950 `
+  --target-id "YOUR_QQ_ID" `
   --cycles 1
 ```
 
@@ -243,11 +226,11 @@ JSON 结果的 `report_markdown`、`report_images` 中返回精确路径。NapCa
 
 需要用户完成或提供的仅有：
 
-1. 在本机隐藏输入提示中录入 DeepSeek API key。
+1. 在本机隐藏输入提示中录入当前所选 LLM provider 的 API key；默认是 DeepSeek，也可在 GUI 选择 OpenAI。
 2. 选择一个不承载重要聊天、支付或资产的专用 QQ Bot 账号，并本人扫码登录。
 3. 在本机运行通知命令时填入目标类型（`private`/`group`）以及目标 QQ 号或群号；
    无需在聊天里发送这些信息。
-4. 决定后续是否需要 Windows 自动启动；初期建议手动启动。
+4. 在统一应用 runtime 完成前显式手动启动 GUI/NapCat；仓库不安装 Windows 任务、服务或独立看门脚本。
 
 NapCat 基于 NTQQ 的非官方框架，可能遇到设备验证、掉线或社交风控。官方来源：
 

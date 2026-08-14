@@ -12,6 +12,7 @@ from gribuki_trade.ingest.http import (
     SourceBackoffActive,
     SourceRateLimited,
     SourceUnavailable,
+    _pinned_httpx_request,
 )
 from gribuki_trade.ports.news import (
     FetchCursor,
@@ -20,6 +21,13 @@ from gribuki_trade.ports.news import (
 )
 
 NOW = datetime(2026, 8, 13, 1, 2, 3, tzinfo=UTC)
+PUBLIC_IP = "8.8.8.8"
+
+
+async def public_resolver(hostname: str, port: int) -> tuple[str, ...]:
+    assert hostname == "news.example.com"
+    assert port == 443
+    return (PUBLIC_IP,)
 
 
 def async_test(function):
@@ -72,7 +80,11 @@ async def test_conditional_fetch_preserves_observation_time_and_handles_304() ->
         ),
         response(304),
     )
-    fetcher = PublicHttpFetcher(transport, clock=lambda: NOW)
+    fetcher = PublicHttpFetcher(
+        transport,
+        clock=lambda: NOW,
+        resolver=public_resolver,
+    )
 
     first = await fetcher.fetch(policy(), "https://news.example.com/feed?utm_source=x")
     second = await fetcher.fetch(policy(), "https://news.example.com/feed", first.cursor)
@@ -86,6 +98,8 @@ async def test_conditional_fetch_preserves_observation_time_and_handles_304() ->
     assert transport.requests[1].headers["If-None-Match"] == '"revision-1"'
     assert transport.requests[1].headers["If-Modified-Since"].startswith("Wed, 12 Aug")
     assert "utm_source" not in transport.requests[0].url
+    assert transport.requests[0].resolved_ip == PUBLIC_IP
+    assert transport.requests[0].server_hostname == "news.example.com"
 
 
 @async_test
@@ -93,7 +107,11 @@ async def test_same_unconditionally_returned_body_keeps_first_seen() -> None:
     headers = {"Content-Type": "text/html"}
     transport = FakeTransport(response(200, b"same", **headers), response(200, b"same", **headers))
     moments = iter((NOW, NOW, NOW + timedelta(minutes=2), NOW + timedelta(minutes=2)))
-    fetcher = PublicHttpFetcher(transport, clock=lambda: next(moments))
+    fetcher = PublicHttpFetcher(
+        transport,
+        clock=lambda: next(moments),
+        resolver=public_resolver,
+    )
 
     first = await fetcher.fetch(policy(), "https://news.example.com/list")
     second = await fetcher.fetch(policy(), "https://news.example.com/list", first.cursor)
@@ -119,6 +137,7 @@ async def test_transient_failures_use_bounded_exponential_retry() -> None:
         transport,
         clock=lambda: NOW,
         sleeper=sleep,
+        resolver=public_resolver,
     ).fetch(policy(), "https://news.example.com/list")
 
     assert result.document is not None
@@ -136,9 +155,12 @@ async def test_access_denial_is_fail_closed_without_retry(status: int) -> None:
         delays.append(delay)
 
     with pytest.raises(SourceAccessDenied) as raised:
-        await PublicHttpFetcher(transport, clock=lambda: NOW, sleeper=sleep).fetch(
-            policy(), "https://news.example.com/list"
-        )
+        await PublicHttpFetcher(
+            transport,
+            clock=lambda: NOW,
+            sleeper=sleep,
+            resolver=public_resolver,
+        ).fetch(policy(), "https://news.example.com/list")
 
     assert raised.value.status_code == status
     assert raised.value.cursor.next_allowed_at == NOW + timedelta(seconds=1)
@@ -149,7 +171,11 @@ async def test_access_denial_is_fail_closed_without_retry(status: int) -> None:
 @async_test
 async def test_rate_limit_honours_retry_after_and_blocks_early_call() -> None:
     transport = FakeTransport(response(429, **{"Retry-After": "17"}))
-    fetcher = PublicHttpFetcher(transport, clock=lambda: NOW)
+    fetcher = PublicHttpFetcher(
+        transport,
+        clock=lambda: NOW,
+        resolver=public_resolver,
+    )
 
     with pytest.raises(SourceRateLimited) as raised:
         await fetcher.fetch(policy(), "https://news.example.com/feed")
@@ -168,17 +194,21 @@ async def test_rate_limit_honours_retry_after_and_blocks_early_call() -> None:
 async def test_redirect_outside_allowlist_and_oversized_body_are_rejected() -> None:
     redirect = FakeTransport(response(302, **{"Location": "https://evil.example/collect"}))
     with pytest.raises(ValueError, match="host"):
-        await PublicHttpFetcher(redirect, clock=lambda: NOW).fetch(
-            policy(), "https://news.example.com/feed"
-        )
+        await PublicHttpFetcher(
+            redirect,
+            clock=lambda: NOW,
+            resolver=public_resolver,
+        ).fetch(policy(), "https://news.example.com/feed")
 
     oversized = FakeTransport(
         response(200, b"12345", **{"Content-Type": "text/html", "Content-Length": "5"})
     )
     with pytest.raises(SourceUnavailable, match="exceeds"):
-        await PublicHttpFetcher(oversized, clock=lambda: NOW).fetch(
-            policy(max_response_bytes=4), "https://news.example.com/list"
-        )
+        await PublicHttpFetcher(
+            oversized,
+            clock=lambda: NOW,
+            resolver=public_resolver,
+        ).fetch(policy(max_response_bytes=4), "https://news.example.com/list")
 
 
 def test_source_policy_rejects_local_and_unlisted_hosts_before_network() -> None:
@@ -194,3 +224,57 @@ def test_source_policy_rejects_local_and_unlisted_hosts_before_network() -> None
 def test_cursor_can_represent_persisted_backoff() -> None:
     cursor = FetchCursor(consecutive_failures=2, next_allowed_at=NOW)
     assert cursor.consecutive_failures == 2
+
+
+@async_test
+async def test_dns_resolution_must_contain_only_public_addresses() -> None:
+    transport = FakeTransport(response(200, b"ok", **{"Content-Type": "text/html"}))
+
+    async def private_resolver(_hostname: str, _port: int) -> tuple[str, ...]:
+        return ("93.184.216.34", "127.0.0.1")
+
+    with pytest.raises(SourceUnavailable, match="resolution was rejected"):
+        await PublicHttpFetcher(
+            transport,
+            clock=lambda: NOW,
+            resolver=private_resolver,
+        ).fetch(policy(), "https://news.example.com/list")
+
+    assert transport.requests == []
+
+
+@async_test
+async def test_redirect_re_resolves_and_rejects_dns_rebinding() -> None:
+    transport = FakeTransport(
+        response(302, **{"Location": "/second"}),
+        response(200, b"unused", **{"Content-Type": "text/html"}),
+    )
+    answers = deque((("8.8.8.8",), ("1.1.1.1",)))
+
+    async def rebinding_resolver(_hostname: str, _port: int) -> tuple[str, ...]:
+        return answers.popleft()
+
+    with pytest.raises(SourceUnavailable, match="DNS rebinding"):
+        await PublicHttpFetcher(
+            transport,
+            clock=lambda: NOW,
+            resolver=rebinding_resolver,
+        ).fetch(policy(), "https://news.example.com/first")
+
+    assert len(transport.requests) == 1
+
+
+def test_httpx_transport_pins_validated_ip_while_preserving_host_and_sni() -> None:
+    request = NewsHttpRequest(
+        "GET",
+        "https://news.example.com:8443/feed?q=1",
+        {"Accept": "text/html"},
+        resolved_ip="8.8.8.8",
+        server_hostname="news.example.com",
+    )
+
+    url, headers, extensions = _pinned_httpx_request(request)
+
+    assert url == "https://8.8.8.8:8443/feed?q=1"
+    assert headers["Host"] == "news.example.com:8443"
+    assert extensions == {"sni_hostname": "news.example.com"}

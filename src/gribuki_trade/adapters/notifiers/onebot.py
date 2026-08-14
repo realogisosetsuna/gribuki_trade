@@ -1,8 +1,8 @@
-"""A minimal, outbound-only OneBot v11 HTTP adapter for NapCatQQ.
+"""用于 NapCatQQ 的最小单向出站 OneBot v11 HTTP 适配器。
 
-The adapter exposes text delivery, tightly scoped local artifact delivery, and
-two read-only health endpoints.  It contains no reverse WebSocket listener,
-event handler, command parser, plugin loader, or trading callback.
+适配器提供文本发送、严格限定范围的本地产物发送，以及两个只读健康端点。
+其中不包含反向 WebSocket 监听器、事件处理器、命令解析器、插件加载器或交易
+回调。
 """
 
 from __future__ import annotations
@@ -48,11 +48,11 @@ _URI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
 
 
 class OneBotError(NotificationDeliveryError):
-    """A sanitized OneBot transport, HTTP, or protocol error."""
+    """已经净化的 OneBot 传输、HTTP 或协议错误。"""
 
 
 class OneBotTargetNotAllowedError(OneBotError):
-    """Raised before I/O when a target is absent from the exact allowlist."""
+    """目标不在精确允许列表中时，于执行 I/O 前抛出。"""
 
     def __init__(self) -> None:
         super().__init__("target_not_allowed", retryable=False)
@@ -60,7 +60,7 @@ class OneBotTargetNotAllowedError(OneBotError):
 
 @dataclass(frozen=True, slots=True)
 class OneBotFileUploadReceipt:
-    """Sanitized result of a OneBot private or group file upload."""
+    """已经净化的 OneBot 私聊或群聊文件上传结果。"""
 
     channel: str
     provider_file_id: str | None = None
@@ -69,7 +69,7 @@ class OneBotFileUploadReceipt:
 
 @dataclass(frozen=True, slots=True)
 class OneBotConfig:
-    """Security-sensitive configuration for a local NapCat HTTP endpoint."""
+    """本地 NapCat HTTP 端点的安全敏感配置。"""
 
     access_token: str = field(repr=False)
     base_url: str = "http://127.0.0.1:3000"
@@ -112,7 +112,7 @@ class OneBotConfig:
 
 
 class OneBotNotifier:
-    """Send outbound QQ messages through a loopback OneBot v11 endpoint."""
+    """通过回环 OneBot v11 端点发送出站 QQ 消息。"""
 
     channel = "onebot"
 
@@ -155,7 +155,7 @@ class OneBotNotifier:
         target_id: str | int,
         artifact: str | os.PathLike[str],
     ) -> DeliveryReceipt:
-        """Send one allowlisted local image to an allowlisted private target."""
+        """向允许列表中的私聊目标发送一张获准的本地图像。"""
 
         normalized = self._require_allowed_target(
             target_id,
@@ -169,7 +169,7 @@ class OneBotNotifier:
         target_id: str | int,
         artifact: str | os.PathLike[str],
     ) -> DeliveryReceipt:
-        """Send one allowlisted local image to an allowlisted group target."""
+        """向允许列表中的群聊目标发送一张获准的本地图像。"""
 
         normalized = self._require_allowed_target(
             target_id,
@@ -183,7 +183,7 @@ class OneBotNotifier:
         target_id: str | int,
         artifact: str | os.PathLike[str],
     ) -> OneBotFileUploadReceipt:
-        """Upload one allowlisted local artifact to a private conversation."""
+        """向私聊会话上传一个获准的本地产物。"""
 
         normalized = self._require_allowed_target(
             target_id,
@@ -197,7 +197,7 @@ class OneBotNotifier:
         target_id: str | int,
         artifact: str | os.PathLike[str],
     ) -> OneBotFileUploadReceipt:
-        """Upload one allowlisted local artifact to an allowlisted group."""
+        """向允许列表中的群聊上传一个获准的本地产物。"""
 
         normalized = self._require_allowed_target(
             target_id,
@@ -207,12 +207,12 @@ class OneBotNotifier:
         return await self._upload_file("upload_group_file", "group_id", normalized, resolved)
 
     async def get_status(self) -> Mapping[str, Any]:
-        """Return NapCat's read-only OneBot runtime status."""
+        """返回 NapCat 的只读 OneBot 运行状态。"""
 
         return await self._post("get_status", {})
 
     async def get_version_info(self) -> Mapping[str, Any]:
-        """Return NapCat's read-only OneBot implementation metadata."""
+        """返回 NapCat 的只读 OneBot 实现元数据。"""
 
         return await self._post("get_version_info", {})
 
@@ -228,8 +228,8 @@ class OneBotNotifier:
         if len(text) > self._config.max_message_chars:
             raise OneBotError("message_too_long", retryable=False)
 
-        # Use a OneBot text segment instead of a CQ-code string.  Alert text
-        # can therefore never smuggle an image/file/mention action to NapCat.
+        # 使用 OneBot 文本段而非 CQ 码字符串，因此告警文本绝不可能向 NapCat
+        # 偷渡图像、文件或提及操作。
         data = await self._post(
             action,
             {
@@ -250,8 +250,8 @@ class OneBotNotifier:
         target_id: str,
         artifact: Path,
     ) -> DeliveryReceipt:
-        # This is deliberately an array-form OneBot segment.  The public API
-        # never accepts CQ code, a URL, a file URI, or arbitrary segment data.
+        # 这里刻意使用数组形式的 OneBot 段。公共 API 绝不接受 CQ 码、URL、
+        # 文件 URI 或任意段数据。
         data = await self._post(
             action,
             {
@@ -277,8 +277,8 @@ class OneBotNotifier:
         target_id: str,
         artifact: Path,
     ) -> OneBotFileUploadReceipt:
-        # NapCat v4.18.18's upload_private_file/upload_group_file actions both
-        # require the target id, a local file path, and a display name.
+        # NapCat v4.18.18 的私聊和群聊文件上传操作都需要目标编号、本地文件路径
+        # 以及显示名称。
         data = await self._post(
             action,
             {
@@ -336,7 +336,7 @@ class OneBotNotifier:
         except httpx.TimeoutException:
             raise OneBotError("transport_timeout", retryable=True) from None
         except (httpx.HTTPError, OSError):
-            # Never retain the authenticated request or URL in exception context.
+            # 异常上下文中绝不保留已认证请求或 URL。
             raise OneBotError("transport_error", retryable=True) from None
 
         if response.status_code >= 400:
@@ -399,8 +399,8 @@ def _resolve_local_artifact(root: Path, value: str | os.PathLike[str]) -> Path:
 
     supplied = Path(text)
     candidate = supplied if supplied.is_absolute() else root / supplied
-    # Collapse dot-segments without following links, then reject an escape
-    # before touching any outside filesystem object.
+    # 在不跟随链接的情况下折叠点路径段，并在接触工作区外文件系统对象前拒绝
+    # 任何越界路径。
     lexical = Path(os.path.abspath(candidate))
     try:
         relative = lexical.relative_to(root)
@@ -497,7 +497,7 @@ def _normalize_qq_id(value: str | int) -> str:
 def _validate_loopback_url(value: str) -> None:
     try:
         parsed = urlsplit(value)
-        # Force validation of malformed/out-of-range ports.
+        # 强制验证格式错误或超出范围的端口。
         _ = parsed.port
     except ValueError:
         raise ValueError("OneBot base_url is invalid") from None

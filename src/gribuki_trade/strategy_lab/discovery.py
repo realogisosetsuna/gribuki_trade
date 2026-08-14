@@ -1,9 +1,8 @@
-"""Deterministic, budgeted generation of research-only factor candidates.
+"""确定性、有预算约束且仅供研究的因子候选生成。
 
-The generator expands a versioned template grammar into expressions accepted by
-the safe factor DSL.  It does not evaluate outcomes, inspect a holdout, call an
-LLM, mutate strategy configuration, or publish a candidate.  Its sole output is
-an auditable candidate inventory plus every rejection reason.
+生成器将带版本的模板语法展开为安全因子 DSL 可接受的表达式。它不会评估
+结果、查看留出集、调用大语言模型、变更策略配置或发布候选。其唯一输出
+是可审计的候选清单及全部拒绝原因。
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ from gribuki_trade.strategy_lab.factors import (
 
 
 class FactorEconomicFamily(StrEnum):
-    """Economic intent, not a claim that a factor has predictive power."""
+    """经济学意图，并不声称因子具有预测能力。"""
 
     LIQUIDITY = "LIQUIDITY"
     MEAN_REVERSION = "MEAN_REVERSION"
@@ -191,7 +190,7 @@ class FactorTemplateGrammar:
 
 
 def default_factor_template_grammar() -> FactorTemplateGrammar:
-    """Return the immutable v1 grammar used for bounded technical exploration."""
+    """返回用于有界技术探索的不可变第一版语法。"""
 
     window = TemplateParameter(
         "window",
@@ -341,7 +340,7 @@ def generate_factor_candidates(
     grammar: FactorTemplateGrammar,
     budget: FactorSearchBudget | None = None,
 ) -> FactorCandidateInventory:
-    """Expand all legal parameter combinations or fail before partial generation."""
+    """展开全部合法参数组合；否则在生成部分结果前失败。"""
 
     resolved_budget = budget or FactorSearchBudget()
     bounded_attempts: list[
@@ -350,8 +349,8 @@ def generate_factor_candidates(
     for attempt in _enumerate_attempts(grammar):
         bounded_attempts.append(attempt)
         if len(bounded_attempts) > resolved_budget.max_trials:
-            # Stop at the first proven overrun.  A maliciously large Cartesian
-            # product can therefore consume at most max_trials + 1 expansions.
+            # 在首次确认超限时立即停止，因此恶意构造的巨大笛卡尔积最多
+            # 只能消耗 max_trials + 1 次展开。
             raise FactorSearchBudgetExceeded(
                 required_trials=len(bounded_attempts),
                 max_trials=resolved_budget.max_trials,
@@ -522,10 +521,10 @@ def filter_redundant_candidates(
     observations: Mapping[str, Sequence[float | int | None]],
     config: RedundancyFilterConfig | None = None,
 ) -> FactorRedundancyResult:
-    """Conservatively remove redundant candidates from caller-provided samples.
+    """从调用方提供的样本中保守移除冗余候选。
 
-    The function is pure and order-stable.  Callers must provide development-set
-    observations only; this module has no mechanism to access a holdout.
+    此函数是纯函数且顺序稳定。调用方只能提供开发集观测；本模块没有任何
+    访问留出集的机制。
     """
 
     resolved = config or RedundancyFilterConfig()

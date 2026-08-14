@@ -1,10 +1,10 @@
-"""Mutually exclusive runtime trading modes."""
+"""互斥的运行时交易模式。"""
 
 from enum import StrEnum
 
 
 class TradingMode(StrEnum):
-    """How far an execution path may reach toward a real broker."""
+    """执行路径可触及真实券商的程度。"""
 
     PAPER = "PAPER"
     SHADOW = "SHADOW"

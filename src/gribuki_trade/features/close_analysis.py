@@ -1,10 +1,8 @@
-"""Point-in-time technical assessment for the next A-share session.
+"""面向下一 A 股交易日的时点技术评估。
 
-The intraday signal engine deliberately treats an old minute bar as stale.  An
-after-close assessment has a different clock: it consumes only completed daily
-bars and targets an explicitly supplied future trading session.  Keeping this
-logic separate prevents an overnight daily analysis from weakening the
-freshness rules used by intraday research.
+盘中信号引擎刻意将旧分钟柱视为过期。盘后评估采用不同的时钟：只消费已完成日线柱，
+并面向显式提供的未来交易日。保持该逻辑独立，可防止隔夜日线分析削弱盘中研究所用的
+新鲜度规则。
 """
 
 from __future__ import annotations
@@ -30,14 +28,14 @@ class CloseInstrumentType(StrEnum):
 
 
 class CloseDiagnosticHorizon(StrEnum):
-    """A display-only diagnostic horizon, never an order time-in-force."""
+    """只用于展示的诊断期限，绝不是订单有效期。"""
 
     SHORT_1_TO_5_DAYS = "SHORT_1_TO_5_DAYS"
     SWING_2_TO_8_WEEKS = "SWING_2_TO_8_WEEKS"
 
 
 class CloseSignalFamilyStatus(StrEnum):
-    """Why a signal-family score is, or is not, numerically informative."""
+    """信号族评分为何具有或不具有数值信息。"""
 
     ACTIVE = "ACTIVE"
     NEUTRAL = "NEUTRAL"
@@ -47,7 +45,7 @@ class CloseSignalFamilyStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class CloseAnalysisConfig:
-    """Transparent parameters for the deterministic close analysis."""
+    """确定性收盘分析的透明参数。"""
 
     short_ma_sessions: int = 5
     trend_ma_sessions: int = 20
@@ -121,7 +119,7 @@ class CloseAnalysisConfig:
 
     @property
     def minimum_history(self) -> int:
-        """Number of trading bars required to use every configured indicator."""
+        """使用全部已配置指标所需的交易行情柱数量。"""
 
         return max(
             201,
@@ -143,7 +141,7 @@ class CloseAnalysisConfig:
 
 @dataclass(frozen=True, slots=True)
 class CloseTechnicalAssessment:
-    """Auditable, non-executable technical view for one future session."""
+    """面向一个未来交易日、可审计且不可执行的技术视图。"""
 
     symbol: str
     as_of: datetime
@@ -164,7 +162,7 @@ class CloseTechnicalAssessment:
 
 @dataclass(frozen=True, slots=True)
 class CloseSignalFamily:
-    """One capped signal family, kept separate to avoid double-counting."""
+    """一个设有上限并独立保存以避免重复计算的信号族。"""
 
     family_id: str
     score: Decimal
@@ -196,11 +194,10 @@ class CloseSignalFamily:
 
 @dataclass(frozen=True, slots=True)
 class CloseHorizonView:
-    """A reweighted diagnostic view over already-computed signal families.
+    """对已计算信号族重新加权后的诊断视图。
 
-    ``score`` is a bounded directional diagnostic rather than a probability.
-    It deliberately carries no executable decision so that two horizons cannot
-    accidentally create two conflicting orders.
+    ``score`` 是有界方向诊断值而非概率。它刻意不携带可执行决定，防止两个期限意外
+    创建两张冲突订单。
     """
 
     horizon: CloseDiagnosticHorizon
@@ -240,12 +237,10 @@ def build_close_technical_assessment(
     instrument_type: CloseInstrumentType = CloseInstrumentType.STOCK,
     config: CloseAnalysisConfig | None = None,
 ) -> CloseTechnicalAssessment:
-    """Assess the next session using only daily bars completed at ``as_of``.
+    """仅使用截至 ``as_of`` 已完成的日线柱评估下一交易日。
 
-    The caller supplies both session boundaries from a trading calendar.  This
-    function never guesses weekdays or holidays and rejects any bar outside
-    that closed interval, which makes replay and live execution share the same
-    point-in-time boundary.
+    调用方从交易日历提供两个交易日边界。本函数绝不猜测工作日或节假日，并拒绝闭区间
+    之外的任何行情柱，使回放与实时执行共享相同的时点边界。
     """
 
     canonical_symbol = symbol.strip().upper()
@@ -802,12 +797,11 @@ def _relative_strength_index(closes: tuple[Decimal, ...], lookback: int) -> Deci
 def _wilder_adx(
     bars: tuple[DailyBar, ...], lookback: int
 ) -> tuple[Decimal, Decimal, Decimal]:
-    """Return Wilder ADX, +DI and -DI using the canonical recursive smoothing.
+    """使用规范递归平滑返回 Wilder ADX、+DI 与 -DI。
 
-    Unlike the deliberately simple-window ATR and RSI used elsewhere in this
-    baseline, directional movement is seeded with ``lookback`` sums and then
-    updated with Wilder's ``previous - previous / n + current`` recurrence.
-    The first ADX is the arithmetic mean of the first ``lookback`` DX values.
+    不同于本基线其他位置刻意采用简单窗口的 ATR 与 RSI，方向运动以 ``lookback``
+    个值之和为种子，再用 Wilder 的 ``previous - previous / n + current`` 递推更新。
+    首个 ADX 是前 ``lookback`` 个 DX 值的算术平均。
     """
 
     if len(bars) < lookback * 2:
@@ -988,7 +982,7 @@ def _amihud_illiquidity_with_coverage(
     bars: tuple[DailyBar, ...],
     sessions: int,
 ) -> tuple[Decimal, Decimal]:
-    """Return raw Amihud illiquidity and the fraction of usable sessions."""
+    """返回原始 Amihud 非流动性指标与可用交易日比例。"""
 
     values: list[Decimal] = []
     window = bars[-(sessions + 1) :]
@@ -1004,12 +998,11 @@ def _amihud_illiquidity_with_coverage(
 
 
 def _amihud_bps_per_cny_billion(raw_value: Decimal) -> Decimal:
-    """Express ``mean(abs(return) / CNY amount)`` in readable market units.
+    """以可读市场单位表示 ``mean(abs(return) / CNY amount)``。
 
-    The raw Amihud value is retained in ``metrics`` for reproducibility.  This
-    companion scale answers how many basis points the raw ratio represents per
-    CNY 1 billion of turnover: ``raw * 1e9 CNY * 1e4 bp``.  It is a normalized
-    illiquidity statistic, not a causal price-impact estimate.
+    原始 Amihud 值保留在 ``metrics`` 中以支持复现。辅助尺度表示每 10 亿元人民币成交额
+    对应的原始比率有多少基点：``raw * 1e9 CNY * 1e4 bp``。它是归一化非流动性统计量，
+    不是因果价格冲击估计。
     """
 
     return raw_value * Decimal("10000000000000")
@@ -1172,7 +1165,7 @@ def _signal_family(
 def _build_horizon_views(
     families: tuple[CloseSignalFamily, ...],
 ) -> tuple[CloseHorizonView, ...]:
-    """Reweight family scores for two uses without recalculating indicators."""
+    """在不重新计算指标的情况下，为两种用途重新加权信号族评分。"""
 
     available = {
         family.family_id: family

@@ -1,4 +1,4 @@
-"""Representation-safe values and credential configuration."""
+"""不会在常规表示中泄密的值与凭据配置。"""
 
 from __future__ import annotations
 
@@ -8,11 +8,10 @@ REDACTED = "<redacted>"
 
 
 class SecretValue:
-    """A string whose normal string representations never reveal its value.
+    """常规字符串表示永远不会泄露其内容的字符串。
 
-    Callers must use :meth:`reveal` at the narrow integration boundary that
-    actually needs the credential.  This is protection against accidental
-    logging, not encryption of process memory.
+    调用方必须只在确实需要凭据的狭窄集成边界使用 :meth:`reveal`。这一设计用于防止
+    意外日志泄露，并不代表对进程内存进行了加密。
     """
 
     __slots__ = ("__value",)
@@ -23,7 +22,7 @@ class SecretValue:
         self.__value = value
 
     def reveal(self) -> str:
-        """Return the wrapped value for an authenticated client call."""
+        """返回包装值，供已认证客户端调用使用。"""
 
         return self.__value
 
@@ -47,12 +46,11 @@ def _as_secret_value(value: SecretValue | str | None) -> SecretValue | None:
 
 @dataclass(frozen=True, slots=True, repr=False)
 class CredentialConfig:
-    """Resolved credentials with a deliberately non-sensitive ``repr``.
+    """已解析的凭据，其 ``repr`` 被有意设计为不含敏感信息。
 
-    Prefer keeping only secret names in long-lived application configuration
-    and resolving them through a :class:`~gribuki_trade.security.SecretProvider`.
-    This small object is for the short-lived boundary where a client library
-    requires several resolved values together.
+    长期应用配置应只保存秘密名称，并通过
+    :class:`~gribuki_trade.security.SecretProvider` 解析。本小型对象仅用于客户端库需要
+    同时取得多个已解析值的短生命周期边界。
     """
 
     username: str | None = field(default=None, repr=False)
@@ -71,5 +69,5 @@ class CredentialConfig:
         return f"{type(self).__name__}({REDACTED})"
 
 
-# A concise alias for callers whose credentials are not broker-specific.
+# 供凭据不限定于券商场景的调用方使用的简洁别名。
 SecretConfig = CredentialConfig

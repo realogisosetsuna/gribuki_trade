@@ -1,4 +1,4 @@
-"""Pluggable secret providers with safe failure behaviour."""
+"""具有安全失败行为的可插拔秘密提供器。"""
 
 from __future__ import annotations
 
@@ -9,29 +9,29 @@ from typing import Protocol, cast, runtime_checkable
 
 
 class SecretProviderError(RuntimeError):
-    """A secret operation failed without exposing backend error details."""
+    """秘密操作失败，且不暴露后端错误细节。"""
 
 
 class SecretProviderUnavailable(SecretProviderError):
-    """The configured secret backend is not available on this machine."""
+    """当前机器上无法使用已配置的秘密后端。"""
 
 
 @runtime_checkable
 class SecretProvider(Protocol):
-    """Named secret storage used by optional authenticated integrations."""
+    """供可选认证集成使用的具名秘密存储。"""
 
     def get_secret(self, name: str) -> str | None:
-        """Return a secret, or ``None`` when the name does not exist."""
+        """返回秘密；名称不存在时返回 ``None``。"""
 
         ...
 
     def set_secret(self, name: str, value: str) -> None:
-        """Create or replace a named secret."""
+        """创建或替换具名秘密。"""
 
         ...
 
     def delete_secret(self, name: str) -> bool:
-        """Delete a secret and report whether it existed."""
+        """删除秘密，并报告其此前是否存在。"""
 
         ...
 
@@ -53,7 +53,7 @@ def _validate_value(value: str) -> str:
 
 
 class MemorySecretProvider:
-    """Process-local provider intended only for tests and offline demos."""
+    """仅供测试与离线演示使用的进程内提供器。"""
 
     def __init__(self, initial: Mapping[str, str] | None = None) -> None:
         self._lock = RLock()
@@ -92,12 +92,10 @@ class _KeyringBackend(Protocol):
 
 
 class KeyringSecretProvider:
-    """Store named values in the operating-system keyring.
+    """在操作系统 keyring 中保存具名值。
 
-    ``keyring`` remains an optional dependency and is imported on the first
-    operation, not when this module or provider is imported.  Backend errors
-    are replaced with deliberately generic exceptions because some third-party
-    backends include call arguments in their error text.
+    ``keyring`` 仍是可选依赖，只在首次操作时导入，而不是在导入本模块或提供器时导入。
+    后端错误会被有意替换为通用异常，因为某些第三方后端会在错误文本中包含调用参数。
     """
 
     def __init__(self, service_name: str = "gribuki-trade") -> None:
@@ -119,8 +117,7 @@ class KeyringSecretProvider:
         try:
             value = backend.get_password(self._service_name, checked_name)
         except Exception:
-            # Raise after leaving the handler so the backend exception is not
-            # retained as context; it may contain a credential value.
+            # 离开异常处理器后再抛出，避免把可能含凭据值的后端异常保留为上下文。
             pass
         else:
             if value is None or isinstance(value, str):
@@ -149,7 +146,7 @@ class KeyringSecretProvider:
                 return False
         else:
             return True
-        # Do not chain or retain an exception that may contain backend data.
+        # 不串联或保留可能包含后端数据的异常。
         raise SecretProviderError("system keyring could not delete the requested secret")
 
     def _backend(self) -> _KeyringBackend:

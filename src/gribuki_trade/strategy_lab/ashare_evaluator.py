@@ -1,10 +1,9 @@
-"""Deterministic, point-in-time A-share daily strategy evaluator.
+"""确定性的时点安全 A 股日线策略评估器。
 
-The evaluator adapts frozen daily signal observations to the small
-``StrategyEvaluator`` protocol used by :mod:`strategy_lab.experiments`.  It is a
-research simulator, not an order router.  Signal inputs must have been known by
-the signal timestamp; the following completed bar is used only to simulate the
-already-decided order and to mark the paper position.
+本评估器将冻结的日线信号观测适配到 :mod:`strategy_lab.experiments` 使用的
+精简 ``StrategyEvaluator`` 协议。它是研究模拟器而非订单路由器。信号输入
+必须在信号时间戳之前已经可知；后一根已完成 K 线仅用于模拟既定订单并为
+模拟持仓计价。
 """
 
 from __future__ import annotations
@@ -35,7 +34,7 @@ _SCORE_BOUND = Decimal("1")
 
 
 class AShareExecutionPolicy(StrEnum):
-    """Supported daily-bar matching policies."""
+    """支持的日线撮合策略。"""
 
     NEXT_OPEN = "NEXT_OPEN"
     CONSERVATIVE_OPEN_LIMIT = "CONSERVATIVE_OPEN_LIMIT"
@@ -57,7 +56,7 @@ class AShareEvaluationAction(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class PITStrategyScore:
-    """One score and the lineage proving when it was knowable."""
+    """一个分数，以及证明其何时可知的血缘信息。"""
 
     family_id: str
     value: Decimal
@@ -81,11 +80,11 @@ class PITStrategyScore:
 
 @dataclass(frozen=True, slots=True)
 class CompletedAShareDailyBar:
-    """A completed, unadjusted next-session bar with explicit execution gates.
+    """带明确执行门槛的下一交易日已完成、不复权 K 线。
 
-    Price limits are optional because some instruments/sessions genuinely have
-    no usable band in the frozen source.  When either is absent, execution fails
-    closed; the evaluator never infers a board or ST-specific percentage.
+    涨跌停价格为可选项，因为冻结数据源中某些标的或交易日确实没有可用
+    区间。任一边界缺失时，执行按闭锁原则失败；评估器绝不推测板块或
+    ST 标的特有的百分比。
     """
 
     session_date: date
@@ -147,7 +146,7 @@ class CompletedAShareDailyBar:
 
 @dataclass(frozen=True, slots=True)
 class AShareDailyStrategyObservation:
-    """One PIT signal and its strictly later execution/marking session."""
+    """一个时点信号，以及严格晚于它的执行和计价交易日。"""
 
     observation_id: str
     symbol: str
@@ -274,10 +273,10 @@ class AShareEvaluationEvent:
 
 @dataclass(frozen=True, slots=True)
 class AShareEvaluationResult:
-    """Metrics and audit trace for one isolated evaluation slice.
+    """一个隔离评估切片的指标与审计轨迹。
 
-    ``PerformanceMetrics.family_contributions`` contains mean weighted decision
-    score contributions.  It is deliberately not labelled as P&L attribution.
+    ``PerformanceMetrics.family_contributions`` 包含加权决策分数贡献均值，
+    因此有意不将其标注为盈亏归因。
     """
 
     metrics: PerformanceMetrics
@@ -287,12 +286,11 @@ class AShareEvaluationResult:
 
 
 class AShareDailyStrategyEvaluator:
-    """Single-instrument, long/cash daily evaluator implementing the protocol.
+    """实现协议的单标的、多头或现金日线评估器。
 
-    Keeping one frozen instrument per evaluator avoids inventing cross-sectional
-    mark prices when the currently-held symbol is absent from a daily candidate
-    row.  Portfolio/cross-sectional experiments should compose multiple complete
-    instrument panels before adding a separate portfolio evaluator.
+    每个评估器只保留一个冻结标的，可避免当前持仓标的缺席某日候选记录时
+    凭空构造横截面计价。组合或横截面实验应先拼接多个完整标的面板，再
+    增加独立的组合评估器。
     """
 
     def __init__(
@@ -599,7 +597,7 @@ class AShareDailyStrategyEvaluator:
 def canonical_ashare_evaluation_content(
     observations: tuple[AShareDailyStrategyObservation, ...],
 ) -> bytes:
-    """Canonical bytes to pass to ``DataManifest.freeze``."""
+    """传给 ``DataManifest.freeze`` 的规范字节序列。"""
 
     document = [_observation_document(item) for item in observations]
     return json.dumps(
@@ -613,12 +611,11 @@ def canonical_ashare_evaluation_content(
 def ashare_evaluation_source_revisions(
     observations: tuple[AShareDailyStrategyObservation, ...],
 ) -> tuple[tuple[str, str], ...]:
-    """Build unique per-observation lineage entries for ``DataManifest``.
+    """为 ``DataManifest`` 构建逐观测唯一的血缘条目。
 
-    A provider can legitimately publish a different revision for every session.
-    ``DataManifest`` requires unique keys, so provider IDs cannot themselves be
-    used as keys.  Positional component keys are stable for the canonical frozen
-    observation sequence; values retain the exact provider and revision.
+    数据提供方可以合理地为每个交易日发布不同修订版。``DataManifest``
+    要求键唯一，因此不能直接用提供方标识作为键。位置组件键在规范冻结
+    观测序列中保持稳定，值则保留确切的提供方与修订版本。
     """
 
     entries: list[tuple[str, str]] = []

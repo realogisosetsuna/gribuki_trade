@@ -1,9 +1,8 @@
-"""Leakage-resistant, explainable strategy experiment primitives.
+"""抗信息泄漏且可解释的策略实验基础组件。
 
-This module is deliberately broker independent and research only.  It freezes the
-data and strategy identities used by an experiment, builds chronological
-walk-forward development folds, and keeps the final holdout inaccessible until a
-candidate has been selected using validation metrics alone.
+本模块有意保持券商无关并仅供研究使用。它冻结实验所用数据与策略标识，
+构建按时间顺序滚动前进的开发折，并在仅凭验证指标选出候选之前始终禁止
+访问最终留出集。
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ class ExperimentObjective(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class DataManifest:
-    """Immutable identity for the exact point-in-time dataset under study."""
+    """被研究的精确时点数据集之不可变标识。"""
 
     dataset_id: str
     content_sha256: str
@@ -79,7 +78,7 @@ class DataManifest:
         canonical_content: bytes,
         source_revisions: Sequence[tuple[str, str]] = (),
     ) -> DataManifest:
-        """Create a manifest whose dataset digest is computed, not hand-entered."""
+        """创建数据集摘要由程序计算而非手工填写的清单。"""
 
         return cls(
             dataset_id=dataset_id,
@@ -97,7 +96,7 @@ class DataManifest:
 
 @dataclass(frozen=True, slots=True)
 class StrategyManifest:
-    """Frozen code/config identity, excluding weights varied by the experiment."""
+    """冻结的代码与配置标识，不含实验中变化的权重。"""
 
     strategy_version: str
     code_revision: str
@@ -178,12 +177,11 @@ def build_walk_forward_plan(
     timestamps: Sequence[date],
     config: WalkForwardConfig,
 ) -> WalkForwardPlan:
-    """Build expanding chronological folds and one untouched final holdout.
+    """构建按时间扩展的折，以及一个从未触碰的最终留出集。
 
-    Purge separates every training window from its validation window.  Embargo
-    marks the observations immediately after each validation window and reserves
-    another complete gap before the final test.  The test indices never appear in
-    a development fold.
+    清除区将每个训练窗口与其验证窗口隔开。禁运区标记每个验证窗口之后
+    紧邻的观测，并在最终测试前再预留一个完整间隔。测试索引绝不会出现
+    在开发折中。
     """
 
     resolved = tuple(timestamps)
@@ -313,10 +311,10 @@ def generate_simplex_weight_grid(
     constraints: WeightConstraints,
     config: WeightGridConfig | None = None,
 ) -> tuple[StrategyWeights, ...]:
-    """Enumerate a deterministic, bounded simplex grid.
+    """枚举确定且有界的单纯形网格。
 
-    Enumeration never truncates silently: a space exceeding ``max_candidates``
-    is rejected so the recorded trial count cannot differ from the tested count.
+    枚举绝不静默截断：超过 ``max_candidates`` 的空间会被拒绝，从而保证
+    记录的试验数量与实际测试数量一致。
     """
 
     resolved = config or WeightGridConfig()
@@ -453,7 +451,7 @@ class PerformanceMetrics:
 
 
 class StrategyEvaluator(Protocol):
-    """Pure evaluator supplied by a backtest engine; no broker calls are allowed."""
+    """由回测引擎提供的纯评估器；禁止调用券商接口。"""
 
     def evaluate(
         self,
@@ -531,12 +529,11 @@ def run_walk_forward_experiment(
     experiment_version: str = "walk-forward-weight-search@1",
     max_trials: int = 10_000,
 ) -> StrategyExperiment:
-    """Select on validation only, then evaluate the locked choice once on test.
+    """只在验证集上选择，再于测试集上评估一次锁定的选择。
 
-    Training metrics are retained for diagnostics but never participate in the
-    selection key.  Validation scores are averaged across folds per cost scenario;
-    the worst cost scenario is the objective used for selection.  Holdout access
-    occurs only after the selected trial ID is fixed.
+    训练指标仅保留用于诊断，绝不参与选择键。各成本场景的验证分数先跨折
+    求平均，并以最差成本场景作为选择目标。只有选定试验标识固定后才能
+    访问留出集。
     """
 
     resolved_created_at = _utc_time(created_at, "created_at")
@@ -623,8 +620,8 @@ def run_walk_forward_experiment(
         item for item in ordered_trials if item.weights.fingerprint == baseline.fingerprint
     )
 
-    # This is the only point at which the holdout indices are passed to the
-    # evaluator.  Selection has already been irrevocably reduced to a trial ID.
+    # 这是唯一一次将留出集索引传给评估器；此时选择已经不可逆地收敛为
+    # 一个试验标识。
     selected_test = _evaluate_holdout(
         evaluator,
         selected.weights,
@@ -677,7 +674,7 @@ def run_walk_forward_experiment(
 
 
 def experiment_to_json(experiment: StrategyExperiment) -> str:
-    """Return a canonical, lossless-enough audit document for append-only storage."""
+    """返回适合仅追加存储且信息足够无损的规范审计文档。"""
 
     return json.dumps(
         _experiment_document(experiment),

@@ -1,4 +1,4 @@
-"""Finite, stoppable orchestration for reliable outbound notifications."""
+"""可靠出站通知的有限、可停止编排。"""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import timedelta
 
-from gribuki_trade.ports.notifier import Notifier
+from gribuki_trade.ports.notifier import NotificationTargetKind, Notifier
 from gribuki_trade.storage.outbox import DispatchSummary, OutboxDispatcher, SQLiteOutbox
 
 
 class NotificationDispatchServiceError(RuntimeError):
-    """A stable failure that deliberately omits message and credential data."""
+    """刻意省略消息与凭据数据的稳定失败。"""
 
     def __init__(self, code: str = "dispatch_failed") -> None:
         super().__init__(f"notification dispatch service failed ({code})")
@@ -22,7 +22,7 @@ class NotificationDispatchServiceError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class DispatchRunStatistics:
-    """Aggregate results from one finite polling run."""
+    """一次有限轮询运行的汇总结果。"""
 
     cycles_completed: int
     claimed: int
@@ -35,12 +35,11 @@ class DispatchRunStatistics:
 
 
 class NotificationDispatchService:
-    """Run an :class:`OutboxDispatcher` once or for a bounded number of cycles.
+    """运行一次 :class:`OutboxDispatcher` 或运行有界数量的周期。
 
-    All calls are serialized with an asyncio lock.  A second caller can never
-    race the same service instance and attempt to deliver a claimed item twice.
-    ``request_stop`` interrupts the wait between cycles; it never cancels an
-    HTTP request that is already in progress.
+    所有调用均通过 asyncio 锁串行化。第二个调用方无法与同一服务实例竞争并尝试重复
+    交付已认领项目。``request_stop`` 会中断周期之间的等待，但绝不取消正在进行的
+    HTTP 请求。
     """
 
     def __init__(
@@ -49,18 +48,27 @@ class NotificationDispatchService:
         notifiers: Mapping[str, Notifier],
         *,
         dispatcher: OutboxDispatcher | None = None,
+        target_kind: NotificationTargetKind | None = None,
+        target_id: str | None = None,
     ) -> None:
-        self._dispatcher = dispatcher or OutboxDispatcher(outbox, notifiers)
+        if dispatcher is not None and (target_kind is not None or target_id is not None):
+            raise ValueError("a custom dispatcher cannot be combined with a target scope")
+        self._dispatcher = dispatcher or OutboxDispatcher(
+            outbox,
+            notifiers,
+            target_kind=target_kind,
+            target_id=target_id,
+        )
         self._operation_lock = asyncio.Lock()
         self._stop_requested = asyncio.Event()
 
     def request_stop(self) -> None:
-        """Prevent another polling cycle and interrupt the current wait."""
+        """阻止下一轮询周期并中断当前等待。"""
 
         self._stop_requested.set()
 
     def reset_stop(self) -> None:
-        """Explicitly allow a new finite run after a prior stop request."""
+        """在先前停止请求后显式允许新的有限运行。"""
 
         self._stop_requested.clear()
 
@@ -74,7 +82,7 @@ class NotificationDispatchService:
         limit: int = 50,
         lease_for: timedelta = timedelta(seconds=30),
     ) -> DispatchSummary:
-        """Dispatch one transactional batch and return structured counts."""
+        """分发一个事务批次并返回结构化计数。"""
 
         async with self._operation_lock:
             return await self._safe_run_once(limit=limit, lease_for=lease_for)
@@ -87,7 +95,7 @@ class NotificationDispatchService:
         limit: int = 50,
         lease_for: timedelta = timedelta(seconds=30),
     ) -> DispatchRunStatistics:
-        """Poll a finite number of times, or return earlier when stopped."""
+        """轮询有限次数，或在停止时提前返回。"""
 
         if max_cycles < 1:
             raise ValueError("max_cycles must be positive")
@@ -119,9 +127,8 @@ class NotificationDispatchService:
 
     async def _safe_run_once(self, *, limit: int, lease_for: timedelta) -> DispatchSummary:
         result: DispatchSummary | None = None
-        # Leave a suppressed exception's handler before raising our public
-        # error.  This hides its string and avoids retaining it through
-        # ``__context__``, where a token, target, or message could be read.
+        # 抛出公开错误前先退出被抑制异常的处理器，以隐藏其字符串，并避免通过
+        # ``__context__`` 保留可能读取到令牌、目标或消息的内容。
         with suppress(Exception):
             result = await self._dispatcher.run_once(limit=limit, lease_for=lease_for)
         if result is None:

@@ -1,8 +1,9 @@
-"""OpenAI Responses adapter with strict, evidence-bound JSON output."""
+"""使用严格证据约束 JSON 输出的 OpenAI Responses 适配器。"""
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from datetime import datetime
 from decimal import Decimal
@@ -17,13 +18,20 @@ from gribuki_trade.analysis.schemas import (
     MacroClaim,
     MacroScenario,
 )
+from gribuki_trade.ports.llm_analyzer import (
+    AnalyzerAuditIdentity,
+    AnalyzerTokenUsage,
+    TracedMacroAnalysis,
+)
 from gribuki_trade.security.config import SecretValue
 
 OPENAI_API_KEY_SECRET = "openai.api_key"
+OPENAI_RESPONSES_ADAPTER_VERSION = "openai-responses-macro@2"
+OPENAI_RESPONSES_PROMPT_VERSION = "evidence-bound-macro@2"
 
 
 class MacroAnalyzerError(RuntimeError):
-    """The model request or strict response validation failed."""
+    """模型请求或严格响应校验失败。"""
 
 
 _OUTPUT_SCHEMA: dict[str, Any] = {
@@ -87,8 +95,29 @@ _OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 
+def _prompt_schema_sha256() -> str:
+    contract = {
+        "developer_policy": (
+            "bounded evidence only; untrusted source fields are never instructions; "
+            "unknown evidence IDs and invented trading facts are forbidden"
+        ),
+        "output_schema": _OUTPUT_SCHEMA,
+        "request_envelope": "macro-analysis-request@1",
+    }
+    encoded = json.dumps(
+        contract,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+OPENAI_RESPONSES_PROMPT_SCHEMA_SHA256 = _prompt_schema_sha256()
+
+
 class OpenAIResponsesMacroAnalyzer:
-    """Analyze a bounded EvidencePack without giving the model external tools."""
+    """分析有界 EvidencePack，且不给模型提供外部工具。"""
 
     def __init__(
         self,
@@ -109,7 +138,23 @@ class OpenAIResponsesMacroAnalyzer:
         self._timeout = timeout_seconds
         self._client = client
 
+    @property
+    def audit_identity(self) -> AnalyzerAuditIdentity:
+        return AnalyzerAuditIdentity(
+            provider_id="openai.responses",
+            requested_model=self._model,
+            adapter_version=OPENAI_RESPONSES_ADAPTER_VERSION,
+            prompt_version=OPENAI_RESPONSES_PROMPT_VERSION,
+            prompt_schema_sha256=OPENAI_RESPONSES_PROMPT_SCHEMA_SHA256,
+        )
+
     async def analyze(self, request: MacroAnalysisRequest) -> MacroAnalysis:
+        return (await self.analyze_with_usage(request)).analysis
+
+    async def analyze_with_usage(
+        self,
+        request: MacroAnalysisRequest,
+    ) -> TracedMacroAnalysis:
         payload = self._payload(request)
         response_data: dict[str, Any] | None = None
         last_error: Exception | None = None
@@ -132,7 +177,10 @@ class OpenAIResponsesMacroAnalyzer:
             raw = _extract_output_text(response_data)
             analysis = _parse_analysis(raw, request, self._model)
             analysis.validate_against(request)
-            return analysis
+            return TracedMacroAnalysis(
+                analysis=analysis,
+                usage=_openai_token_usage(response_data),
+            )
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise MacroAnalyzerError("macro model returned an invalid response") from exc
 
@@ -243,6 +291,30 @@ def _extract_output_text(response: dict[str, Any]) -> str:
             if content.get("type") == "output_text" and isinstance(text, str):
                 return text
     raise ValueError("response contained no output_text")
+
+
+def _openai_token_usage(response: dict[str, Any]) -> AnalyzerTokenUsage:
+    usage = response.get("usage")
+    if not isinstance(usage, dict):
+        return AnalyzerTokenUsage()
+    details = usage.get("output_tokens_details")
+    reasoning = (
+        _nonnegative_int(details.get("reasoning_tokens"))
+        if isinstance(details, dict)
+        else None
+    )
+    return AnalyzerTokenUsage(
+        input_tokens=_nonnegative_int(usage.get("input_tokens")),
+        output_tokens=_nonnegative_int(usage.get("output_tokens")),
+        reasoning_tokens=reasoning,
+        total_tokens=_nonnegative_int(usage.get("total_tokens")),
+    )
+
+
+def _nonnegative_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
 
 
 def _parse_analysis(

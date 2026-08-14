@@ -1,9 +1,8 @@
-"""Authenticated Binance Spot User Data Stream over the WebSocket API.
+"""经 WebSocket API 认证的 Binance 现货用户数据流。
 
-Binance's current WebSocket API authenticates a user-data subscription with
-``userDataStream.subscribe.signature``.  It does not use the legacy REST
-``listenKey`` lifecycle.  This module intentionally owns no trading methods:
-the socket can only subscribe and receive account/order notifications.
+当前 Binance WebSocket API 通过 ``userDataStream.subscribe.signature``
+认证用户数据订阅，不使用旧版 REST ``listenKey`` 生命周期。本模块特意不提供
+交易方法：套接字只能订阅并接收账户或订单通知。
 """
 
 from __future__ import annotations
@@ -40,11 +39,11 @@ _SENSITIVE_ASSIGNMENT = re.compile(
 
 
 class BinanceUserStreamConnectionError(BinanceTransportError):
-    """The private WebSocket could not be established or restored safely."""
+    """无法安全建立或恢复私有 WebSocket 连接。"""
 
 
 class BinanceUserStreamAPIError(BinanceTransportError):
-    """A subscription was rejected by Binance, with credentials redacted."""
+    """Binance 拒绝订阅，且错误信息中的凭据已脱敏。"""
 
     def __init__(self, *, status: int, code: int | None, message: str) -> None:
         self.status = status
@@ -57,7 +56,7 @@ class BinanceUserStreamAPIError(BinanceTransportError):
 
 
 class UserWebSocketConnection(Protocol):
-    """Minimum authenticated socket surface used by the stream."""
+    """数据流使用的最小认证套接字接口。"""
 
     async def send(self, message: str | bytes) -> None: ...
 
@@ -75,7 +74,7 @@ Sleep: TypeAlias = Callable[[float], Awaitable[None]]
 
 @dataclass(frozen=True, slots=True)
 class BinanceExecutionReport:
-    """A typed ``executionReport`` event from a Spot account."""
+    """来自现货账户的类型化 ``executionReport`` 事件。"""
 
     subscription_id: int
     event_time_ms: int
@@ -153,7 +152,7 @@ BinanceUserDataEvent: TypeAlias = (
 
 
 def user_websocket_api_url(environment: BinanceEnvironment | str) -> str:
-    """Return the private WebSocket API endpoint for an environment."""
+    """返回指定环境的私有 WebSocket API 端点。"""
 
     try:
         selected = (
@@ -171,10 +170,10 @@ def user_websocket_api_url(environment: BinanceEnvironment | str) -> str:
 
 
 def signature_payload(params: Mapping[str, object]) -> str:
-    """Canonical Binance WebSocket-API payload (ASCII key order).
+    """生成采用 ASCII 键顺序的规范 Binance WebSocket-API 载荷。
 
-    ``signature`` is always excluded.  The caller signs the returned string
-    with HMAC-SHA256 and appends the hexadecimal result to the request params.
+    始终排除 ``signature``。调用方用 HMAC-SHA256 对返回字符串签名，再把十六进制
+    结果追加到请求参数。
     """
 
     keys: list[str] = []
@@ -205,7 +204,7 @@ def signature_payload(params: Mapping[str, object]) -> str:
 
 
 def parse_user_data_event(message: str | bytes) -> BinanceUserDataEvent:
-    """Parse one documented ``{subscriptionId,event}`` notification."""
+    """解析一个文档规定的 ``{subscriptionId,event}`` 通知。"""
 
     decoded = _decode_frame(message)
     if "id" in decoded:
@@ -230,12 +229,11 @@ def parse_user_data_event(message: str | bytes) -> BinanceUserDataEvent:
 
 
 class BinanceSpotUserDataStream:
-    """Async iterator over authenticated Binance Spot account/order events.
+    """迭代已认证 Binance 现货账户或订单事件的异步迭代器。
 
-    A subscription request and all notifications share one WebSocket API
-    connection.  Frames with an ``id`` are routed to the matching subscription
-    request; notification envelopes are buffered if they arrive first.  A
-    reconnect is bounded and always performs a fresh signed subscription.
+    订阅请求与所有通知共用一个 WebSocket API 连接。含 ``id`` 的数据帧会路由到
+    匹配的订阅请求；通知信封若先到达则进入缓冲区。重连次数受限，且每次重连都会
+    重新执行签名订阅。
     """
 
     def __init__(
@@ -333,7 +331,7 @@ class BinanceSpotUserDataStream:
 
     @property
     def connection_epoch(self) -> int:
-        """Monotonic successful-subscription count for downstream gap recovery."""
+        """供下游缺口恢复使用的单调递增成功订阅计数。"""
 
         return self._connection_epoch
 
@@ -460,7 +458,7 @@ class BinanceSpotUserDataStream:
         except (ConnectionClosed, ConnectionError, TimeoutError, EOFError, OSError):
             raise
         except Exception:
-            # An injected socket may include the signed frame in its exception.
+            # 注入的套接字可能在异常中包含已签名数据帧。
             raise BinanceUserStreamConnectionError(
                 "Binance user-data subscription send failed"
             ) from None
@@ -547,7 +545,7 @@ def _decode_frame(message: str | bytes) -> Mapping[str, Any]:
 
 
 def _parse_decoded_user_event(decoded: Mapping[str, Any]) -> BinanceUserDataEvent:
-    # Re-encoding is avoided so Decimal source strings stay exactly as sent.
+    # 避免重新编码，使 Decimal 来源字符串与发送值完全一致。
     if "id" in decoded:
         raise BinanceProtocolError("Binance response frame is not a user-data event")
     subscription_id = _integer(decoded, "subscriptionId", minimum=0)

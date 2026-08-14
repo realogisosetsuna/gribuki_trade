@@ -18,12 +18,17 @@ from gribuki_trade.storage import OutboxStatus, SQLiteOutbox
 NOW = datetime(2020, 8, 13, 4, 0, tzinfo=UTC)
 
 
-def make_notification(number: int) -> OutboundNotification:
+def make_notification(
+    number: int,
+    *,
+    target_id: str = "12345",
+    channel: str = "test",
+) -> OutboundNotification:
     return OutboundNotification(
         idempotency_key=f"signal:{number}",
-        channel="test",
+        channel=channel,
         target_kind=NotificationTargetKind.PRIVATE,
-        target_id="12345",
+        target_id=target_id,
         text=f"alert {number}",
         created_at=NOW,
     )
@@ -62,6 +67,35 @@ def test_dispatch_once_serializes_concurrent_callers_without_duplicates(tmp_path
             stored = outbox.get_by_key("signal:1")
             assert stored is not None
             assert stored.status is OutboxStatus.SENT
+
+    asyncio.run(scenario())
+
+
+def test_target_scoped_service_leaves_other_target_pending(tmp_path) -> None:
+    async def scenario() -> None:
+        notifier = RecordingNotifier()
+        with SQLiteOutbox(tmp_path / "outbox.sqlite3") as outbox:
+            outbox.enqueue(make_notification(1, target_id="12345"))
+            outbox.enqueue(make_notification(2, target_id="67890"))
+            outbox.enqueue(make_notification(3, target_id="12345", channel="email"))
+            service = NotificationDispatchService(
+                outbox,
+                {"test": notifier},
+                target_kind=NotificationTargetKind.PRIVATE,
+                target_id="12345",
+            )
+
+            summary = await service.dispatch_once()
+
+            assert summary.claimed == 1
+            assert summary.sent == 1
+            assert notifier.delivered_keys == ["signal:1"]
+            other = outbox.get_by_key("signal:2")
+            assert other is not None
+            assert other.status is OutboxStatus.PENDING
+            other_channel = outbox.get_by_key("signal:3")
+            assert other_channel is not None
+            assert other_channel.status is OutboxStatus.PENDING
 
     asyncio.run(scenario())
 

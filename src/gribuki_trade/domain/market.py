@@ -1,4 +1,4 @@
-"""Broker-neutral market-data domain types."""
+"""与券商无关的市场数据领域类型。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from enum import StrEnum
 
 
 class PriceAdjustment(StrEnum):
-    """Adjustment applied by a historical-data provider."""
+    """历史数据供应商采用的复权方式。"""
 
     NONE = "NONE"
     FORWARD = "FORWARD"
@@ -18,11 +18,10 @@ class PriceAdjustment(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class DailyBar:
-    """One point-in-time daily record.
+    """一条具有时点约束的日线记录。
 
-    Prices are optional because BaoStock also reports suspended sessions.  A
-    strategy must explicitly filter ``is_trading`` and missing prices instead
-    of silently forward-filling them.
+    价格允许缺失，因为 BaoStock 也会返回停牌交易日。策略必须显式过滤
+    ``is_trading`` 与缺失价格，不得静默向前填充。
     """
 
     symbol: str

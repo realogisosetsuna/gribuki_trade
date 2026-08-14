@@ -1,4 +1,4 @@
-"""Schwab application credentials resolved from the local secret provider."""
+"""从本地秘密提供者解析 Schwab 应用凭据。"""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ class SchwabAppCredentials:
 
 
 def load_schwab_app_credentials(provider: SecretProvider) -> SchwabAppCredentials:
-    """Load the developer App Key/Secret after the app reaches Ready status."""
+    """应用进入就绪状态后，加载开发者应用密钥和机密。"""
 
     client_id = provider.get_secret(SCHWAB_CLIENT_ID_SECRET)
     client_secret = provider.get_secret(SCHWAB_CLIENT_SECRET_SECRET)

@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from gribuki_trade.adapters.ashare_surveillance import (
+    TENCENT_ENRICHED_SURVEILLANCE_SOURCE_ID,
     TENCENT_SURVEILLANCE_SOURCE_ID,
     AKShareAShareSurveillanceAdapter,
 )
@@ -30,7 +31,7 @@ from gribuki_trade.services.ashare_surveillance import (
 )
 
 SESSION = date(2026, 8, 14)
-REQUESTED = datetime(2026, 8, 14, 2, 0, tzinfo=UTC)  # 10:00 Shanghai
+REQUESTED = datetime(2026, 8, 14, 2, 0, tzinfo=UTC)  # 上海时间 10:00
 
 
 class _Frame:
@@ -75,6 +76,7 @@ def test_intraday_ranker_surfaces_strong_complete_candidate() -> None:
 
     assert len(ranking.candidates) == 5
     assert ranking.candidates[0].symbol == "000040.SZ"
+    assert ranking.candidates[0].previous_close == Decimal("10")
     assert ranking.candidates[0].candidate_class is IntradayCandidateClass.MOMENTUM_EXPANSION
     assert ranking.candidates[0].factor_weight_coverage == pytest.approx(1.0)
     assert not ranking.globally_unavailable_factors
@@ -134,6 +136,96 @@ def test_adapter_uses_independent_tencent_fallback_with_explicit_degradation() -
     assert len(snapshot.records) == 40
     assert snapshot.records[0].session_amount_cny == Decimal("10000000")
     assert snapshot.records[0].open_price is None
+
+
+def _tencent_quote_rows(provider_codes: tuple[str, ...]) -> tuple[dict[str, Any], ...]:
+    rows: list[dict[str, Any]] = []
+    for provider_code in provider_codes:
+        index = int(provider_code[2:])
+        last = Decimal("10") + Decimal(index) / Decimal("10")
+        rows.append(
+            {
+                "provider_code": provider_code,
+                "name": f"样本{index}",
+                "last": last,
+                "previous_close": Decimal("10"),
+                "open": Decimal("10"),
+                "provider_timestamp": "20260814100000",
+                "change_percent": Decimal(index),
+                "high": last + Decimal("0.05"),
+                "low": Decimal("9.5"),
+                "amount_cny": Decimal(index) * Decimal("10000000"),
+                "turnover_rate": Decimal(index) / Decimal("10"),
+                "volume_ratio": Decimal("1") + Decimal(index) / Decimal("20"),
+            }
+        )
+    return tuple(rows)
+
+
+def test_adapter_strictly_enriches_tencent_board_with_bulk_quotes() -> None:
+    fetched = datetime(2026, 8, 14, 2, 0, 5, tzinfo=UTC)
+    requested_codes: tuple[str, ...] | None = None
+
+    def quote_fetcher(
+        provider_codes: tuple[str, ...],
+    ) -> tuple[dict[str, Any], ...]:
+        nonlocal requested_codes
+        requested_codes = provider_codes
+        return _tencent_quote_rows(provider_codes)
+
+    adapter = AKShareAShareSurveillanceAdapter(
+        _TencentFallbackClient(),
+        minimum_universe_count=20,
+        now=lambda: fetched,
+        tencent_quote_fetcher=quote_fetcher,
+    )
+
+    snapshot = asyncio.run(
+        adapter.fetch_intraday_universe(
+            session_date=SESSION,
+            known_at=REQUESTED,
+        )
+    )
+
+    assert requested_codes is not None
+    assert requested_codes[0] == "sz000001"
+    assert snapshot.source_id == TENCENT_ENRICHED_SURVEILLANCE_SOURCE_ID
+    assert snapshot.quality is SurveillanceSourceQuality.COMPLETE
+    assert len(snapshot.records) == 40
+    assert snapshot.records[0].open_price == Decimal("10")
+    assert snapshot.records[0].high_price == Decimal("10.15")
+    assert snapshot.records[0].volume_ratio == Decimal("1.05")
+    assert any("strict board/quote inner join" in item for item in snapshot.warnings)
+
+
+def test_adapter_does_not_label_incomplete_tencent_enrichment_complete() -> None:
+    fetched = datetime(2026, 8, 14, 2, 0, 5, tzinfo=UTC)
+
+    def incomplete_quote_fetcher(
+        provider_codes: tuple[str, ...],
+    ) -> tuple[dict[str, Any], ...]:
+        return _tencent_quote_rows(provider_codes[:10])
+
+    adapter = AKShareAShareSurveillanceAdapter(
+        _TencentFallbackClient(),
+        minimum_universe_count=20,
+        now=lambda: fetched,
+        tencent_quote_fetcher=incomplete_quote_fetcher,
+    )
+
+    snapshot = asyncio.run(
+        adapter.fetch_intraday_universe(
+            session_date=SESSION,
+            known_at=REQUESTED,
+        )
+    )
+
+    assert snapshot.source_id == TENCENT_SURVEILLANCE_SOURCE_ID
+    assert snapshot.quality is SurveillanceSourceQuality.DEGRADED
+    assert any(
+        item == "PRIOR_SOURCE_FAILED:tencent_bulk_quote:INCOMPLETE_ENRICHED_UNIVERSE"
+        for item in snapshot.warnings
+    )
 
 
 class _Source:

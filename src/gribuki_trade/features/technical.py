@@ -1,4 +1,4 @@
-"""Deterministic, closed-bar technical signals for research recommendations."""
+"""用于研究推荐、基于已完成行情柱的确定性技术信号。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from gribuki_trade.domain.recommendations import (
 
 @dataclass(frozen=True, slots=True)
 class TechnicalBar:
-    """A completed OHLCV bar as observed by this process."""
+    """本进程观测到的一根已完成 OHLCV 行情柱。"""
 
     end_time: datetime
     available_at: datetime
@@ -42,7 +42,7 @@ class TechnicalBar:
 
 @dataclass(frozen=True, slots=True)
 class TechnicalSignalConfig:
-    """Parameters shared by short-horizon and swing signal instances."""
+    """短周期与波段信号实例共享的参数。"""
 
     fast_ma_bars: int = 10
     slow_ma_bars: int = 30
@@ -74,7 +74,7 @@ class TechnicalSignalConfig:
 
 @dataclass(frozen=True, slots=True)
 class TechnicalSignal:
-    """An auditable technical result with no executable order fields."""
+    """不含可执行订单字段的可审计技术结果。"""
 
     symbol: str
     as_of: datetime
@@ -98,10 +98,9 @@ def build_technical_signal(
     is_currently_held: bool = False,
     config: TechnicalSignalConfig | None = None,
 ) -> TechnicalSignal:
-    """Build a signal using only bars available at ``decision_time``.
+    """只使用在 ``decision_time`` 可用的行情柱构建信号。
 
-    Unfinished, future, duplicate, and out-of-order bars are rejected rather
-    than silently repaired.  This keeps the same function safe for replay.
+    未完成、未来、重复及乱序行情柱会被拒绝而非静默修复，从而保证同一函数可安全回放。
     """
 
     if not symbol.strip():
@@ -131,12 +130,9 @@ def build_technical_signal(
         )
 
     latest = bars[-1]
-    # ``available_at`` is the point-in-time visibility boundary.  It may be
-    # very recent even when a provider has returned an old market bar (for
-    # example, the first fetch after a laptop resumes).  Freshness therefore
-    # has to be measured from the market bar's end time, not from download
-    # time; otherwise old prices could look current merely because they were
-    # fetched just now.
+    # ``available_at`` 是时点可见性边界。即使供应商返回旧行情柱，它也可能非常接近当前
+    # 时间（例如笔记本恢复后的首次拉取）。因此，新鲜度必须从市场行情柱结束时间而非
+    # 下载时间计量；否则旧价格只因刚刚拉取就可能显得是当前价格。
     data_age = decision_time - latest.end_time
     if data_age < timedelta(0):
         raise ValueError("latest bar is from the future")

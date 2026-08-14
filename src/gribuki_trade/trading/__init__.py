@@ -1,4 +1,4 @@
-"""Persistent order-management and account-ledger primitives."""
+"""持久化订单管理与账户账本基础组件。"""
 
 from gribuki_trade.trading.models import (
     AssetBalance,

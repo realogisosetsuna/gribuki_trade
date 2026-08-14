@@ -1,9 +1,8 @@
-"""Low-trust search discovery through Tavily and self-hosted SearXNG.
+"""通过 Tavily 与自托管 SearXNG 进行低信任搜索发现。
 
-Search responses are persisted only as ``discovery`` events.  They are leads
-for subsequent source retrieval and verification, never official evidence.
-No Brave adapter is provided because Brave's default API terms do not permit
-general-purpose persistent storage of search results.
+搜索响应只会作为 ``discovery`` 事件持久化。它们只是后续抓取原始来源并
+核验的线索，绝不是官方证据。此处不提供 Brave 适配器，因为 Brave 默认
+接口条款不允许将搜索结果用于通用持久化存储。
 """
 
 from __future__ import annotations
@@ -81,9 +80,38 @@ _GENERIC_TITLE_KEYS = frozenset(
 )
 _MIN_TITLE_CONFIRMATION_CHARACTERS = 6
 
+# 与宏观证据选择器使用同一套保守注册域/官方主体规则。搜索提供方只是发现路由，
+# Tavily 与 SearXNG 同时返回一条链接并不能制造第二个发布者。
+_MULTI_LABEL_PUBLIC_SUFFIXES = frozenset(
+    {
+        "ac.cn",
+        "com.cn",
+        "edu.cn",
+        "gov.cn",
+        "net.cn",
+        "org.cn",
+        "com.hk",
+        "com.tw",
+        "co.jp",
+        "co.uk",
+        "org.uk",
+    }
+)
+_OFFICIAL_DOMAIN_BODIES = {
+    "stats.gov.cn": "nbs",
+    "pbc.gov.cn": "pboc",
+    "federalreserve.gov": "fed",
+    "csrc.gov.cn": "csrc",
+    "mof.gov.cn": "mof",
+    "ndrc.gov.cn": "ndrc",
+    "safe.gov.cn": "safe",
+    "sse.com.cn": "sse",
+    "szse.cn": "szse",
+}
+
 
 class SearchProviderError(RuntimeError):
-    """Sanitized base error for one provider/query attempt."""
+    """单次提供方及查询尝试的脱敏基础错误。"""
 
     def __init__(
         self,
@@ -98,11 +126,11 @@ class SearchProviderError(RuntimeError):
 
 
 class SearchProviderAccessDenied(SearchProviderError):
-    """The provider returned 401/403; no credential-bypass is attempted."""
+    """提供方返回 401/403；不会尝试绕过凭据验证。"""
 
 
 class SearchProviderRateLimited(SearchProviderError):
-    """The provider returned 429."""
+    """提供方返回 429。"""
 
     def __init__(
         self,
@@ -115,28 +143,28 @@ class SearchProviderRateLimited(SearchProviderError):
 
 
 class SearchProviderTimeout(SearchProviderError):
-    """The injected transport did not complete within the provider timeout."""
+    """注入的传输层未能在提供方超时期限内完成。"""
 
 
 class SearchProviderTransportError(SearchProviderError):
-    """The request failed before an HTTP response was available."""
+    """请求在收到 HTTP 响应前失败。"""
 
 
 class SearchProviderUnavailable(SearchProviderError):
-    """The provider returned a non-success status or oversized response."""
+    """提供方返回非成功状态或过大的响应。"""
 
 
 class SearchProviderPayloadError(SearchProviderError):
-    """A success response was not a bounded JSON search-result object."""
+    """成功响应不是有界的 JSON 搜索结果对象。"""
 
 
 class DiscoverySourcesExhausted(SourceFetchError):
-    """Every provider/query attempt failed in one discovery run."""
+    """一次发现运行中的所有提供方与查询尝试均失败。"""
 
 
 @dataclass(frozen=True, slots=True)
 class SearchAttemptFailure:
-    """Safe diagnostics without query text, URL, headers, body, or secrets."""
+    """不含查询文本、网址、请求头、正文或密钥的安全诊断信息。"""
 
     provider_id: str
     query_kind: DiscoveryQueryKind
@@ -147,24 +175,57 @@ class SearchAttemptFailure:
 class DiscoveryConfirmationBasis(StrEnum):
     NONE = "none"
     OFFICIAL_HOST = "official_host"
-    MULTI_PROVIDER = "multi_provider"
+    INDEPENDENT_PUBLISHERS = "independent_publishers"
 
 
 @dataclass(frozen=True, slots=True)
 class DiscoveryLineage:
-    """Why one discovery event may, or may not, enter an evidence selector."""
+    """说明一个发现事件为何可以或不可以进入证据选择器。"""
 
     event_id: str
     canonical_url: str
     matched_urls: tuple[str, ...]
     provider_ids: tuple[str, ...]
+    publisher_identities: tuple[str, ...]
     event_type: str
     confirmation_basis: DiscoveryConfirmationBasis
     official_host: str | None = None
 
+    def __post_init__(self) -> None:
+        if not self.matched_urls or self.canonical_url not in self.matched_urls:
+            raise ValueError("discovery lineage must retain its canonical URL")
+        if self.matched_urls != tuple(sorted(set(self.matched_urls))):
+            raise ValueError("discovery lineage URLs must be sorted and unique")
+        if not self.provider_ids or self.provider_ids != tuple(
+            sorted(set(self.provider_ids))
+        ):
+            raise ValueError("discovery lineage provider IDs must be sorted and unique")
+        if not self.publisher_identities or self.publisher_identities != tuple(
+            sorted(set(self.publisher_identities))
+        ):
+            raise ValueError("publisher identities must be sorted and unique")
+        confirmed = self.event_type == DISCOVERY_CONFIRMED_EVENT_TYPE
+        if confirmed != (self.confirmation_basis is not DiscoveryConfirmationBasis.NONE):
+            raise ValueError("event type and discovery confirmation basis disagree")
+        if self.confirmation_basis is DiscoveryConfirmationBasis.OFFICIAL_HOST:
+            if self.official_host is None:
+                raise ValueError("official-host confirmation must retain the matched host")
+        elif self.official_host is not None:
+            raise ValueError("non-official confirmation cannot retain an official host")
+        if (
+            self.confirmation_basis
+            is DiscoveryConfirmationBasis.INDEPENDENT_PUBLISHERS
+            and len(self.publisher_identities) < 2
+        ):
+            raise ValueError("independent-publisher confirmation requires two publishers")
+
     @property
     def eligible_for_evidence(self) -> bool:
         return self.event_type == DISCOVERY_CONFIRMED_EVENT_TYPE
+
+    @property
+    def independent_publisher_count(self) -> int:
+        return len(self.publisher_identities)
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,13 +237,13 @@ class DiscoveryCollection:
 
     @property
     def confirmed_events(self) -> tuple[NormalizedEvent, ...]:
-        """Only events eligible for a future macro evidence selector."""
+        """仅返回有资格进入未来宏观证据选择器的事件。"""
 
         return select_confirmed_discovery_events(self.batch.events)
 
     @property
     def hint_events(self) -> tuple[NormalizedEvent, ...]:
-        """Displayable leads which must not drive an actionable recommendation."""
+        """可展示但不得驱动可执行建议的线索。"""
 
         return tuple(
             event
@@ -194,7 +255,7 @@ class DiscoveryCollection:
 def select_confirmed_discovery_events(
     events: Sequence[NormalizedEvent],
 ) -> tuple[NormalizedEvent, ...]:
-    """Fail closed: entity tags never promote a single-provider search hint."""
+    """按闭锁原则失败：实体标签绝不提升缺少独立发布域的搜索提示。"""
 
     return tuple(
         event
@@ -283,8 +344,8 @@ async def _request_json(
             "search provider transport failed",
         ) from None
     except Exception:
-        # A custom injected transport may use a provider-specific exception
-        # carrying request details.  Normalize it before it reaches logs.
+        # 自定义注入传输层可能抛出携带请求细节的提供方专用异常，必须在其
+        # 进入日志之前规范化。
         raise SearchProviderTransportError(
             provider_id,
             "search provider transport failed",
@@ -396,7 +457,7 @@ def _parse_hit(
 
 
 class TavilySearchProvider:
-    """Tavily's official ``POST https://api.tavily.com/search`` contract."""
+    """Tavily 官方 ``POST https://api.tavily.com/search`` 接口约定。"""
 
     provider_id = "tavily"
 
@@ -481,7 +542,7 @@ class TavilySearchProvider:
 
 
 class SearXNGSearchProvider:
-    """A configured SearXNG instance's official ``GET /search`` JSON API."""
+    """已配置 SearXNG 实例的官方 ``GET /search`` JSON 接口。"""
 
     provider_id = "searxng"
 
@@ -624,6 +685,33 @@ def _matched_official_host(url: str, official_hosts: frozenset[str]) -> str | No
     )
 
 
+def _registrable_domain(hostname: str) -> str:
+    labels = tuple(label for label in hostname.split(".") if label)
+    if len(labels) <= 2:
+        return ".".join(labels)
+    suffix = ".".join(labels[-2:])
+    if suffix in _MULTI_LABEL_PUBLIC_SUFFIXES and len(labels) >= 3:
+        return ".".join(labels[-3:])
+    return suffix
+
+
+def _publisher_identity(url: str) -> str:
+    """按规范化发布域返回稳定身份，不把搜索提供方 ID 当作发布者。"""
+
+    host = (urlsplit(url).hostname or "").rstrip(".").casefold()
+    try:
+        host = host.encode("idna").decode("ascii")
+    except UnicodeError:
+        return "publisher-unknown"
+    if not host:
+        return "publisher-unknown"
+    domain = _registrable_domain(host)
+    official_body = _OFFICIAL_DOMAIN_BODIES.get(domain)
+    if official_body is not None:
+        return f"official-body:{official_body}"
+    return f"publisher-domain:{domain}"
+
+
 @dataclass(slots=True)
 class _DiscoveryCluster:
     hits: list[DiscoveryHit]
@@ -641,7 +729,7 @@ class _DiscoveryCluster:
 
 
 def _title_is_specific_enough(value: str) -> bool:
-    """Reject generic/short title equality as independent corroboration."""
+    """拒绝将通用或短标题相同视为独立佐证。"""
 
     return (
         len(value) >= _MIN_TITLE_CONFIRMATION_CHARACTERS
@@ -654,6 +742,7 @@ class _ResolvedDiscovery:
     hit: DiscoveryHit
     matched_urls: tuple[str, ...]
     provider_ids: tuple[str, ...]
+    publisher_identities: tuple[str, ...]
     confirmation_basis: DiscoveryConfirmationBasis
     official_host: str | None
 
@@ -681,17 +770,24 @@ def _cluster_hits(
 
     resolved: list[_ResolvedDiscovery] = []
     for cluster in clusters:
-        provider_ids = tuple(dict.fromkeys(hit.provider_id for hit in cluster.hits))
-        matched_urls = tuple(dict.fromkeys(hit.url for hit in cluster.hits))
+        provider_ids = tuple(sorted({hit.provider_id for hit in cluster.hits}))
+        matched_urls = tuple(sorted({hit.url for hit in cluster.hits}))
+        publisher_identities = tuple(
+            sorted({_publisher_identity(hit.url) for hit in cluster.hits})
+        )
+        ordered_hits = sorted(
+            cluster.hits,
+            key=lambda item: (item.url, _title_key(item.title), item.provider_id),
+        )
         official_hit = next(
             (
                 hit
-                for hit in cluster.hits
+                for hit in ordered_hits
                 if _matched_official_host(hit.url, official_hosts) is not None
             ),
             None,
         )
-        representative = official_hit or cluster.hits[0]
+        representative = official_hit or ordered_hits[0]
         entities = tuple(
             dict.fromkeys(entity for hit in cluster.hits for entity in hit.entities)
         )
@@ -706,8 +802,8 @@ def _cluster_hits(
         official_host = _matched_official_host(representative.url, official_hosts)
         if official_host is not None:
             basis = DiscoveryConfirmationBasis.OFFICIAL_HOST
-        elif len(provider_ids) >= 2:
-            basis = DiscoveryConfirmationBasis.MULTI_PROVIDER
+        elif len(publisher_identities) >= 2:
+            basis = DiscoveryConfirmationBasis.INDEPENDENT_PUBLISHERS
         else:
             basis = DiscoveryConfirmationBasis.NONE
         resolved.append(
@@ -715,6 +811,7 @@ def _cluster_hits(
                 hit=representative,
                 matched_urls=matched_urls,
                 provider_ids=provider_ids,
+                publisher_identities=publisher_identities,
                 confirmation_basis=basis,
                 official_host=official_host,
             )
@@ -723,7 +820,7 @@ def _cluster_hits(
 
 
 class MultiProviderDiscoverySource:
-    """Concurrent, failure-isolated search discovery exposed as ``NewsSource``."""
+    """以 ``NewsSource`` 形式提供、并发且故障隔离的搜索发现。"""
 
     def __init__(
         self,
@@ -798,8 +895,8 @@ class MultiProviderDiscoverySource:
                     ):
                         retry_after_seconds.append(outcome.retry_after_seconds)
                 else:
-                    # Never retain provider exception text: it can contain a
-                    # credential-bearing header, URL, or raw response body.
+                    # 绝不保留提供方异常文本，其中可能包含带凭据的请求头、
+                    # 网址或原始响应正文。
                     error_code = "unexpected_provider_error"
                     status_code = None
                 failures.append(
@@ -885,9 +982,10 @@ class MultiProviderDiscoverySource:
             DISCOVERY_CONFIRMED_EVENT_TYPE if confirmed else DISCOVERY_HINT_EVENT_TYPE
         )
         providers = ",".join(discovery.provider_ids)
+        publishers = ",".join(discovery.publisher_identities)
         prefix = DISCOVERY_CONFIRMED_PREFIX if confirmed else DISCOVERY_HINT_PREFIX
         summary_body = discovery.hit.summary or "（搜索结果未提供摘要）"
-        summary = f"{prefix}[providers={providers}] {summary_body}"
+        summary = f"{prefix}[providers={providers};publishers={publishers}] {summary_body}"
         source_id = (
             "discovery.multi"
             if len(discovery.provider_ids) >= 2
@@ -912,6 +1010,7 @@ class MultiProviderDiscoverySource:
             canonical_url=event.canonical_url,
             matched_urls=discovery.matched_urls,
             provider_ids=discovery.provider_ids,
+            publisher_identities=discovery.publisher_identities,
             event_type=event.event_type,
             confirmation_basis=discovery.confirmation_basis,
             official_host=discovery.official_host,

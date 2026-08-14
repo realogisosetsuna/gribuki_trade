@@ -1,9 +1,7 @@
-"""Deterministic A-share paper-account application service.
+"""确定性的 A 股模拟账户应用服务。
 
-This service records executions only.  It never contacts a broker or market
-data provider and it does not invent suspension, price-limit, queue-position or
-liquidity behavior.  A future simulator may produce ``ASharePaperFill`` values;
-manual broker confirmations already use the same contract today.
+本服务只记录成交，绝不联系券商或市场数据供应商，也不虚构停牌、涨跌停、队列位置或
+流动性行为。执行模拟器可以生成 ``ASharePaperFill`` 值；手工券商确认同样采用该契约。
 """
 
 from __future__ import annotations
@@ -41,35 +39,35 @@ _SCHEMA_VERSION = 1
 
 
 class ASharePaperError(RuntimeError):
-    """Base class for paper-account command failures."""
+    """模拟账户命令失败的基类。"""
 
 
 class PaperAccountNotFoundError(ASharePaperError):
-    """The requested account has no opening event."""
+    """请求的账户没有开户事件。"""
 
 
 class PaperAccountAlreadyExistsError(ASharePaperError):
-    """An opening command conflicts with an existing account."""
+    """开户命令与现有账户冲突。"""
 
 
 class InsufficientPaperCashError(ASharePaperError):
-    """A buy would make available cash negative."""
+    """买入将导致可用现金为负。"""
 
 
 class InsufficientAvailablePositionError(ASharePaperError):
-    """A sell exceeds the T+1-available share balance."""
+    """卖出数量超过遵循 T+1 的可用股份余额。"""
 
 
 class PaperFillConflictError(ASharePaperError):
-    """A fill identifier was reused with different execution content."""
+    """同一成交标识被用于不同的成交内容。"""
 
 
 class PaperSessionError(ASharePaperError):
-    """A fill or rollover violates explicit trading-session ordering."""
+    """成交或结转违反明确的交易日顺序。"""
 
 
 class PaperProjectionError(ASharePaperError):
-    """Stored events cannot produce a valid deterministic projection."""
+    """已存储事件无法生成有效的确定性投影。"""
 
 
 @dataclass(slots=True)
@@ -95,7 +93,7 @@ class _Projection:
 
 
 class ASharePaperTradingService:
-    """Append commands and rebuild balances from an immutable local ledger."""
+    """追加命令，并从不可变本地账本重建余额。"""
 
     def __init__(
         self,
@@ -118,7 +116,7 @@ class ASharePaperTradingService:
         session_date: date,
         opened_at: datetime,
     ) -> PaperAccountSnapshot:
-        """Create an account once; an exact replay is idempotent."""
+        """只创建账户一次；完全相同的重放具有幂等性。"""
 
         normalized_account_id = account_id.strip()
         initial_cash = _money(initial_cash, self._fees)
@@ -169,10 +167,9 @@ class ASharePaperTradingService:
         target_session_date: date,
         occurred_at: datetime,
     ) -> PaperAccountSnapshot:
-        """Make all prior-session buys sellable in a caller-validated session.
+        """在调用方已校验的交易日使先前交易日买入的股份全部可卖。
 
-        This method deliberately does not guess exchange holidays.  Callers must
-        invoke it only with a known trading session from their calendar source.
+        本方法刻意不猜测交易所节假日。调用方只能使用其日历来源确认的交易日调用。
         """
 
         occurred_at = _aware_utc(occurred_at, "occurred_at")
@@ -217,7 +214,7 @@ class ASharePaperTradingService:
         *,
         recorded_at: datetime | None = None,
     ) -> PaperFillReceipt:
-        """Record one manual or simulated fill through the same contract."""
+        """通过同一契约记录一笔手工或模拟成交。"""
 
         events = self._required_events(fill.account_id)
         current = replay_paper_account(events)
@@ -350,7 +347,7 @@ class ASharePaperTradingService:
 
 
 def replay_paper_account(events: tuple[PaperLedgerEvent, ...]) -> PaperAccountSnapshot:
-    """Pure projector used by both normal reads and restart/recovery tests."""
+    """供正常读取及重启/恢复测试共同使用的纯投影器。"""
 
     if not events:
         raise PaperAccountNotFoundError("cannot replay an empty event stream")
@@ -510,12 +507,10 @@ def _simulated_commission_increment(
     prior_fills: tuple[AppliedPaperFill, ...],
     schedule: PaperFeeSchedule,
 ) -> Decimal:
-    """Return this fill's share of an order-level minimum commission.
+    """返回本次成交应分摊的订单级最低佣金。
 
-    Historical events retain the already charged commission, so replays are
-    stable when fee configuration later changes.  Only simulated fills with an
-    explicit external order identifier participate in aggregation; standalone
-    and manual fills preserve the original transaction-level behavior.
+    历史事件保留已经收取的佣金，因此费用配置日后变化时仍能稳定回放。只有带明确
+    外部订单标识的模拟成交参与汇总；独立成交与手工成交保持原有的单笔交易行为。
     """
 
     if (

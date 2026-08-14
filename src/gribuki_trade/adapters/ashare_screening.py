@@ -1,16 +1,14 @@
-"""AKShare inputs for the deterministic three-layer A-share screener.
+"""确定性三层 A 股筛选器的 AKShare 输入。
 
-The adapter deliberately keeps the two expensive boundaries separate:
+适配器刻意将两个昂贵边界分开：
 
-* one current-session, complete-market quote snapshot for cheap filtering;
-* unadjusted per-symbol daily histories only for the bounded L1 survivors.
+* 一份当前交易日的完整市场报价快照，用于低成本过滤；
+* 只为数量受限的第一层幸存者获取逐代码不复权日线历史。
 
-Public-web endpoints do not expose an authoritative payload timestamp.  A
-same-session close snapshot is therefore usable only after 15:05 Shanghai time
-and records that conservative time as ``available_at``.  ``observed_at`` is the
-actual completion time and is never replaced with the caller's ``known_at``.
-The live endpoints cannot replay a historical universe; historical backtests
-must read an archived revision instead.
+公开网页端点不暴露权威载荷时间戳。因此同交易日收盘快照只能在上海时间
+15:05 后使用，并将这一保守时刻记录为 ``available_at``。``observed_at`` 是实际
+完成时间，绝不替换为调用方的 ``known_at``。实时端点无法重放历史股票池；
+历史回测必须改为读取已归档修订版。
 """
 
 from __future__ import annotations
@@ -20,6 +18,7 @@ import hashlib
 import json
 import math
 import re
+import threading
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -47,6 +46,7 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 EASTMONEY_SCREENING_SOURCE_ID = "AKShare/Eastmoney stock_zh_a_spot_em"
 TENCENT_SCREENING_SOURCE_ID = "AKShare/Tencent stock_zh_a_spot_tx"
 AKSHARE_HISTORY_SOURCE_ID = "AKShare/Eastmoney stock_zh_a_hist adjust=NONE"
+SINA_HISTORY_SOURCE_ID = "AKShare/Sina stock_zh_a_daily adjust=NONE"
 
 _CLOSE_READY_TIME = time(15, 5)
 _DEFAULT_MINIMUM_UNIVERSE = 4500
@@ -57,6 +57,11 @@ _DEFAULT_HISTORY_CALENDAR_DAYS = 430
 _FEATURE_VERSION = "ashare-screening-raw-factors@1"
 _CORPORATE_ACTION_TOLERANCE = Decimal("0.02")
 _MIN_CORPORATE_ACTION_COVERAGE = Decimal("0.95")
+
+# AKShare 的新浪日线解码器通过 py_mini_racer 内嵌 V8。在 Windows 上并发首次
+# 初始化可能终止整个 Python 进程，因此回退调用必须跨适配器实例串行执行。
+# 东方财富主调用仍保留配置的并发度。
+_SINA_HISTORY_LOCK = threading.Lock()
 
 _ST_NAME_PATTERN = re.compile(r"^(?:S\*ST|SST|\*ST|ST)|退", re.IGNORECASE)
 
@@ -90,23 +95,23 @@ _HISTORY_ALIASES: Mapping[str, tuple[str, ...]] = {
 
 
 class AKShareScreeningDataError(RuntimeError):
-    """Base failure for the public screening inputs."""
+    """公开筛选输入失败的基类。"""
 
 
 class AKShareScreeningPointInTimeError(AKShareScreeningDataError):
-    """A live endpoint was requested outside its defensible time boundary."""
+    """在可辩护时间边界之外请求了实时端点。"""
 
 
 class AKShareScreeningPayloadError(AKShareScreeningDataError):
-    """A provider response did not meet the explicit schema or unit contract."""
+    """数据提供者响应不符合明确的架构或单位契约。"""
 
 
 class AKShareScreeningCoverageError(AKShareScreeningDataError):
-    """A full-market provider returned an implausibly small universe."""
+    """全市场数据提供者返回的股票池小得不可信。"""
 
 
 class AKShareScreeningSourcesExhaustedError(AKShareScreeningDataError):
-    """Neither independent full-market source produced an acceptable snapshot."""
+    """两个独立全市场来源均未生成可接受快照。"""
 
     def __init__(self, failures: tuple[str, ...]) -> None:
         self.failures = failures
@@ -152,7 +157,7 @@ _UNIVERSE_SOURCES = (
         source_id=TENCENT_SCREENING_SOURCE_ID,
         operation="stock_zh_a_spot_tx",
         aliases=_TENCENT_ALIASES,
-        # Tencent ``turnover`` is CNY 10,000 and ``zsz`` is CNY 100 million.
+    # 腾讯 ``turnover`` 以人民币万元计，``zsz`` 以人民币亿元计。
         amount_multiplier=Decimal("10000"),
         market_cap_multiplier=Decimal("100000000"),
     ),
@@ -162,7 +167,7 @@ _T = TypeVar("_T")
 
 
 class AKShareAShareScreeningAdapter:
-    """Current-close universe plus bounded unadjusted-history factor adapter."""
+    """当前收盘股票池及有限不复权历史因子适配器。"""
 
     def __init__(
         self,
@@ -211,7 +216,7 @@ class AKShareAShareScreeningAdapter:
         as_of: date,
         known_at: datetime,
     ) -> AShareUniverseSnapshot:
-        """Fetch a post-close whole-market revision with an independent fallback."""
+        """获取盘后全市场修订版，并提供独立回退。"""
 
         started_at, available_at = self._validate_live_request(as_of, known_at)
         client = self._client or _import_akshare()
@@ -299,7 +304,7 @@ class AKShareAShareScreeningAdapter:
         as_of: date,
         known_at: datetime,
     ) -> AShareFactorSnapshot:
-        """Fetch unadjusted histories for at most the service's explicit budget."""
+        """在服务明确预算范围内获取不复权历史。"""
 
         started_at, available_at = self._validate_live_request(as_of, known_at)
         canonical = tuple(_canonical_symbol(item) for item in symbols)
@@ -321,6 +326,8 @@ class AKShareAShareScreeningAdapter:
         if observed_at < started_at:
             raise ValueError("now() moved backwards during factor fetch")
         failed = sum(bool(item.warnings) for item in records)
+        sina_fallbacks = sum(_record_uses_sina_fallback(item) for item in records)
+        factor_source_id = _factor_batch_source_id(records)
         warnings = [
             "unadjusted stock_zh_a_hist only; adjust='' was sent explicitly",
             "price factors are withheld when the raw previous-close corporate-action "
@@ -331,6 +338,15 @@ class AKShareAShareScreeningAdapter:
         ]
         if failed:
             warnings.append(f"SYMBOL_FACTOR_DEGRADATIONS:{failed}")
+        if sina_fallbacks:
+            warnings.extend(
+                (
+                    f"SINA_HISTORY_FALLBACK_SYMBOLS:{sina_fallbacks}/{len(records)}",
+                    "SINA_FALLBACK_IS_UNADJUSTED_DAILY_HISTORY",
+                    "SINA_PREVIOUS_CLOSE_DERIVED_FROM_ADJACENT_RAW_CLOSES",
+                    "SINA_CORPORATE_ACTION_GUARD_HAS_NO_INDEPENDENT_REFERENCE_CLOSE",
+                )
+            )
         quality = (
             ScreeningSourceQuality.DEGRADED
             if failed
@@ -340,8 +356,12 @@ class AKShareAShareScreeningAdapter:
             as_of=as_of,
             available_at=available_at,
             observed_at=observed_at,
-            source_id=AKSHARE_HISTORY_SOURCE_ID,
-            source_revision=_factor_revision(as_of, records),
+            source_id=factor_source_id,
+            source_revision=_factor_revision(
+                as_of,
+                records,
+                source_id=factor_source_id,
+            ),
             feature_version=_FEATURE_VERSION,
             history_policy=(
                 ScreeningHistoryPolicy.UNADJUSTED_WITH_CORPORATE_ACTION_GUARD
@@ -431,6 +451,8 @@ class AKShareAShareScreeningAdapter:
         code = symbol.split(".", maxsplit=1)[0]
         start = as_of - timedelta(days=self._history_calendar_days)
         empty = _empty_factor_values()
+        primary_failure: Exception | None = None
+        fallback_warnings: tuple[str, ...]
         try:
             rows = await _call_async(
                 partial(
@@ -451,16 +473,48 @@ class AKShareAShareScreeningAdapter:
         except (KeyboardInterrupt, SystemExit):
             raise
         except Exception as exc:
-            return AShareFactorRecord(
-                symbol=symbol,
-                values=empty,
-                warnings=(f"HISTORY_FETCH_FAILED:{type(exc).__name__}",),
+            primary_failure = exc
+            try:
+                rows = await _call_async(
+                    partial(
+                        _sina_provider_records,
+                        client,
+                        symbol=_sina_symbol(symbol),
+                        start_date=start.strftime("%Y%m%d"),
+                        end_date=as_of.strftime("%Y%m%d"),
+                        adjust="",
+                    ),
+                    timeout_seconds=self._history_timeout_seconds,
+                    operation=f"stock_zh_a_daily:{symbol}",
+                )
+                bars = _parse_sina_history(rows, as_of=as_of)
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as fallback_exc:
+                return AShareFactorRecord(
+                    symbol=symbol,
+                    values=empty,
+                    warnings=(
+                        f"HISTORY_FETCH_FAILED:{type(primary_failure).__name__}",
+                        (
+                            "HISTORY_FALLBACK_FAILED:"
+                            f"{type(fallback_exc).__name__}"
+                        ),
+                    ),
+                )
+            fallback_warnings = (
+                f"HISTORY_PRIMARY_FAILED:{type(primary_failure).__name__}",
+                f"HISTORY_SOURCE_FALLBACK:{SINA_HISTORY_SOURCE_ID}",
+                "SINA_PREVIOUS_CLOSE_DERIVED_FROM_ADJACENT_RAW_CLOSES",
+                "SINA_CORPORATE_ACTION_GUARD_HAS_NO_INDEPENDENT_REFERENCE_CLOSE",
             )
+        else:
+            fallback_warnings = ()
         if not bars or bars[-1].trade_date != as_of:
             return AShareFactorRecord(
                 symbol=symbol,
                 values=empty,
-                warnings=("HISTORY_LATEST_SESSION_MISMATCH",),
+                warnings=(*fallback_warnings, "HISTORY_LATEST_SESSION_MISMATCH"),
             )
         average_amount = _average_amount_20(bars)
         if len(bars) < self._minimum_history_sessions:
@@ -468,6 +522,7 @@ class AKShareAShareScreeningAdapter:
                 symbol=symbol,
                 values=_factor_values_with_average_amount(average_amount),
                 warnings=(
+                    *fallback_warnings,
                     f"INSUFFICIENT_HISTORY:{len(bars)}/{self._minimum_history_sessions}",
                 ),
             )
@@ -476,11 +531,12 @@ class AKShareAShareScreeningAdapter:
             return AShareFactorRecord(
                 symbol=symbol,
                 values=_factor_values_with_average_amount(average_amount),
-                warnings=(guard_warning,),
+                warnings=(*fallback_warnings, guard_warning),
             )
         return AShareFactorRecord(
             symbol=symbol,
             values=_calculate_factors(bars),
+            warnings=fallback_warnings,
         )
 
 
@@ -533,6 +589,16 @@ def _provider_records(
     return tuple(cast(Mapping[str, Any], item) for item in raw)
 
 
+def _sina_provider_records(
+    client: Any,
+    **kwargs: object,
+) -> tuple[Mapping[str, Any], ...]:
+    """在整个进程中逐个调用由 V8 支持的新浪解码器。"""
+
+    with _SINA_HISTORY_LOCK:
+        return _provider_records(client, "stock_zh_a_daily", **kwargs)
+
+
 def _parse_universe_rows(
     rows: tuple[Mapping[str, Any], ...],
     *,
@@ -568,10 +634,8 @@ def _parse_universe_rows(
                 f"row {row_number} has partially missing price/amount"
             )
         elif state is None and amount == 0:
-            # Eastmoney has no explicit suspension column.  A zero-turnover
-            # row with a retained reference price cannot prove whether orders
-            # were accepted, so preserve the unknown state for the fail-closed
-            # hard filter instead of guessing ``False``.
+    # 东方财富没有明确的停牌列。保留参考价格但成交额为零的记录无法证明是否接受
+    # 订单，因此为关闭失败的硬过滤保留未知状态，而不是猜测为 ``False``。
             suspended = None
             is_tradable = None
         else:
@@ -731,17 +795,62 @@ def _parse_history(
     return ordered
 
 
-def _calculate_factors(bars: tuple[_HistoryBar, ...]) -> tuple[AShareFactorValue, ...]:
-    """Calculate raw, unstandardized factors from completed sessions.
+def _parse_sina_history(
+    rows: tuple[Mapping[str, Any], ...],
+    *,
+    as_of: date,
+) -> tuple[_HistoryBar, ...]:
+    """保守解析新浪明确不复权的日线历史。
 
-    Momentum is a simple close-to-close return.  The 120-session variant ends
-    five sessions before ``as_of``.  Trend is ``MA20 / MA60 - 1``; breakout
-    position is ``latest close / prior-20-session high - 1``; volume ratio is
-    latest volume divided by the prior-20 mean.  Volatility is the sample
-    standard deviation of 60 simple returns annualized by ``sqrt(252)``.
-    Drawdown is a positive loss magnitude over 60 closes.  Amihud is the
-    20-session mean of ``abs(return) / amount_cny`` and is absent unless every
-    amount is positive.  No missing result is replaced with a neutral value.
+    AKShare 的 ``stock_zh_a_daily(adjust="")`` 包装器在返回数据框前移除了上游
+    ``prevclose`` 字段。因此每条记录的前收盘价由紧邻的上一原始收盘价派生。
+    这足以进行确定性收益计算，但不是独立的除权参考价；调用方应将该局限作为
+    降级警告暴露，而不是宣称回退与东方财富主历史等价。
+    """
+
+    # 新浪同时提供 ``amount``（人民币成交额）和 ``turnover``（无量纲换手率）。
+    # 明确投影已审计架构，避免通用解析器混淆这两个语义不同的字段。
+    projected = tuple(
+        {
+            "date": item.get("date"),
+            "open": item.get("open"),
+            "high": item.get("high"),
+            "low": item.get("low"),
+            "close": item.get("close"),
+            "volume": item.get("volume"),
+            "amount": item.get("amount"),
+        }
+        for item in rows
+    )
+    parsed = _parse_history(projected, as_of=as_of)
+    output: list[_HistoryBar] = []
+    previous: _HistoryBar | None = None
+    for item in parsed:
+        output.append(
+            _HistoryBar(
+                trade_date=item.trade_date,
+                open=item.open,
+                high=item.high,
+                low=item.low,
+                close=item.close,
+                previous_close=None if previous is None else previous.close,
+                volume=item.volume,
+                amount=item.amount,
+            )
+        )
+        previous = item
+    return tuple(output)
+
+
+def _calculate_factors(bars: tuple[_HistoryBar, ...]) -> tuple[AShareFactorValue, ...]:
+    """根据已完成交易日计算原始、未标准化因子。
+
+    动量为简单收盘到收盘收益。120 日变体截止于 ``as_of`` 前五个交易日。趋势
+    为 ``MA20 / MA60 - 1``；突破位置为 ``最新收盘 / 前20日最高价 - 1``；量比
+    为最新成交量除以前20日均值。波动率是 60 个简单收益的样本标准差，并以
+    ``sqrt(252)`` 年化。回撤是 60 个收盘价内的正损失幅度。Amihud 是 20 日
+    ``abs(return) / amount_cny`` 均值，且只有每个成交额均为正时才存在。任何
+    缺失结果都不会用中性值替代。
     """
 
     closes = tuple(item.close for item in bars)
@@ -913,6 +1022,28 @@ def _canonical_symbol(value: str) -> str:
     return classified[0]
 
 
+def _sina_symbol(symbol: str) -> str:
+    """把一个规范沪深代码映射到新浪命名空间。"""
+
+    code, exchange = symbol.split(".", maxsplit=1)
+    if exchange not in {"SH", "SZ"}:
+        raise AKShareScreeningDataError(
+            "Sina stock_zh_a_daily fallback supports Shanghai/Shenzhen only"
+        )
+    return f"{exchange.lower()}{code}"
+
+
+def _record_uses_sina_fallback(record: AShareFactorRecord) -> bool:
+    marker = f"HISTORY_SOURCE_FALLBACK:{SINA_HISTORY_SOURCE_ID}"
+    return marker in record.warnings
+
+
+def _factor_batch_source_id(records: tuple[AShareFactorRecord, ...]) -> str:
+    if any(_record_uses_sina_fallback(item) for item in records):
+        return f"{AKSHARE_HISTORY_SOURCE_ID}; fallback={SINA_HISTORY_SOURCE_ID}"
+    return AKSHARE_HISTORY_SOURCE_ID
+
+
 def _validate_tencent_type(
     row: Mapping[str, Any],
     columns: Mapping[str, str],
@@ -1053,9 +1184,14 @@ def _universe_revision(
     return _sha256_document(document)
 
 
-def _factor_revision(as_of: date, records: tuple[AShareFactorRecord, ...]) -> str:
+def _factor_revision(
+    as_of: date,
+    records: tuple[AShareFactorRecord, ...],
+    *,
+    source_id: str = AKSHARE_HISTORY_SOURCE_ID,
+) -> str:
     document = {
-        "source_id": AKSHARE_HISTORY_SOURCE_ID,
+        "source_id": source_id,
         "feature_version": _FEATURE_VERSION,
         "as_of": as_of.isoformat(),
         "records": [

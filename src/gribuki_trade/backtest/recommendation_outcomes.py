@@ -1,4 +1,4 @@
-"""Point-in-time outcome evaluation for published research recommendations."""
+"""对已发布研究建议进行时点一致的结果评估。"""
 
 from __future__ import annotations
 
@@ -81,11 +81,10 @@ def evaluate_recommendation(
     *,
     config: RecommendationEvaluationConfig | None = None,
 ) -> RecommendationOutcome:
-    """Evaluate only sessions strictly after the original recommendation time.
+    """只评估严格晚于原始建议时间的交易时段。
 
-    An entry candidate is priced at the next tradable session's open and exits
-    at the configured horizon close. This avoids the common same-close
-    look-ahead error. Suspended or missing-price rows are not forward filled.
+    入场候选按下一可交易时段的开盘价计价，并在配置观察期末的收盘价退出。
+    这避免了常见的同收盘价前视错误。停牌或缺价记录不会被向前填充。
     """
 
     resolved = config or RecommendationEvaluationConfig()

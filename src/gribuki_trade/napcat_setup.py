@@ -1,4 +1,4 @@
-"""Safe, non-executing configuration for a portable NapCatQQ runtime."""
+"""为便携版 NapCatQQ 运行时提供安全且不启动进程的配置能力。"""
 
 from __future__ import annotations
 
@@ -29,12 +29,12 @@ _WEBUI_CONFIG_NAME = "webui.json"
 
 
 class NapCatSetupError(RuntimeError):
-    """Portable NapCat configuration could not be completed safely."""
+    """无法在安全边界内完成便携版 NapCat 配置。"""
 
 
 @dataclass(frozen=True, slots=True)
 class NapCatSetupResult:
-    """Non-secret paths and ports produced by a successful setup."""
+    """配置成功后产生的不含秘密信息的路径与端口。"""
 
     runtime_dir: Path
     onebot_config_path: Path
@@ -53,13 +53,12 @@ def configure_portable_napcat_runtime(
     webui_token: str | None = None,
     force: bool = False,
 ) -> NapCatSetupResult:
-    """Write locked-down NapCat configs without starting NapCat or QQ.
+    """写入受限的 NapCat 配置，但不启动 NapCat 或 QQ。
 
-    ``runtime_dir`` must be an absolute, already extracted portable runtime
-    containing either the official standalone Shell files and ``config`` or
-    the developer Node bundle's ``napcat.bat`` and ``napcat/config``. Secrets
-    are written both to the configuration files required by NapCat and to
-    ``secret_provider``. They are deliberately absent from the returned value.
+    ``runtime_dir`` 必须是已经解压的便携运行时绝对路径，其中应包含官方独立版的
+    Shell 文件与 ``config``，或开发者 Node 包中的 ``napcat.bat`` 与
+    ``napcat/config``。秘密信息会同时写入 NapCat 所需配置和
+    ``secret_provider``，返回值则有意不携带这些内容。
     """
 
     if not isinstance(force, bool):

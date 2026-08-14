@@ -19,12 +19,14 @@ def notification(
     *,
     text: str = "研究提醒",
     expires_at: datetime | None = None,
+    target_id: str = "12345",
+    channel: str = "onebot",
 ) -> OutboundNotification:
     return OutboundNotification(
         idempotency_key=key,
-        channel="onebot",
+        channel=channel,
         target_kind=NotificationTargetKind.PRIVATE,
-        target_id="12345",
+        target_id=target_id,
         text=text,
         created_at=NOW,
         expires_at=expires_at,
@@ -58,6 +60,63 @@ def test_claim_and_mark_sent_are_transactional(tmp_path) -> None:
         assert sent.status is OutboxStatus.SENT
         assert sent.provider_message_id == "message-7"
         assert outbox.claim_due(now=NOW + timedelta(hours=1)) == ()
+
+
+def test_claim_scope_never_leases_another_notification_target(tmp_path) -> None:
+    with SQLiteOutbox(tmp_path / "outbox.sqlite3") as outbox:
+        wanted = outbox.enqueue(notification("signal:wanted", target_id="12345"))
+        other = outbox.enqueue(notification("signal:other", target_id="67890"))
+
+        claimed = outbox.claim_due(
+            now=NOW,
+            target_kind=NotificationTargetKind.PRIVATE,
+            target_id="12345",
+        )
+
+        assert [item.id for item in claimed] == [wanted.id]
+        stored_other = outbox.get_by_key("signal:other")
+        assert stored_other is not None
+        assert stored_other.id == other.id
+        assert stored_other.status is OutboxStatus.PENDING
+
+
+def test_claim_scope_can_also_isolate_notification_channels(tmp_path) -> None:
+    with SQLiteOutbox(tmp_path / "outbox.sqlite3") as outbox:
+        wanted = outbox.enqueue(notification("signal:wanted"))
+        outbox.enqueue(notification("signal:email", channel="email"))
+
+        claimed = outbox.claim_due(
+            now=NOW,
+            target_kind=NotificationTargetKind.PRIVATE,
+            target_id="12345",
+            channels=("onebot",),
+        )
+
+        assert [item.id for item in claimed] == [wanted.id]
+        other = outbox.get_by_key("signal:email")
+        assert other is not None
+        assert other.status is OutboxStatus.PENDING
+
+
+@pytest.mark.parametrize(
+    ("target_kind", "target_id"),
+    [
+        (NotificationTargetKind.PRIVATE, None),
+        (None, "12345"),
+        (NotificationTargetKind.PRIVATE, ""),
+    ],
+)
+def test_claim_scope_requires_a_complete_nonblank_target(
+    tmp_path,
+    target_kind,
+    target_id,
+) -> None:
+    with SQLiteOutbox(tmp_path / "outbox.sqlite3") as outbox, pytest.raises(ValueError):
+        outbox.claim_due(
+            now=NOW,
+            target_kind=target_kind,
+            target_id=target_id,
+        )
 
 
 def test_expired_lease_is_reclaimed_without_losing_the_item(tmp_path) -> None:

@@ -1,18 +1,15 @@
-"""Deterministic, point-in-time backtesting for one crypto spot pair.
+"""针对一个加密货币现货交易对的确定性、时点一致回测。
 
-The simulator is intentionally conservative where OHLCV bars cannot reveal
-the real execution path:
+在 OHLCV 柱不能揭示真实执行路径的地方，模拟器刻意采取保守处理：
 
-* a strategy sees a candle only after it is complete and available;
-* an order can first execute on the following candle;
-* market orders pay adverse configured slippage;
-* touched limit orders execute at their limit, without assumed price
-  improvement; and
-* executions share a configurable fraction of the candle's base-asset volume.
+* 策略仅在蜡烛线已完成且可用后才能看到它；
+* 订单最早可在下一根蜡烛线成交；
+* 市价单支付配置的逆向滑点；
+* 被触及的限价单按其限价成交，不假定存在价格改善；以及
+* 成交量占用该蜡烛线基础资产成交量中可配置的一部分。
 
-This is a research simulator, not an exchange matching-engine replica.  The
-same accounting invariants are nevertheless useful for paper and live-shadow
-testing.
+这是研究模拟器，不是交易所撮合引擎的复刻。不过相同的会计不变量仍适用于
+PAPER 与实时影子测试。
 """
 
 from __future__ import annotations
@@ -28,21 +25,21 @@ from gribuki_trade.domain.orders import Side
 
 
 class CryptoOrderType(StrEnum):
-    """Order types supported by the bar simulator."""
+    """柱状模拟器支持的订单类型。"""
 
     MARKET = "MARKET"
     LIMIT = "LIMIT"
 
 
 class LiquidityRole(StrEnum):
-    """Fee role assigned to a simulated fill."""
+    """分配给模拟成交的费率角色。"""
 
     MAKER = "MAKER"
     TAKER = "TAKER"
 
 
 class SimulatedOrderStatus(StrEnum):
-    """Final status of an order when a replay ends."""
+    """回放结束时订单的最终状态。"""
 
     FILLED = "FILLED"
     PARTIALLY_FILLED = "PARTIALLY_FILLED"
@@ -52,10 +49,9 @@ class SimulatedOrderStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class CryptoBar:
-    """A point-in-time OHLCV candle.
+    """一根时点一致的 OHLCV 蜡烛线。
 
-    ``volume`` is expressed in the base asset. ``available_at`` records when
-    the completed candle could first have been consumed by a strategy.
+    ``volume`` 以基础资产计量。``available_at`` 记录已完成蜡烛线最早可被策略使用的时间。
     """
 
     symbol: str
@@ -103,11 +99,10 @@ class CryptoBar:
 
 @dataclass(frozen=True, slots=True)
 class CryptoFeeConfig:
-    """Maker/taker fee schedule denominated in the quote asset.
+    """以计价资产计量的挂单/吃单费率表。
 
-    ``discount_fraction`` represents an already-eligible discount, such as a
-    configured fee-token discount.  Fee-token inventory and conversion are
-    deliberately outside this single-pair simulator.
+    ``discount_fraction`` 表示已符合条件的折扣，例如配置的手续费代币折扣。
+    手续费代币的库存和兑换刻意不属于此单交易对模拟器的范围。
     """
 
     maker_rate: Decimal = Decimal("0.001")
@@ -129,7 +124,7 @@ class CryptoFeeConfig:
             raise ValueError("discount_fraction must be below one")
 
     def effective_rate(self, role: LiquidityRole) -> Decimal:
-        """Return the discounted rate for a liquidity role."""
+        """返回某流动性角色折扣后的费率。"""
 
         rate = self.maker_rate if role is LiquidityRole.MAKER else self.taker_rate
         return rate * (Decimal("1") - self.discount_fraction)
@@ -137,7 +132,7 @@ class CryptoFeeConfig:
 
 @dataclass(frozen=True, slots=True)
 class CryptoOrderRequest:
-    """A strategy order created after the current candle closes."""
+    """当前蜡烛线收盘后创建的策略订单。"""
 
     order_id: str
     side: Side
@@ -170,7 +165,7 @@ class CryptoOrderRequest:
 
 @dataclass(frozen=True, slots=True)
 class PortfolioSnapshot:
-    """Immutable Decimal balances exposed to strategy code."""
+    """向策略代码暴露的不可变 Decimal 余额。"""
 
     balances: tuple[tuple[str, Decimal], ...]
 
@@ -183,11 +178,11 @@ class PortfolioSnapshot:
 
 
 class InsufficientBalanceError(ValueError):
-    """A simulated fill would make a spot balance negative."""
+    """模拟成交将导致现货余额为负。"""
 
 
 class SpotLedger:
-    """A minimal multi-asset, Decimal-only spot balance ledger."""
+    """最小化的多资产、仅使用 Decimal 的现货余额账本。"""
 
     def __init__(self, balances: Mapping[str, Decimal]) -> None:
         normalized: dict[str, Decimal] = {}
@@ -219,7 +214,7 @@ class SpotLedger:
         price: Decimal,
         fee_quote: Decimal,
     ) -> None:
-        """Apply an atomic spot fill, charging the fee in quote currency."""
+        """应用原子化现货成交，并以计价货币收取费用。"""
 
         for name, value in (
             ("quantity", quantity),
@@ -260,7 +255,7 @@ class SpotLedger:
 
 @dataclass(frozen=True, slots=True)
 class BacktestBarEvent:
-    """The only market history made available at one decision point."""
+    """某一决策时点唯一可用的市场历史。"""
 
     decision_time: datetime
     bar: CryptoBar
@@ -269,12 +264,10 @@ class BacktestBarEvent:
 
 
 class _BarHistoryPrefix(Sequence[CryptoBar]):
-    """Immutable O(1) prefix view over a validated replay dataset.
+    """经验证回放数据集上的不可变 O(1) 前缀视图。
 
-    Constructing a tuple prefix for every candle makes a long replay quadratic
-    in both copied references and runtime.  This view exposes exactly the same
-    point-in-time boundary while materializing only an explicitly requested
-    slice, such as a strategy's final moving-average window.
+    为每根蜡烛线构造元组前缀，会令长回放在引用复制数量与运行时间上均呈二次增长。
+    此视图保持完全相同的时点边界，仅物化显式请求的切片，例如策略最终的移动平均窗口。
     """
 
     __slots__ = ("_bars", "_stop")
@@ -307,7 +300,7 @@ class _BarHistoryPrefix(Sequence[CryptoBar]):
 
 
 class CryptoStrategy(Protocol):
-    """Callable interface consumed by :class:`CryptoBacktestEngine`."""
+    """由 :class:`CryptoBacktestEngine` 使用的可调用接口。"""
 
     def __call__(self, event: BacktestBarEvent, /) -> Iterable[CryptoOrderRequest]: ...
 
@@ -349,7 +342,7 @@ class EquityPoint:
 
 @dataclass(frozen=True, slots=True)
 class CryptoBacktestConfig:
-    """Execution and valuation assumptions for one spot pair."""
+    """一个现货交易对的执行与估值假设。"""
 
     symbol: str
     base_asset: str
@@ -424,7 +417,7 @@ class _WorkingOrder:
 
 
 class CryptoBacktestEngine:
-    """Replay complete candles through a deterministic single-pair simulator."""
+    """通过确定性的单交易对模拟器回放已完成蜡烛线。"""
 
     def __init__(self, config: CryptoBacktestConfig) -> None:
         self._config = config
@@ -436,7 +429,7 @@ class CryptoBacktestEngine:
         *,
         initial_balances: Mapping[str, Decimal],
     ) -> CryptoBacktestReport:
-        """Run a fresh replay without retaining mutable state between calls."""
+        """执行一次全新回放，调用之间不保留可变状态。"""
 
         self._validate_bars(bars)
         ledger = SpotLedger(initial_balances)
@@ -472,7 +465,7 @@ class CryptoBacktestEngine:
                 ledger=ledger,
                 fills=fills,
             )
-            del capacity  # documents that unused candle liquidity is not carried forward
+            del capacity  # 明确未使用的蜡烛线流动性不会结转
             equity_curve.append(
                 EquityPoint(
                     at=bar.available_at,

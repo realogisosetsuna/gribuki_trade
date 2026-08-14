@@ -1,4 +1,4 @@
-"""Deterministic A-share and ETF trading-cost calculations."""
+"""确定性的 A 股与 ETF 交易成本计算。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from gribuki_trade.domain.orders import Side
 
 
 class InstrumentType(StrEnum):
-    """Instrument categories with distinct tax and slippage assumptions."""
+    """税费与滑点假设不同的标的类别。"""
 
     STOCK = "STOCK"
     ETF = "ETF"
@@ -18,11 +18,10 @@ class InstrumentType(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class TradingCostConfig:
-    """A simplified, configurable personal-account cost schedule.
+    """简化且可配置的个人账户成本表。
 
-    The defaults model 0.03% commission with a CNY 5 minimum per order, 0.05%
-    sell-side stamp tax for stocks, and symmetric one-way slippage of five basis
-    points for stocks or two basis points for ETFs.  ETF trades have no stamp tax.
+    默认设置为 0.03% 佣金且每笔最低 5 元，股票卖出端印花税 0.05%，
+    股票单边对称滑点五个基点、ETF 两个基点。ETF 交易不收印花税。
     """
 
     commission_rate: Decimal = Decimal("0.0003")
@@ -58,7 +57,7 @@ class TradingCostConfig:
 
 @dataclass(frozen=True, slots=True)
 class TradeCost:
-    """Rounded cash effects for one complete fill."""
+    """一笔完整成交经舍入后的现金影响。"""
 
     trade_value: Decimal
     commission: Decimal
@@ -77,11 +76,10 @@ def calculate_trade_cost(
     instrument_type: InstrumentType | str,
     config: TradingCostConfig | None = None,
 ) -> TradeCost:
-    """Calculate explicit costs and signed cash movement for a completed fill.
+    """计算已完成成交的显式成本和带符号现金变动。
 
-    ``price`` is the reference fill price before the configured slippage penalty.
-    Slippage is returned as an explicit cost rather than changing that price.  A buy
-    therefore produces a negative cash change, while a sell produces a positive one.
+    ``price`` 是应用配置滑点惩罚前的参考成交价。滑点作为显式成本返回，
+    而不改变该价格。因此买入产生负现金变动，卖出产生正现金变动。
     """
 
     resolved_side = _resolve_side(side)

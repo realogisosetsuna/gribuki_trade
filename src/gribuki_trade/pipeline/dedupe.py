@@ -1,4 +1,4 @@
-"""Exact event deduplication with append-only revision semantics."""
+"""具备仅追加修订语义的精确事件去重。"""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ class DedupeDecision:
 
 
 class EventDeduplicator:
-    """Maintain revisions by stable event identity without mutating history."""
+    """按稳定事件标识维护修订，而不改写历史。"""
 
     def __init__(self, seed: tuple[NormalizedEvent, ...] = ()) -> None:
         self._revisions: dict[str, list[NormalizedEvent]] = {}

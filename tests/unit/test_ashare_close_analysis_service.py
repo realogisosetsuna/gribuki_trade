@@ -35,6 +35,10 @@ from gribuki_trade.ports.cross_market_history import (
 )
 from gribuki_trade.ports.market_data import MarketDataTimeoutError
 from gribuki_trade.ports.notifier import NotificationTargetKind, OutboundNotification
+from gribuki_trade.reporting.contracts import (
+    ReportKind,
+    validate_text_report_contract,
+)
 from gribuki_trade.services import (
     AShareCloseAnalysisRequest,
     AShareCloseAnalysisService,
@@ -46,6 +50,7 @@ from gribuki_trade.services import (
 from gribuki_trade.services.ashare_close_analysis import (
     _risk_metric_lines,
     _split_notification_text,
+    _track_evidence_coverage,
 )
 
 NOW = datetime(2026, 8, 13, 8, 30, tzinfo=UTC)
@@ -469,7 +474,7 @@ def test_close_report_can_enqueue_abstain_explicitly() -> None:
         clock=lambda: NOW,
     )
     target = ResearchNotificationTarget(
-        target_id="1320017950",
+        target_id="1000000001",
         target_kind=NotificationTargetKind.PRIVATE,
         decisions=frozenset(RecommendationDecision),
     )
@@ -480,7 +485,7 @@ def test_close_report_can_enqueue_abstain_explicitly() -> None:
     assert run.notification_enqueued is True
     assert len(outbox.items) == 1
     assert outbox.items[0].text.startswith("【A股｜收盘研究分析】")
-    assert "1320017950" not in outbox.items[0].idempotency_key
+    assert "1000000001" not in outbox.items[0].idempotency_key
 
 
 def test_collection_after_as_of_is_rejected() -> None:
@@ -505,7 +510,7 @@ def test_close_report_includes_profile_cross_market_and_three_decimal_metrics() 
         clock=lambda: NOW,
     )
     target = ResearchNotificationTarget(
-        target_id="1320017950",
+        target_id="1000000001",
         target_kind=NotificationTargetKind.PRIVATE,
         decisions=frozenset(RecommendationDecision),
         max_characters=7_500,
@@ -582,7 +587,7 @@ def test_close_report_replaces_raw_evidence_ids_with_numbered_index() -> None:
         clock=lambda: NOW,
     )
     target = ResearchNotificationTarget(
-        target_id="1320017950",
+        target_id="1000000001",
         target_kind=NotificationTargetKind.PRIVATE,
         decisions=frozenset(RecommendationDecision),
         max_characters=7_500,
@@ -639,7 +644,7 @@ def test_close_service_adds_pit_cross_market_relations_to_evidence_and_report() 
         clock=lambda: NOW,
     )
     target = ResearchNotificationTarget(
-        target_id="1320017950",
+        target_id="1000000001",
         target_kind=NotificationTargetKind.PRIVATE,
         decisions=frozenset(RecommendationDecision),
         max_characters=7_500,
@@ -676,7 +681,7 @@ def test_close_service_adds_ashare_context_to_model_evidence_and_report() -> Non
         clock=lambda: NOW,
     )
     target = ResearchNotificationTarget(
-        target_id="1320017950",
+        target_id="1000000001",
         target_kind=NotificationTargetKind.PRIVATE,
         decisions=frozenset(RecommendationDecision),
         max_characters=7_500,
@@ -714,7 +719,7 @@ def test_close_service_adds_official_vix_to_model_evidence_and_report() -> None:
         clock=lambda: NOW,
     )
     target = ResearchNotificationTarget(
-        target_id="1320017950",
+        target_id="1000000001",
         target_kind=NotificationTargetKind.PRIVATE,
         decisions=frozenset(RecommendationDecision),
         max_characters=7_500,
@@ -747,7 +752,7 @@ def test_close_service_keeps_derivative_data_and_partial_failure_visible() -> No
         clock=lambda: NOW,
     )
     target = ResearchNotificationTarget(
-        target_id="1320017950",
+        target_id="1000000001",
         target_kind=NotificationTargetKind.PRIVATE,
         decisions=frozenset(RecommendationDecision),
         max_characters=7_500,
@@ -809,7 +814,7 @@ def test_close_service_enqueues_every_long_report_part_once() -> None:
         clock=lambda: NOW,
     )
     target = ResearchNotificationTarget(
-        target_id="1320017950",
+        target_id="1000000001",
         target_kind=NotificationTargetKind.PRIVATE,
         decisions=frozenset(RecommendationDecision),
         max_characters=600,
@@ -829,3 +834,30 @@ def test_close_service_enqueues_every_long_report_part_once() -> None:
     )
     assert all(len(item.text) <= 600 for item in run.notifications)
     assert all(item.text.startswith("【A股｜收盘研究分析】") for item in run.notifications)
+    for item in run.notifications:
+        validate_text_report_contract(ReportKind.INSTRUMENT_RESEARCH, item.text)
+
+
+def test_dual_track_evidence_coverage_is_calculated_per_analysis() -> None:
+    analysis = MacroAnalysis(
+        analysis_id="analysis-track-coverage",
+        as_of=NOW,
+        decision=MacroAnalysisDecision.PUBLISH,
+        regime="neutral",
+        technical_alignment=Decimal("0.2"),
+        macro_impact=Decimal("0.1"),
+        scenarios=(),
+        claims=(MacroClaim("bounded", ("evidence-1",), ()),),
+        uncertainties=(),
+        data_gaps=(),
+        invalidation_conditions=("evidence revised",),
+        reported_confidence="UNCALIBRATED",
+        refusal_reason="",
+        model_version="model-1",
+    )
+
+    assert _track_evidence_coverage(
+        analysis,
+        {"evidence-1", "evidence-2"},
+    ) == "1/2（50.000%）"
+    assert _track_evidence_coverage(analysis, set()) == "0/0（0.000%）"

@@ -1,8 +1,7 @@
-"""Secret handling primitives for local broker integrations.
+"""本地券商集成所用的秘密处理基础组件。
 
-The package intentionally contains no credentials and does not read secrets
-from environment variables.  Production credentials are referenced by name
-and resolved from the operating-system keyring only when they are needed.
+本包有意不包含任何凭据，也不从环境变量读取秘密。生产凭据只按名称引用，并且仅在
+确有需要时才从操作系统 keyring 解析。
 """
 
 from gribuki_trade.security.config import CredentialConfig, SecretConfig, SecretValue

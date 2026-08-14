@@ -1,8 +1,7 @@
-"""Typed, validated research watchlists loaded from TOML.
+"""从 TOML 加载并校验带类型的研究关注名单。
 
-Watchlists are coverage configurations, not portfolios and not order inputs.
-The loader deliberately keeps research metadata separate from broker and
-account state so that adding a symbol cannot authorize a trade.
+关注名单是研究覆盖配置，不是投资组合或委托输入。加载器有意把研究元数据与券商、账户状态
+分离，确保增加标的本身不会授予交易权限。
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ EnumT = TypeVar("EnumT", bound=StrEnum)
 
 
 class WatchlistConfigError(ValueError):
-    """Raised when a watchlist cannot be parsed without ambiguity."""
+    """关注名单无法被无歧义解析时抛出。"""
 
 
 class WatchlistAssetType(StrEnum):
@@ -39,7 +38,7 @@ class WatchlistBoard(StrEnum):
 
 
 class WatchlistSizeTier(StrEnum):
-    """Coarse research strata, not a live market-cap ranking."""
+    """用于研究的粗粒度分层，不是实时市值排名。"""
 
     MEGA = "mega"
     LARGE = "large"
@@ -106,7 +105,7 @@ class ResearchWatchlist:
         )
 
     def find_instrument(self, symbol: str) -> WatchlistInstrument | None:
-        """Return metadata for a canonical or six-digit A-share symbol."""
+        """返回规范格式或六位 A 股代码对应的元数据。"""
 
         canonical = _canonical_symbol(symbol)
         return next(
@@ -115,7 +114,7 @@ class ResearchWatchlist:
         )
 
     def instrument_profile(self, symbol: str) -> ResearchInstrumentProfile | None:
-        """Build a retained domain snapshot from this watchlist revision."""
+        """从当前关注名单修订版构建可留存的领域快照。"""
 
         item = self.find_instrument(symbol)
         if item is None:
@@ -152,7 +151,7 @@ def _canonical_symbol(symbol: str) -> str:
 
 
 def load_research_watchlist(path: str | Path) -> ResearchWatchlist:
-    """Load a TOML research watchlist and reject inconsistent metadata."""
+    """加载 TOML 研究关注名单，并拒绝不一致的元数据。"""
 
     config_path = Path(path)
     try:

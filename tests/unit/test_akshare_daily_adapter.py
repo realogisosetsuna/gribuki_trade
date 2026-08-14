@@ -1,4 +1,5 @@
 import asyncio
+import threading
 import time
 from dataclasses import replace
 from datetime import date, timedelta
@@ -380,11 +381,138 @@ class SinaFallbackClient:
         raise AssertionError("stock endpoint must not be used for ETF")
 
 
+class StockSinaFallbackClient:
+    def __init__(
+        self,
+        sina_rows: list[dict[str, object]],
+        *,
+        eastmoney_rows: list[dict[str, object]] | None = None,
+        sina_delay: float = 0,
+    ) -> None:
+        self.sina_rows = sina_rows
+        self.eastmoney_rows = eastmoney_rows
+        self.sina_delay = sina_delay
+        self.eastmoney_calls: list[dict[str, object]] = []
+        self.sina_calls: list[dict[str, object]] = []
+        self.active_sina_calls = 0
+        self.maximum_active_sina_calls = 0
+        self.counter_lock = threading.Lock()
+
+    def stock_zh_a_hist(self, **kwargs: object) -> pd.DataFrame:
+        self.eastmoney_calls.append(kwargs)
+        if self.eastmoney_rows is None:
+            raise ConnectionError("Eastmoney unavailable")
+        return pd.DataFrame(self.eastmoney_rows)
+
+    def stock_zh_a_daily(self, **kwargs: object) -> pd.DataFrame:
+        self.sina_calls.append(kwargs)
+        with self.counter_lock:
+            self.active_sina_calls += 1
+            self.maximum_active_sina_calls = max(
+                self.maximum_active_sina_calls,
+                self.active_sina_calls,
+            )
+        try:
+            if self.sina_delay:
+                time.sleep(self.sina_delay)
+            # 实际的 AKShare/Sina 股票数据帧同时含有这两个字段；``amount`` 是
+            # 人民币成交额，``turnover`` 是无量纲比率，绝不能被选作成交额别名。
+            rows = [dict(item, turnover="0.031") for item in self.sina_rows]
+            return pd.DataFrame(rows)
+        finally:
+            with self.counter_lock:
+                self.active_sina_calls -= 1
+
+    def fund_etf_hist_em(self, **_: object) -> pd.DataFrame:
+        raise AssertionError("ETF endpoint must not be used for stock")
+
+
+def test_stock_falls_back_to_unadjusted_sina_with_auditable_diagnostics() -> None:
+    client = StockSinaFallbackClient(
+        [
+            _sina_row("2026-08-12", close="4.700"),
+            _sina_row("2026-08-13", close="4.729"),
+            _sina_row("2026-08-14", close="4.740"),
+        ]
+    )
+
+    result = AKShareHistoricalDailyAdapter(client).fetch_daily_bars_with_source(
+        "600000.SH", date(2026, 8, 12), date(2026, 8, 14)
+    )
+
+    assert result.selected_source == "AKShare/Sina stock_zh_a_daily adjust=NONE"
+    assert result.source_failures == ("stock_zh_a_hist:AKShareDailyError",)
+    assert result.warnings == (
+        "SINA_FALLBACK_IS_UNADJUSTED_DAILY_HISTORY",
+        "SINA_PREVIOUS_CLOSE_DERIVED_FROM_ADJACENT_RAW_CLOSES",
+        "SINA_CORPORATE_ACTION_GUARD_HAS_NO_INDEPENDENT_REFERENCE_CLOSE",
+    )
+    assert client.sina_calls == [
+        {
+            "symbol": "sh600000",
+            "start_date": "20260812",
+            "end_date": "20260814",
+            "adjust": "",
+        }
+    ]
+    assert [bar.previous_close for bar in result.bars] == [
+        None,
+        Decimal("4.700"),
+        Decimal("4.729"),
+    ]
+    assert all(bar.amount == Decimal("582345678.90") for bar in result.bars)
+    assert all(bar.adjustment is PriceAdjustment.NONE for bar in result.bars)
+
+
+def test_stock_sources_must_contain_the_exact_requested_end() -> None:
+    client = StockSinaFallbackClient(
+        [_sina_row("2026-08-13")],
+        eastmoney_rows=[_row("2026-08-13", code="600000")],
+    )
+
+    with pytest.raises(AKShareDailyError) as error:
+        AKShareHistoricalDailyAdapter(client).fetch_daily_bars(
+            "600000.SH", date(2026, 8, 13), date(2026, 8, 14)
+        )
+
+    assert "stock_zh_a_hist:AKShareDailyNoDataError" in str(error.value)
+    assert isinstance(error.value.__cause__, AKShareDailyNoDataError)
+    assert "exact requested end 2026-08-14" in str(error.value.__cause__)
+    assert len(client.sina_calls) == 1
+
+
+def test_stock_sina_fallback_uses_the_process_wide_v8_lock() -> None:
+    client = StockSinaFallbackClient(
+        [_sina_row("2026-08-14")],
+        sina_delay=0.03,
+    )
+    first = AKShareHistoricalDailyAdapter(client)
+    second = AKShareHistoricalDailyAdapter(client)
+
+    async def fetch_both() -> None:
+        await asyncio.gather(
+            first.fetch_daily_bars_async(
+                "600000.SH", date(2026, 8, 14), date(2026, 8, 14)
+            ),
+            second.fetch_daily_bars_async(
+                "000001.SZ", date(2026, 8, 14), date(2026, 8, 14)
+            ),
+        )
+
+    asyncio.run(fetch_both())
+
+    assert client.maximum_active_sina_calls == 1
+    assert {call["symbol"] for call in client.sina_calls} == {
+        "sh600000",
+        "sz000001",
+    }
+
+
 def test_etf_falls_back_to_sina_filters_window_and_derives_visible_preclose() -> None:
     client = SinaFallbackClient(
         [
-            # This invalid row is outside the requested window and must neither
-            # fail validation nor leak into the first visible previous close.
+            # 这条无效记录位于请求窗口之外，既不应导致校验失败，也不能渗入
+            # 第一条可见记录的昨收价。
             _sina_row("2026-08-11", high="0"),
             _sina_row("2026-08-12", close="4.700"),
             _sina_row("2026-08-13", close="4.729"),
@@ -693,7 +821,8 @@ def test_router_fails_closed_when_both_sources_have_insufficient_history() -> No
 
 
 def test_router_reports_selected_sina_subsource_and_eastmoney_failure() -> None:
-    first = date(2025, 1, 1)
+    requested_end = date(2026, 8, 13)
+    first = requested_end - timedelta(days=219)
     sina_rows = [
         _sina_row(
             first + timedelta(days=index),
@@ -715,7 +844,7 @@ def test_router_reports_selected_sina_subsource_and_eastmoney_failure() -> None:
 
     result = asyncio.run(
         router.fetch_daily_bars_async_with_route(
-            "510300.SH", date(2025, 1, 1), date(2026, 8, 13)
+            "510300.SH", first, requested_end
         )
     )
 
@@ -723,6 +852,11 @@ def test_router_reports_selected_sina_subsource_and_eastmoney_failure() -> None:
     assert result.fallback_count == 220
     assert result.selected_source_failures == (
         "fund_etf_hist_em:AKShareDailyError",
+    )
+    assert result.warnings == (
+        "SINA_FALLBACK_IS_UNADJUSTED_DAILY_HISTORY",
+        "SINA_PREVIOUS_CLOSE_DERIVED_FROM_ADJACENT_RAW_CLOSES",
+        "SINA_CORPORATE_ACTION_GUARD_HAS_NO_INDEPENDENT_REFERENCE_CLOSE",
     )
 
 

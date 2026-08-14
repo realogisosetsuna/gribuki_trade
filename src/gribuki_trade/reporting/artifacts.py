@@ -1,8 +1,8 @@
-"""Export a research report as searchable Markdown and readable PNG pages.
+"""将研究报告导出为可搜索的 Markdown 与易读的 PNG 页面。
 
-QQ clients do not provide a dependable Markdown/LaTeX rendering contract.  The
-Markdown file is therefore the copyable archival form, while PNG pages are the
-portable visual form.  This module never sends either artifact over a network.
+QQ 客户端不提供可靠的 Markdown 或 LaTeX 渲染约定。因此 Markdown 文件
+作为可复制的归档形式，PNG 页面作为便携的视觉形式。本模块绝不会通过
+网络发送任何一种产物。
 """
 
 from __future__ import annotations
@@ -15,37 +15,57 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from gribuki_trade.reporting.contracts import (
+    REPORT_CONTRACTS,
+    ReportKind,
+    validate_markdown_report_contract,
+)
+
 if TYPE_CHECKING:
     from PySide6.QtGui import QTextDocument
 
 _SECTION = re.compile(r"^[一二三四五六七八九十百]+、\S")
+_CONTRACT_SECTION = re.compile(r"^〔(?P<name>[^〔〕\r\n]+)〕$")
 _SAFE_STEM = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$")
 
 
 @dataclass(frozen=True, slots=True)
 class ReportArtifactBundle:
-    """Paths to one Markdown report and zero or more rendered PNG pages."""
+    """一份 Markdown 报告及零张或多张已渲染 PNG 页面的路径。"""
 
     markdown_path: Path
     image_paths: tuple[Path, ...]
 
 
 def report_text_to_markdown(report_text: str) -> str:
-    """Convert the existing line-oriented QQ report into simple Markdown."""
+    """把 QQ 文本转换为 Markdown；带契约标签的报告会在返回前强校验。"""
 
     normalized = report_text.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not normalized:
         raise ValueError("report_text must not be empty")
     output: list[str] = []
+    declared_kind: ReportKind | None = None
+    names = {contract.chinese_name: kind for kind, contract in REPORT_CONTRACTS.items()}
     for index, raw_line in enumerate(normalized.splitlines()):
         line = raw_line.rstrip()
         if index == 0 and line.startswith("【") and line.endswith("】"):
             output.append(f"# {line[1:-1]}")
+        elif line.startswith("报告类型："):
+            chinese_name = line.removeprefix("报告类型：").strip()
+            declared_kind = names.get(chinese_name)
+            if declared_kind is None:
+                raise ValueError("unknown user-readable report type")
+            output.append(f"> {line}")
+        elif match := _CONTRACT_SECTION.fullmatch(line):
+            output.append(f"## {match.group('name')}")
         elif _SECTION.match(line):
             output.append(f"## {line}")
         else:
             output.append(line)
-    return "\n".join(output).rstrip() + "\n"
+    rendered = "\n".join(output).rstrip() + "\n"
+    if declared_kind is not None:
+        validate_markdown_report_contract(declared_kind, rendered)
+    return rendered
 
 
 def export_report_artifacts(
@@ -58,7 +78,7 @@ def export_report_artifacts(
     page_width: int = 1240,
     page_height: int = 1754,
 ) -> ReportArtifactBundle:
-    """Atomically export Markdown and, optionally, paginated PNG images."""
+    """原子导出 Markdown，以及可选的分页 PNG 图像。"""
 
     if not _SAFE_STEM.fullmatch(stem):
         raise ValueError("stem must contain only safe ASCII filename characters")
@@ -246,8 +266,8 @@ def _markdown_fragments(markdown: str) -> list[str]:
 
 def _inline(value: str) -> str:
     escaped = html.escape(value, quote=False)
-    # Backticks are sufficient for deterministic formula/identifier styling;
-    # mathematical meaning remains in the source text rather than a renderer.
+    # 反引号足以为公式与标识符提供确定的样式；数学含义仍保留在源文本中，
+    # 而不是交由渲染器解释。
     pieces = escaped.split("`")
     return "".join(
         f"<code>{piece}</code>" if index % 2 else piece
