@@ -15,6 +15,7 @@ from datetime import UTC, datetime, timedelta
 from os import PathLike
 from typing import Any
 
+from . import futures_oms_policy as _futures_oms_policy
 from .futures_models import (
     FuturesBalanceSnapshot,
     FuturesCommand,
@@ -23,7 +24,6 @@ from .futures_models import (
     FuturesFill,
     FuturesOrderKind,
     FuturesOrderSnapshot,
-    FuturesOrderStatus,
     FuturesPositionSnapshot,
     FuturesProtectionPlan,
     FuturesStreamHealth,
@@ -79,29 +79,12 @@ from .futures_oms_codec import (
 )
 from .futures_oms_schema import initialize_futures_oms_schema
 
-_STATUS_RANK = {
-    FuturesOrderStatus.UNKNOWN: 0,
-    FuturesOrderStatus.NEW: 10,
-    FuturesOrderStatus.PARTIALLY_FILLED: 20,
-    FuturesOrderStatus.TRIGGERING: 22,
-    FuturesOrderStatus.TRIGGERED: 25,
-    FuturesOrderStatus.CANCELED: 30,
-    FuturesOrderStatus.EXPIRED: 30,
-    FuturesOrderStatus.REJECTED: 30,
-    FuturesOrderStatus.FILLED: 40,
-    FuturesOrderStatus.FINISHED: 40,
-    FuturesOrderStatus.EXPIRED_IN_MATCH: 30,
-}
-_TERMINAL = frozenset(
-    {
-        FuturesOrderStatus.CANCELED,
-        FuturesOrderStatus.EXPIRED,
-        FuturesOrderStatus.REJECTED,
-        FuturesOrderStatus.FILLED,
-        FuturesOrderStatus.FINISHED,
-        FuturesOrderStatus.EXPIRED_IN_MATCH,
-    }
-)
+# 保留历史模块级私有名称，实际规则集中在纯策略模块中。
+_STATUS_RANK = _futures_oms_policy.ORDER_STATUS_RANK
+_TERMINAL = _futures_oms_policy.TERMINAL_ORDER_STATUSES
+_command_recovery_query = _futures_oms_policy.command_recovery_query
+_should_apply = _futures_oms_policy.should_apply_order
+_should_replace_protection_plan = _futures_oms_policy.should_replace_protection_plan
 
 
 class FuturesOrderManagementStore:
@@ -473,20 +456,10 @@ class FuturesOrderManagementStore:
         scope = _scope(account_id, environment, product)
         current = _utc_or_now(now)
         with self._transaction() as db:
-            where = (
-                "status=?"
-                if include_active
-                else "status=? AND (lease_until IS NULL OR lease_until<=?)"
+            query, args = _command_recovery_query(
+                scope, include_active=include_active, now=current
             )
-            args: tuple[Any, ...] = (
-                (*scope, FuturesCommandStatus.IN_FLIGHT.value)
-                if include_active
-                else (*scope, FuturesCommandStatus.IN_FLIGHT.value, _time(current))
-            )
-            rows = db.execute(
-                f"SELECT * FROM futures_commands WHERE account_id=? AND environment=? AND product=? AND {where} ORDER BY created_at",
-                args,
-            ).fetchall()
+            rows = db.execute(query, args).fetchall()
             result: list[FuturesCommand] = []
             for row in rows:
                 db.execute(
@@ -997,12 +970,10 @@ class FuturesOrderManagementStore:
                 "SELECT * FROM futures_protection_plans WHERE account_id=? AND environment=? AND product=? AND plan_id=? ORDER BY revision DESC LIMIT 1",
                 (*scope, plan.plan_id),
             ).fetchone()
-            if current is not None and plan.revision < int(current["revision"]):
+            if current is not None and not _should_replace_protection_plan(
+                int(current["revision"]), _parse_time(current["updated_at"]), plan
+            ):
                 return _plan(current)
-            if current is not None and plan.revision == int(current["revision"]):
-                current_time = _parse_time(current["updated_at"])
-                if current_time is not None and plan.updated_at < current_time:
-                    return _plan(current)
             db.execute(
                 "INSERT INTO futures_protection_plans(account_id,environment,product,plan_id,revision,symbol,position_side,desired_state,coverage_state,entry_order_key,stop_algo_key,take_profit_algo_key,trailing_algo_key,updated_at,extra_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(account_id,environment,product,plan_id,revision) DO UPDATE SET desired_state=excluded.desired_state,coverage_state=excluded.coverage_state,entry_order_key=excluded.entry_order_key,stop_algo_key=excluded.stop_algo_key,take_profit_algo_key=excluded.take_profit_algo_key,trailing_algo_key=excluded.trailing_algo_key,updated_at=excluded.updated_at,extra_json=excluded.extra_json",
                 (
@@ -1036,14 +1007,3 @@ class FuturesOrderManagementStore:
         with self._lock:
             rows = self._db.execute(query, args).fetchall()
         return tuple(_plan(row) for row in rows)
-
-
-def _should_apply(row: sqlite3.Row, value: FuturesOrderSnapshot) -> bool:
-    old_time = int(row["status_time_ms"])
-    new_status = FuturesOrderStatus(str(value.status))
-    new_rank = _STATUS_RANK[new_status]
-    old_status = FuturesOrderStatus(str(row["status"]))
-    old_rank = _STATUS_RANK.get(old_status, 0)
-    if old_status in _TERMINAL and new_status is not old_status:
-        return False
-    return not (value.status_time_ms < old_time or new_rank < old_rank)

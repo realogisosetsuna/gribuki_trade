@@ -172,6 +172,15 @@ intraday execution policy, and Binance CLI result shaping. These are pure data o
 policy modules; file loading, account matching, network calls, and LIVE guards stay
 in their existing owners.
 
+The latest increment separates search-discovery result policy from provider HTTP
+transport and extracts Futures OMS order-status monotonicity, protection-plan
+revision checks, and restart-recovery query construction. The facades retain their
+historical private names while storage, network, transaction, and event-generation
+ownership remain unchanged. Focused validation covered 39 discovery/Futures OMS,
+module-layout, and source-comment tests; the full suite then passed 1771 tests with
+five environment-skipped tests, 41 subtests, and one recurring Windows pytest-cache
+warning. Readiness, Ruff, mypy (340 source files), and compileall also passed.
+
 The latest increment separates live-sync result payloads from the CLI facade,
 strict PAPER-day LLM audit payload recovery from the nested runner, Binance error
 and rate-limit protocol helpers from the REST gateway, and live-record work-queue

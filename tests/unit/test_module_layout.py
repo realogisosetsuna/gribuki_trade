@@ -81,6 +81,11 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "services/ashare/ashare_paper_day_schedule.py",
         ),
         ("gribuki_trade.trading.futures_oms_schema", "trading/futures_oms_schema.py"),
+        ("gribuki_trade.trading.futures_oms_policy", "trading/futures_oms_policy.py"),
+        (
+            "gribuki_trade.ingest.search_discovery_policy",
+            "ingest/search_discovery_policy.py",
+        ),
         ("gribuki_trade.services.adversarial_macro_policy", "services/adversarial_macro_policy.py"),
         (
             "gribuki_trade.cli_commands.live_sync_payloads",
