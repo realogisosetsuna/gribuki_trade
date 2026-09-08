@@ -64,32 +64,34 @@ from .screening_factors import (
 )
 from .screening_payload import (
     _FEATURE_VERSION,
-    _UNIVERSE_SOURCES,
-    SINA_HISTORY_SOURCE_ID,
-    AKShareScreeningDataError,
-    AKShareScreeningPayloadError,
-    AKShareScreeningPointInTimeError,
-    AKShareScreeningSourcesExhaustedError,
     _canonical_symbol,
-    _factor_batch_source_id,
-    _factor_revision,
     _ListingMetadata,
     _parse_history,
     _parse_listing_metadata,
     _parse_sina_history,
-    _parse_universe_rows,
-    _provider_records,
     _record_uses_sina_fallback,
     _sina_provider_records,
     _sina_symbol,
-    _universe_revision,
 )
 
 # 下游盘前/跨市场适配器仍从历史 facade 读取这些协议对象和进程锁。
 AKSHARE_HISTORY_SOURCE_ID = _screening_payload.AKSHARE_HISTORY_SOURCE_ID
 EASTMONEY_SCREENING_SOURCE_ID = _screening_payload.EASTMONEY_SCREENING_SOURCE_ID
 TENCENT_SCREENING_SOURCE_ID = _screening_payload.TENCENT_SCREENING_SOURCE_ID
+SINA_HISTORY_SOURCE_ID = _screening_payload.SINA_HISTORY_SOURCE_ID
+AKShareScreeningDataError = _screening_payload.AKShareScreeningDataError
+AKShareScreeningPayloadError = _screening_payload.AKShareScreeningPayloadError
+AKShareScreeningPointInTimeError = _screening_payload.AKShareScreeningPointInTimeError
+AKShareScreeningSourcesExhaustedError = (
+    _screening_payload.AKShareScreeningSourcesExhaustedError
+)
 AKShareScreeningCoverageError = _screening_payload.AKShareScreeningCoverageError
+_UNIVERSE_SOURCES = _screening_payload._UNIVERSE_SOURCES
+_factor_batch_source_id = _screening_payload._factor_batch_source_id
+_factor_revision = _screening_payload._factor_revision
+_parse_universe_rows = _screening_payload._parse_universe_rows
+_provider_records = _screening_payload._provider_records
+_universe_revision = _screening_payload._universe_revision
 _SINA_HISTORY_LOCK = _screening_payload._SINA_HISTORY_LOCK
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
