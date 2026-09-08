@@ -176,6 +176,19 @@ Focused validation for this increment passed 260 tests. The full suite passed 17
 tests with five environment-skipped tests and 41 subtests; Ruff, mypy (325 source
 files), readiness, compileall, and the Chinese-source check passed.
 
+The next increment isolates close-research CLI payloads, Futures order parameters,
+and PAPER-day notification/report projections while preserving command, transport,
+outbox, and persistence ownership in their facades.
+
+Focused validation for this increment passed 271 tests; full-suite validation is
+run with an isolated temporary root because old shared Windows pytest basetemps can
+be locked by prior symbolic-link tests.
+
+After restoring direct-call compatibility for the extracted Futures parameter
+helpers, the full suite passed 1742 tests with five environment-skipped tests and
+41 subtests. Ruff, mypy (328 source files), readiness, compileall, and the
+Chinese-source check passed.
+
 Validation evidence for this increment: CLI and parser tests 195 passed; the
 Binance Spot, cross-market, reporting, adversarial macro, exit simulation, A-share
 quantity/configuration, and close-analysis suites passed together (398 focused

@@ -63,6 +63,9 @@ first increment is:
 | `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_serialization.py` owns safe audit documents, stable JSON normalization, and hashes | Pure audit encoding; LLM calls, timeouts, and plan gates remain in the service facade |
 | `gui/integrations.py` | `gui/napcat_process.py` owns NapCat command validation and process lifecycle control | Qt process ownership stays in the lifecycle module; integration facade retains settings, tokens, and UI wiring |
 | `cli_commands/handlers/binance.py` | `cli_commands/binance_results.py` owns balance validation, testnet deltas, and reconciliation JSON payloads | Pure result shaping; handlers retain network orchestration and LIVE guards |
+| `cli.py` | `cli_commands/close_research_payloads.py` owns close-research archive/profile payload projections | Pure result shaping; CLI retains command dispatch, service calls, and artifact I/O |
+| `adapters/binance/futures.py` | `adapters/binance/futures_order_params.py` owns Futures order/protection parameter validation and encoding | Pure protocol parameters; Futures gateway retains signing, transport, and response handling |
+| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_notifications.py` owns stable notification kind, artifact identity, and report text projections | Pure event projection; runner retains outbox, notifier, and persistence side effects |
 | `runtime/paper_account_chain.py` | `runtime/paper_account_manifest.py` owns pure lineage manifests, canonical JSON, account/seal hashes, source-prefix validation, and ledger projection compatibility | No filesystem, SQLite, lock, scheduler, or broker side effects; chain facade retains recovery and atomic persistence |
 
 These modules are intentionally narrow. The old facade names remain available

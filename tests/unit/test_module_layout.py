@@ -65,6 +65,18 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "services/ashare/ashare_intraday_policy.py",
         ),
         (
+            "gribuki_trade.cli_commands.close_research_payloads",
+            "cli_commands/close_research_payloads.py",
+        ),
+        (
+            "gribuki_trade.adapters.binance.futures_order_params",
+            "adapters/binance/futures_order_params.py",
+        ),
+        (
+            "gribuki_trade.services.ashare.ashare_paper_day_notifications",
+            "services/ashare/ashare_paper_day_notifications.py",
+        ),
+        (
             "gribuki_trade.services.ashare.ashare_paper_day_schedule",
             "services/ashare/ashare_paper_day_schedule.py",
         ),
