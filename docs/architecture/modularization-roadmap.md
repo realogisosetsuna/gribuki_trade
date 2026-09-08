@@ -50,6 +50,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/adversarial_macro.py` | `services/adversarial_macro_policy.py` | Role validation, peer envelopes, conservative aggregation, and round stability |
 | `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_quantity.py` | Pure lot/quantity rules and sell-quantity planning for A-share intraday PAPER execution |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_config.py` | Frozen schedule/risk configuration and policy manifest projections |
+| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_llm_payloads.py` | Strict LLM audit payload recovery, type validation, and pure gate/text projections |
 | `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_serialization.py` | Safe audit documents, stable JSON normalization, and hashes |
 | `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_policy.py` | Risk config, price acceptance, board price bands, and validation |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_llm_projection.py` | LLM sidecar data classes and pure projection statistics |
@@ -65,6 +66,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `adapters/ashare/screening.py` | `adapters/ashare/screening_factors.py` | Historical-bar model, raw factor calculations, and corporate-action guards |
 | `adapters/binance/gateway.py` | `adapters/binance/request_builder.py` | Deterministic REST query/form encoding and signed request assembly |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_schedule.py` | Session timezone, phase boundaries, and scheduler sleep calculations |
+| `cli.py` | `cli_commands/live_sync_payloads.py` | Pure live-sync status, ingest, protection, cycle, and receipt result documents |
 
 ## Next slices
 
@@ -107,6 +109,7 @@ Current source evidence includes `src/gribuki_trade/cli_parsing.py`,
 `src/gribuki_trade/reporting/paper_day_renderer.py`,
 `src/gribuki_trade/services/ashare/ashare_intraday_quantity.py`,
 `src/gribuki_trade/services/ashare/ashare_paper_day_config.py`,
+`src/gribuki_trade/services/ashare/ashare_paper_day_llm_payloads.py`,
 `src/gribuki_trade/features/close_analysis_indicators.py`, and
 `src/gribuki_trade/storage/live_record_models.py`,
 `src/gribuki_trade/trading/oms_schema.py`,

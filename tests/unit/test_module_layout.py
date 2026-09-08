@@ -82,6 +82,14 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         ),
         ("gribuki_trade.trading.futures_oms_schema", "trading/futures_oms_schema.py"),
         ("gribuki_trade.services.adversarial_macro_policy", "services/adversarial_macro_policy.py"),
+        (
+            "gribuki_trade.cli_commands.live_sync_payloads",
+            "cli_commands/live_sync_payloads.py",
+        ),
+        (
+            "gribuki_trade.services.ashare.ashare_paper_day_llm_payloads",
+            "services/ashare/ashare_paper_day_llm_payloads.py",
+        ),
     )
     for name, suffix in modules:
         module = importlib.import_module(name)

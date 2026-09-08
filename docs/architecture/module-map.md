@@ -66,6 +66,8 @@ first increment is:
 | `cli.py` | `cli_commands/close_research_payloads.py` owns close-research archive/profile payload projections | Pure result shaping; CLI retains command dispatch, service calls, and artifact I/O |
 | `adapters/binance/futures.py` | `adapters/binance/futures_order_params.py` owns Futures order/protection parameter validation and encoding | Pure protocol parameters; Futures gateway retains signing, transport, and response handling |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_notifications.py` owns stable notification kind, artifact identity, and report text projections | Pure event projection; runner retains outbox, notifier, and persistence side effects |
+| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_llm_payloads.py` owns strict LLM audit document recovery, type validation, and gate/text projections | Pure immutable-payload decoding and projection; runner retains analyzer calls, storage, scheduling, and side effects |
+| `cli.py` | `cli_commands/live_sync_payloads.py` owns live-sync status, ingest, protection, cycle, and receipt payload projections | Pure result shaping; CLI facade retains event ingestion, service orchestration, LIVE guards, and notification dispatch |
 | `runtime/paper_account_chain.py` | `runtime/paper_account_manifest.py` owns pure lineage manifests, canonical JSON, account/seal hashes, source-prefix validation, and ledger projection compatibility | No filesystem, SQLite, lock, scheduler, or broker side effects; chain facade retains recovery and atomic persistence |
 
 These modules are intentionally narrow. The old facade names remain available

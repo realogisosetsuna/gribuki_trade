@@ -103,6 +103,13 @@ from gribuki_trade.cli_commands.handlers.binance import (
     _wait_for_testnet_execution,
     _wait_for_testnet_fill_reports,
 )
+from gribuki_trade.cli_commands.live_sync_payloads import (
+    _append_live_immediate_protection_receipt,
+    _live_cycle_payload,
+    _live_immediate_protection_payload,
+    _live_ingest_payload,
+    _live_status_payload,
+)
 from gribuki_trade.cli_commands.post_close_results import (
     _post_close_analysis_outcome,
     _post_close_completed_result,
@@ -2536,47 +2543,7 @@ def _live_sync(
                 snapshot = project_live_account(account_id, store.events(account_id))
                 tracking = store.tracking(account_id, active_only=False)
                 work_items = store.work_items(account_id)
-                return {
-                    "account_id": snapshot.account_id,
-                    "confirmed_fill_count": snapshot.confirmed_fill_count,
-                    "integrity_verified": True,
-                    "last_sequence": snapshot.last_sequence,
-                    "ok": True,
-                    "positions": [
-                        {
-                            "average_cost": str(item.average_cost),
-                            "instrument_type": item.instrument_type.value,
-                            "quantity": item.quantity,
-                            "realized_pnl": str(item.realized_pnl),
-                            "symbol": item.symbol,
-                        }
-                        for item in snapshot.positions
-                    ],
-                    "protection_tracking": [
-                        {
-                            "buy_command_id": item.buy_command_id,
-                            "plan_ready": item.plan_ready,
-                            "plan_stream_id": item.plan_stream_id,
-                            "protection_id": item.protection_id,
-                            "remaining_quantity": item.remaining_quantity,
-                            "symbol": item.symbol,
-                        }
-                        for item in tracking
-                    ],
-                    "total_fees": str(snapshot.total_fees),
-                    "work_items": [
-                        {
-                            "attempts": item.attempts,
-                            "error_code": item.error_code,
-                            "kind": item.kind.value,
-                            "protection_id": item.protection_id,
-                            "result_code": item.result_code,
-                            "status": item.status.value,
-                            "work_id": item.work_id,
-                        }
-                        for item in work_items
-                    ],
-                }
+                return _live_status_payload(snapshot, tracking, work_items)
             if action != "ingest":
                 return {"error_code": "LIVE_ACTION_INVALID", "ok": False}
             senders = frozenset(allowed_senders or ())
@@ -2606,18 +2573,7 @@ def _live_sync(
                 return {"error_code": "LIVE_EVENT_INVALID", "ok": False}
             except LiveTradeRecordError as error:
                 return {"error_code": error.code, "ok": False}
-            result: dict[str, object] = {
-                "account_id": outcome.account_id,
-                "analysis_required": outcome.analysis_required,
-                "command_id": outcome.command_id,
-                "event_sequence": outcome.event_sequence,
-                "fingerprint": outcome.fingerprint,
-                "ok": True,
-                "protection_id": outcome.protection_id,
-                "protection_work_id": outcome.protection_work_id,
-                "response_text": outcome.response_text,
-                "status": outcome.status.value,
-            }
+            result = _live_ingest_payload(outcome)
             if outcome.analysis_required and outcome.protection_id is not None:
                 if outcome.protection_work_id is None:  # pragma: no cover - domain invariant
                     return {"error_code": "LIVE_LEDGER_INTEGRITY_FAILURE", "ok": False}
@@ -2897,36 +2853,18 @@ async def _live_sync_post_confirm_quick_and_track(
                 }
                 tracking_ok = tracking_state.remaining_quantity == 0
             quick_ok = tracking_state.plan_ready or tracking_state.remaining_quantity == 0
-            result: dict[str, object] = {
-                "deep": {
-                    "queued": deep_work is not None,
-                    "status": None if deep_work is None else deep_work.status.value,
-                    "work_id": None if deep_work is None else deep_work.work_id,
-                },
-                "execution_authority": False,
-                "ok": quick_ok and tracking_ok,
-                "notification_target_fallback": target_fallback,
-                "protection_id": protection_id,
-                "protection_work_id": protection_work_id,
-                "quick": {
-                    "claimed": quick.claimed,
-                    "completed": quick.completed,
-                    "dead": quick.dead,
-                    "error_code": work.error_code,
-                    "plan_ready": tracking_state.plan_ready,
-                    "remaining_quantity": tracking_state.remaining_quantity,
-                    "result_code": work.result_code,
-                    "retried": quick.retried,
-                    "status": work.status.value,
-                },
-                "tracking": tracking_result,
-            }
-            if not result["ok"]:
-                result["error_code"] = (
-                    work.error_code
-                    or tracking_result.get("error_code")
-                    or "LIVE_IMMEDIATE_PROTECTION_PENDING"
-                )
+            result = _live_immediate_protection_payload(
+                protection_id=protection_id,
+                protection_work_id=protection_work_id,
+                deep_work=deep_work,
+                quick=quick,
+                work=work,
+                tracking_state=tracking_state,
+                tracking_result=tracking_result,
+                quick_ok=quick_ok,
+                tracking_ok=tracking_ok,
+                notification_target_fallback=target_fallback,
+            )
             raw_outbox_delivery = tracking_result.get("outbox_delivery")
             delivered_to_outbox: Mapping[str, object] | None = (
                 raw_outbox_delivery if isinstance(raw_outbox_delivery, Mapping) else None
@@ -2991,39 +2929,6 @@ async def _live_sync_post_confirm_quick_and_track(
             "protection_id": protection_id,
             "protection_work_id": protection_work_id,
         }
-
-
-def _append_live_immediate_protection_receipt(
-    response_text: str,
-    immediate: Mapping[str, object],
-) -> str:
-    """把提交后尝试的真实状态追加到成交回执，而不改写成交结论。"""
-
-    quick = immediate.get("quick")
-    tracking = immediate.get("tracking")
-    if (
-        isinstance(quick, Mapping)
-        and quick.get("plan_ready") is True
-        and isinstance(tracking, Mapping)
-        and tracking.get("ok") is True
-    ):
-        detail = "QUICK 已生成并已完成一次有限行情跟踪；DEEP 已持久排队。"
-    elif isinstance(quick, Mapping) and quick.get("plan_ready") is True:
-        error_code = immediate.get("error_code") or "LIVE_IMMEDIATE_TRACKING_INCOMPLETE"
-        detail = f"QUICK 已生成，但本次有限跟踪未完整完成（{error_code}）；后续 cycle 将继续恢复。"
-    elif immediate.get("ok") is True:
-        detail = "持仓已在并发同步中关闭，无需再激活保护计划。"
-    else:
-        error_code = immediate.get("error_code") or "LIVE_IMMEDIATE_PROTECTION_PENDING"
-        detail = f"本次有限 QUICK/跟踪未完整完成（{error_code}）；持久工作仍由后续 cycle 恢复。"
-    dispatch = immediate.get("dispatch")
-    if isinstance(dispatch, Mapping) and dispatch.get("attempted") is True:
-        if dispatch.get("ok") is True:
-            detail += f" NapCat 有限派发已完成，发送 {dispatch.get('sent', 0)} 条。"
-        else:
-            dispatch_code = dispatch.get("error_code") or "LIVE_IMMEDIATE_ALERT_DISPATCH_PENDING"
-            detail += f" NapCat 派发未完成（{dispatch_code}），提醒仍保留在 durable outbox。"
-    return response_text.rstrip() + "\n即时保护结果：" + detail
 
 
 async def _live_sync_cycle(
@@ -3247,56 +3152,15 @@ async def _live_sync_cycle(
             owned_dual.close()
         await client.aclose()
 
-    result: dict[str, object] = {
-        "analysis": {
-            "build": {
-                "claimed": build_work.claimed,
-                "completed": build_work.completed,
-                "dead": build_work.dead,
-                "retried": build_work.retried,
-            },
-            "build_limit": 1,
-            "deep": {
-                "claimed": deep_work.claimed,
-                "completed": deep_work.completed,
-                "dead": deep_work.dead,
-                "retried": deep_work.retried,
-            },
-            "deep_timeout_seconds": deep_timeout_seconds,
-            "close": {
-                "claimed": close_work.claimed,
-                "completed": close_work.completed,
-                "dead": close_work.dead,
-                "retried": close_work.retried,
-            },
-        },
-        "dispatch": {
-            "dead": dispatch["dead"],
-            "retry_scheduled": dispatch["retry_scheduled"],
-            "sent": dispatch["sent"],
-        },
-        "execution_authority": False,
-        "ok": not dispatch_failed,
-        "tracking": {
-            "barrier_observations": sum(item.barrier_observations for item in tracking_runs),
-            "failures": [
-                {
-                    "account_id": item.account_id,
-                    "error_code": item.error_code,
-                    "symbol": item.symbol,
-                }
-                for run in tracking_runs
-                for item in run.failures
-            ],
-            "fetched_bars": sum(item.fetched_bars for item in tracking_runs),
-            "pump_runs": len(tracking_runs) - 1,
-            "queued_alerts": sum(item.queued_alerts for item in tracking_runs),
-            "target_count": max(item.target_count for item in tracking_runs),
-        },
-    }
-    if dispatch_failed:
-        result["error_code"] = "LIVE_ALERT_DISPATCH_FAILED"
-    return result
+    return _live_cycle_payload(
+        build_work=build_work,
+        deep_work=deep_work,
+        close_work=close_work,
+        tracking_runs=tracking_runs,
+        dispatch=dispatch,
+        dispatch_failed=dispatch_failed,
+        deep_timeout_seconds=deep_timeout_seconds,
+    )
 
 
 def _ashare_paper(
