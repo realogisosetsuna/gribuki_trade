@@ -15,14 +15,22 @@ from gribuki_trade.domain.orders import OrderIntent, OrderStatus, Side
 from gribuki_trade.ports.broker import BrokerEvent
 
 from .errors import (
-    BinanceAPIError,
-    BinanceConfigurationError,
-    BinanceProtocolError,
-    BinanceTransportError,
-    BinanceUncertainResultError,
+    BinanceAPIError as _BinanceAPIError,
+)
+from .errors import (
+    BinanceConfigurationError as _BinanceConfigurationError,
 )
 from .errors import (
     BinanceError as _BinanceError,
+)
+from .errors import (
+    BinanceProtocolError as _BinanceProtocolError,
+)
+from .errors import (
+    BinanceTransportError as _BinanceTransportError,
+)
+from .errors import (
+    BinanceUncertainResultError as _BinanceUncertainResultError,
 )
 from .http import (
     AsyncHttpTransport,
@@ -118,7 +126,13 @@ from .spot_parsing import (
     sign_hmac_sha256 as _sign_hmac_sha256,
 )
 
+# 保留旧网关导出的错误类和签名函数，避免下游适配器因拆分而改变导入路径。
+BinanceAPIError = _BinanceAPIError
+BinanceConfigurationError = _BinanceConfigurationError
 BinanceError = _BinanceError
+BinanceProtocolError = _BinanceProtocolError
+BinanceTransportError = _BinanceTransportError
+BinanceUncertainResultError = _BinanceUncertainResultError
 
 
 def sign_hmac_sha256(secret_key: str, payload: str) -> str:

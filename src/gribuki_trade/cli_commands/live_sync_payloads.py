@@ -12,75 +12,120 @@ from typing import Protocol
 
 
 class _ValueLike(Protocol):
-    value: str
+    @property
+    def value(self) -> str: ...
 
 
 class _PositionLike(Protocol):
-    average_cost: object
-    instrument_type: _ValueLike
-    quantity: int
-    realized_pnl: object
-    symbol: str
+    @property
+    def average_cost(self) -> object: ...
+    @property
+    def instrument_type(self) -> _ValueLike: ...
+    @property
+    def quantity(self) -> int: ...
+    @property
+    def realized_pnl(self) -> object: ...
+    @property
+    def symbol(self) -> str: ...
 
 
 class _SnapshotLike(Protocol):
-    account_id: str
-    confirmed_fill_count: int
-    last_sequence: int
-    positions: Iterable[_PositionLike]
-    total_fees: object
+    @property
+    def account_id(self) -> str: ...
+    @property
+    def confirmed_fill_count(self) -> int: ...
+    @property
+    def last_sequence(self) -> int: ...
+    @property
+    def positions(self) -> Iterable[_PositionLike]: ...
+    @property
+    def total_fees(self) -> object: ...
 
 
 class _TrackingLike(Protocol):
-    buy_command_id: str
-    plan_ready: bool
-    plan_stream_id: str | None
-    protection_id: str
-    remaining_quantity: int
-    symbol: str
+    @property
+    def buy_command_id(self) -> str: ...
+    @property
+    def plan_ready(self) -> bool: ...
+    @property
+    def plan_stream_id(self) -> str | None: ...
+    @property
+    def protection_id(self) -> str: ...
+    @property
+    def remaining_quantity(self) -> int: ...
+    @property
+    def symbol(self) -> str: ...
 
 
 class _WorkLike(Protocol):
-    attempts: int
-    error_code: str | None
-    kind: _ValueLike
-    protection_id: str | None
-    result_code: str | None
-    status: _ValueLike
-    work_id: str
+    @property
+    def attempts(self) -> int: ...
+    @property
+    def error_code(self) -> str | None: ...
+    @property
+    def kind(self) -> _ValueLike: ...
+    @property
+    def protection_id(self) -> str | None: ...
+    @property
+    def result_code(self) -> str | None: ...
+    @property
+    def status(self) -> _ValueLike: ...
+    @property
+    def work_id(self) -> str: ...
 
 
 class _InboundOutcomeLike(Protocol):
-    account_id: str
-    analysis_required: bool
-    command_id: str
-    event_sequence: int
-    fingerprint: str | None
-    protection_id: str | None
-    protection_work_id: str | None
-    response_text: str
-    status: _ValueLike
+    @property
+    def account_id(self) -> str: ...
+    @property
+    def analysis_required(self) -> bool: ...
+    @property
+    def command_id(self) -> str: ...
+    @property
+    def event_sequence(self) -> int: ...
+    @property
+    def fingerprint(self) -> str | None: ...
+    @property
+    def protection_id(self) -> str | None: ...
+    @property
+    def protection_work_id(self) -> str | None: ...
+    @property
+    def response_text(self) -> str: ...
+    @property
+    def status(self) -> _ValueLike: ...
 
 
 class _RunSummaryLike(Protocol):
-    claimed: int
-    completed: int
-    dead: int
-    retried: int
+    @property
+    def claimed(self) -> int: ...
+    @property
+    def completed(self) -> int: ...
+    @property
+    def dead(self) -> int: ...
+    @property
+    def retried(self) -> int: ...
 
 
 class _CycleRunLike(Protocol):
-    barrier_observations: int
-    failures: Iterable[_FailureLike]
-    fetched_bars: int
-    queued_alerts: int
-    target_count: int
+    @property
+    def barrier_observations(self) -> int: ...
+    @property
+    def failures(self) -> Iterable[_FailureLike]: ...
+    @property
+    def fetched_bars(self) -> int: ...
+    @property
+    def queued_alerts(self) -> int: ...
+    @property
+    def target_count(self) -> int: ...
 
 
 class _FailureLike(Protocol):
-    account_id: str
-    error_code: str
-    symbol: str
+    @property
+    def account_id(self) -> str: ...
+    @property
+    def error_code(self) -> str: ...
+    @property
+    def symbol(self) -> str: ...
 
 
 def _live_status_payload(
