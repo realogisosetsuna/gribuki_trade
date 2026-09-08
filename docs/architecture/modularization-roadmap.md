@@ -28,11 +28,12 @@ compose these pieces and own retry, reconciliation, and failure policy.
 
 | Original facade | New cohesive module | Responsibility |
 |---|---|---|
-| `cli.py` | `cli_parsing.py`, `cli_output.py` | Argparse converters, Decimal formatting, and atomic JSON output |
+| `cli.py` | `cli_commands/parsers/`, `cli_commands/handlers/binance.py`, `cli_parsing.py`, `cli_output.py` | Command-family registration, Binance workflow handlers, argparse converters, Decimal formatting, and atomic JSON output |
 | `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py` | Spot wire parsing, scalar validation, signing, and redaction |
 | `trading/futures_oms.py` | `trading/futures_oms_codec.py` | Futures SQLite codecs, JSON/Decimal/time conversion, event identity |
 | `trading/oms.py` | `trading/oms_codec.py` | Broker-neutral OMS SQLite row codecs, JSON/Decimal/time conversion, identifiers, and status projection |
 | `storage/paper_day.py` | `storage/paper_day_codec.py` | PAPER-day row decoding, event digests, identifiers, and lease argument validation |
+| `storage/live_records.py` | `storage/live_record_codec.py` | Live-record scalar validation, canonical JSON, event/protection/work identifiers, and event hashes |
 | `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_serialization.py` | Exit dataset, plan, outcome, registry JSON and SHA-256 serialization |
 | `strategy_lab/experiments.py` | `strategy_lab/experiment_serialization.py` | Strategy/data manifests, trial folds, metrics and holdout JSON plus SHA-256 serialization |
 | `services/ashare_paper_day.py` | `services/ashare_paper_day_projection.py` | LLM gate and DEEP exit audit/notification projections |
@@ -95,11 +96,13 @@ Provider implementations are now organized under
 module paths are compatibility aliases that point at the implementation module,
 so private monkeypatch and import behavior used by existing integrations stays
 stable. The CLI parser is split into eleven command-family modules under
-`src/gribuki_trade/cli_commands/parsers/`.
+`src/gribuki_trade/cli_commands/parsers/`; Binance command workflows are
+extracted to `src/gribuki_trade/cli_commands/handlers/binance.py`.
 
 Representative routing tests include `tests/unit/test_akshare_market_data.py`,
 `tests/unit/test_ashare_paper_day.py`, `tests/unit/test_binance_execution.py`,
 and `tests/unit/test_cli.py`. The remaining oversized orchestration facades
-(`cli.py`, `ashare_paper_day.py`, `storage/live_records.py`) are the next
-vertical slices; each must first extract pure projections or codecs before
-moving transaction and dispatch logic.
+(`ashare_paper_day.py`, `storage/live_records.py`, and the A-share workflow
+branches still in `cli.py`) are the next vertical slices; each must first
+extract pure projections or codecs before moving transaction and dispatch
+logic.

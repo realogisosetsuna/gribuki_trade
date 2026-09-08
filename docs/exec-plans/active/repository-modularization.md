@@ -70,7 +70,7 @@ by arbitrary line ranges:
 - Reporting and GUI integrations: artifact serialization, provider adapters,
   and presentation-only code.
 
-The storage slice now includes `storage/paper_day_codec.py`. It owns pure
+The storage slice now includes `storage/paper_day_codec.py` and `storage/live_record_codec.py`. The latter owns pure live-record scalar validation, canonical JSON, event/protection/work identifiers, and event hashes; `storage/live_records.py` retains SQLite transactions, leases, and orchestration boundaries. It owns pure
 SQLite row decoding, hash-chain digest construction, identifier validation,
 and lease-argument normalization for `SQLitePaperDayStore`; the facade keeps
 all connections, transactions, leases, and append-only transitions.
@@ -141,13 +141,14 @@ the migration. Regression coverage is in
 ## Provider and command directory grouping
 
 The implementation now has explicit navigation roots for A-share, cross-market,
-macro, simulated, Binance, and CLI command families. Compatibility aliases at
+macro, simulated, Binance, and CLI command families. Binance command workflows
+are grouped under `cli_commands/handlers/` alongside the parser families. Compatibility aliases at
 the former flat paths are intentionally thin and use the implementation module
 object so existing imports and monkeypatch-based operational tests retain their
 semantics. This grouping is structural; it does not alter broker permissions,
 order state transitions, or durable schemas.
 
-Validation evidence for this increment: CLI parser tests 191 passed; adapter
+Validation evidence for this increment: CLI and parser tests 191 passed; adapter
 routing tests 54 passed; runtime/manifest and strategy serialization contracts
 passed; close-analysis component/service tests passed. Full quality gates remain
 required after the next paper-day extraction is merged.

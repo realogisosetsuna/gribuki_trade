@@ -28,7 +28,7 @@ first increment is:
 
 | Facade | Extracted responsibility | Boundary |
 |---|---|---|
-| `cli.py` | `cli_parsing.py` owns argparse converters; `cli_output.py` owns Decimal formatting and atomic JSON output | Pure conversion/output helpers only; command dispatch and service wiring remain in `cli.py` |
+| `cli.py` | `cli_commands/parsers/` owns command registration; `cli_commands/handlers/binance.py` owns Binance command workflows; `cli_parsing.py` and `cli_output.py` own pure helpers | `cli.py` remains the stable facade and compatibility surface; handlers resolve runtime dependencies through the facade so existing monkeypatch and import contracts remain valid |
 | `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py` owns Spot scalar validation, signing, redaction, and wire parsing | No network, credentials, or gateway state |
 | `trading/futures_oms.py` | `trading/futures_oms_codec.py` owns SQLite row codecs, JSON/Decimal conversion, timestamps, and event identities | No transactions or broker imports |
 | `trading/oms.py` | `trading/oms_codec.py` owns broker-neutral SQLite row codecs, JSON/Decimal/time conversion, identifiers, and order status projection rules | No connections, transactions, or broker imports; `oms.py` remains the transaction facade |
@@ -86,5 +86,7 @@ continue to resolve while new code can navigate by domain.
 
 The CLI command tree is assembled in `src/gribuki_trade/cli_commands/parser.py`.
 Each command family has a registration module under
-`src/gribuki_trade/cli_commands/parsers/`; `cli.py` remains the stable process
-entry point and command dispatcher.
+`src/gribuki_trade/cli_commands/parsers/`; Binance execution, balance, stream,
+backtest, shadow, and testnet OMS handlers live in
+`src/gribuki_trade/cli_commands/handlers/binance.py`. `cli.py` remains the
+stable process entry point and compatibility facade.
