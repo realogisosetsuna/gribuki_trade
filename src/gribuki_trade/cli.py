@@ -52,6 +52,20 @@ from gribuki_trade.adapters.schwab import (
     SCHWAB_CLIENT_SECRET_SECRET,
     SCHWAB_OAUTH_TOKEN_SECRET,
 )
+from gribuki_trade.cli_parsing import (
+    _add_order_arguments,
+    _iso_date,
+    _iso_datetime,
+    _macro_weight_decimal,
+    _non_negative_decimal,
+    _non_negative_float,
+    _non_negative_integer,
+    _positive_decimal,
+    _positive_float,
+    _positive_integer,
+    _positive_integer_or_unlimited,
+    _unit_fraction_decimal,
+)
 from gribuki_trade.domain.events import (
     DISCOVERY_CONFIRMED_EVENT_TYPE,
     DISCOVERY_HINT_EVENT_TYPE,
@@ -1460,117 +1474,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     napcat_artifact.add_argument("--confirm", choices=("SEND_ARTIFACT",), required=True)
     return parser
-
-
-def _add_order_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--symbol", default="BTCUSDT")
-    parser.add_argument(
-        "--notional",
-        type=_positive_decimal,
-        default=Decimal("20"),
-        help="target virtual quote notional (default: 20)",
-    )
-
-
-def _positive_decimal(value: str) -> Decimal:
-    try:
-        number = Decimal(value)
-    except InvalidOperation:
-        raise argparse.ArgumentTypeError("notional must be a decimal number") from None
-    if not number.is_finite() or number <= 0:
-        raise argparse.ArgumentTypeError("notional must be positive and finite")
-    return number
-
-
-def _non_negative_decimal(value: str) -> Decimal:
-    try:
-        number = Decimal(value)
-    except InvalidOperation:
-        raise argparse.ArgumentTypeError("value must be a decimal number") from None
-    if not number.is_finite() or number < 0:
-        raise argparse.ArgumentTypeError("value must be finite and non-negative")
-    return number
-
-
-def _unit_fraction_decimal(value: str) -> Decimal:
-    number = _non_negative_decimal(value)
-    if number > 1:
-        raise argparse.ArgumentTypeError("value must be between zero and one")
-    return number
-
-
-def _macro_weight_decimal(value: str) -> Decimal:
-    number = _unit_fraction_decimal(value)
-    if number > Decimal("0.40"):
-        raise argparse.ArgumentTypeError(
-            "macro weight must be between zero and 0.40 so technical evidence remains dominant"
-        )
-    return number
-
-
-def _positive_integer(value: str) -> int:
-    try:
-        number = int(value)
-    except ValueError:
-        raise argparse.ArgumentTypeError("value must be a positive integer") from None
-    if number <= 0:
-        raise argparse.ArgumentTypeError("value must be a positive integer")
-    return number
-
-
-def _positive_integer_or_unlimited(value: str) -> int | None:
-    if value.strip().lower() == "unlimited":
-        return None
-    return _positive_integer(value)
-
-
-def _iso_date(value: str) -> date:
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        raise argparse.ArgumentTypeError("date must use YYYY-MM-DD") from None
-
-
-def _iso_datetime(value: str) -> datetime:
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        raise argparse.ArgumentTypeError(
-            "datetime must be ISO-8601 and include a timezone"
-        ) from None
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise argparse.ArgumentTypeError("datetime must include a timezone offset")
-    return parsed
-
-
-def _non_negative_integer(value: str) -> int:
-    try:
-        number = int(value)
-    except ValueError:
-        raise argparse.ArgumentTypeError("value must be a non-negative integer") from None
-    if number < 0:
-        raise argparse.ArgumentTypeError("value must be a non-negative integer")
-    return number
-
-
-def _positive_float(value: str) -> float:
-    try:
-        number = float(value)
-    except ValueError:
-        raise argparse.ArgumentTypeError("value must be positive") from None
-    if not 0 < number < float("inf"):
-        raise argparse.ArgumentTypeError("value must be positive and finite")
-    return number
-
-
-def _non_negative_float(value: str) -> float:
-    try:
-        number = float(value)
-    except ValueError:
-        raise argparse.ArgumentTypeError("value must be non-negative") from None
-    if not 0 <= number < float("inf"):
-        raise argparse.ArgumentTypeError("value must be non-negative and finite")
-    return number
 
 
 def _apply_integration_runtime_defaults(args: argparse.Namespace) -> None:

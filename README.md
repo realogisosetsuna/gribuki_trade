@@ -590,6 +590,12 @@ Schwab 当前没有 CLI 或真实生产联调。OAuth、Market Data、Trader RES
 | `src/gribuki_trade/trading` | broker-neutral OMS 与执行状态 |
 | `src/gribuki_trade/reporting` | 六类报告契约、Markdown/PNG 研究产物与 PAPER/盘后摘要 |
 | `src/gribuki_trade/runtime` | PAPER/SHADOW/LIVE 模式、broker 守卫与集中临时目录解析 |
+
+大型入口保留历史兼容路径，但内部职责已开始拆分：CLI 的无副作用参数转换在
+`cli_parsing.py`，Binance Spot 的纯协议解析在
+`adapters/binance/spot_parsing.py`，USDⓈ-M OMS 的 SQLite 编解码在
+`trading/futures_oms_codec.py`。后续命令处理器和长工作流会沿同一规则逐步拆出；
+具体边界见 [模块地图](docs/architecture/module-map.md)。
 | `src/gribuki_trade/security` | OS keyring、token 和密钥边界 |
 | `src/gribuki_trade/gui` | NapCat 与 DeepSeek/OpenAI 集成管理，以及仍使用占位数据的交易展示页 |
 | `config` | 静态 A 股研究覆盖池 |

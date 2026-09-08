@@ -13,6 +13,28 @@
 | `reporting` / `gui` | Report contracts/artifacts and PySide6 presentation | `reporting/`, `gui/` | `test_report_contract*`, `test_report_artifacts.py`, `test_gui_*` |
 | `strategy_lab` / `backtest` | Offline experiments, factor DSL, walk-forward evaluation and costs | `strategy_lab/`, `backtest/` | `test_strategy_lab_*`, `test_crypto_backtest.py`, `test_recommendation_outcomes.py` |
 
+## Large-module ownership boundaries
+
+The repository keeps compatibility facades at historical import paths while
+moving cohesive, side-effect-free concerns into small modules. The current
+first increment is:
+
+| Facade | Extracted responsibility | Boundary |
+|---|---|---|
+| `cli.py` | `cli_parsing.py` owns argparse converters and shared order arguments | Pure conversion only; command dispatch and service wiring remain in `cli.py` |
+| `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py` owns Spot scalar validation, signing, redaction, and wire parsing | No network, credentials, or gateway state |
+| `trading/futures_oms.py` | `trading/futures_oms_codec.py` owns SQLite row codecs, JSON/Decimal conversion, timestamps, and event identities | No transactions or broker imports |
+
+These modules are intentionally narrow. The old facade names remain available
+so CLI entry points, services, and external integrations can migrate in later
+increments without a flag-day change. The next planned slices are a dedicated
+Binance command-handler package behind `cli.py`, then separation of the A-share
+PAPER/post-close workflows and the remaining execution orchestration helpers.
+
+When adding a new slice, keep parser/codec/state-transition code pure where
+possible, put provider protocol code under `adapters`, keep durable writes in
+`storage` or `trading`, and add a focused test route before moving callers.
+
 Use the row matching the task, then follow its representative tests before
 opening neighboring modules.
 
