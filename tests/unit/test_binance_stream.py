@@ -8,6 +8,7 @@ from gribuki_trade.adapters.binance import (
     TESTNET_WS_BASE_URL,
     BinanceBookTickerEvent,
     BinanceConfigurationError,
+    BinanceDepthEvent,
     BinanceKlineEvent,
     BinanceProtocolError,
     BinanceSpotMarketStream,
@@ -15,6 +16,7 @@ from gribuki_trade.adapters.binance import (
     BinanceTradeEvent,
     book_ticker_stream,
     build_stream_url,
+    depth_stream,
     kline_stream,
     normalize_symbol,
     parse_stream_message,
@@ -78,6 +80,19 @@ def kline_payload() -> dict[str, object]:
     }
 
 
+def depth_payload() -> dict[str, object]:
+    return {
+        "e": "depthUpdate",
+        "E": 1_672_515_782_136,
+        "s": "BTCUSDT",
+        "U": 157,
+        "u": 160,
+        "pu": 156,
+        "b": [["64500.10", "1.25000000"], ["64500.00", "0"]],
+        "a": [["64500.20", "0.75000000"]],
+    }
+
+
 class FakeConnection:
     def __init__(self, *frames: str | bytes | Exception) -> None:
         self.frames = deque(frames)
@@ -128,6 +143,8 @@ class BinanceStreamValueTests(TestCase):
         self.assertEqual(book_ticker_stream("BTCUSDT"), "btcusdt@bookTicker")
         self.assertEqual(trade_stream("btcusdt"), "btcusdt@trade")
         self.assertEqual(kline_stream("BTCUSDT", "1M"), "btcusdt@kline_1M")
+        self.assertEqual(depth_stream("BTCUSDT"), "btcusdt@depth")
+        self.assertEqual(depth_stream("BTCUSDT", update_speed_ms=100), "btcusdt@depth@100ms")
         self.assertEqual(validate_stream_name("btcusdt@trade"), "btcusdt@trade")
 
     def test_symbol_and_stream_injection_is_rejected(self) -> None:
@@ -138,6 +155,7 @@ class BinanceStreamValueTests(TestCase):
         for bad_stream in (
             "BTCUSDT@trade",
             "btcusdt@aggTrade",
+            "btcusdt@depth@250ms",
             "btcusdt@kline_7m",
             "btcusdt@trade/ethusdt@trade",
             "btcusdt@trade?x=1",
@@ -188,6 +206,9 @@ class BinanceStreamValueTests(TestCase):
         )
         trade = parse_stream_message(json.dumps(trade_payload()).encode())
         kline = parse_stream_message(json.dumps(kline_payload()))
+        depth = parse_stream_message(
+            json.dumps(depth_payload()), expected_streams=("btcusdt@depth@100ms",)
+        )
 
         self.assertIsInstance(book, BinanceBookTickerEvent)
         self.assertEqual(book.update_id, 400900217)
@@ -202,6 +223,12 @@ class BinanceStreamValueTests(TestCase):
         self.assertEqual(kline.close, Decimal("0.0020"))
         self.assertEqual(kline.trade_count, 100)
         self.assertFalse(kline.is_closed)
+        self.assertIsInstance(depth, BinanceDepthEvent)
+        assert isinstance(depth, BinanceDepthEvent)
+        self.assertEqual(depth.first_update_id, 157)
+        self.assertEqual(depth.final_update_id, 160)
+        self.assertEqual(depth.previous_final_update_id, 156)
+        self.assertEqual(depth.bids[0], (Decimal("64500.10"), Decimal("1.25000000")))
 
     def test_empty_open_kline_accepts_paired_negative_trade_id_sentinels(self) -> None:
         payload = kline_payload()

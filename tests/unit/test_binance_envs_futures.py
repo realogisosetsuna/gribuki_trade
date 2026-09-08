@@ -90,7 +90,7 @@ class BinanceFuturesClientTests(IsolatedAsyncioTestCase):
         credentials = BinanceCredentials(api_key="offline-key", secret_key="offline-secret")
         transport = FakeTransport(
             response(200, {"dualSidePosition": True}),
-            response(200, {"orderId": 9, "type": "STOP_MARKET"}),
+            response(200, {"algoId": 9, "algoStatus": "NEW", "orderType": "STOP_MARKET"}),
         )
         client = BinanceFuturesRestClient(credentials=credentials, transport=transport)
         result = await client.submit_protection_order(
@@ -102,26 +102,27 @@ class BinanceFuturesClientTests(IsolatedAsyncioTestCase):
                 stop_price="60000",
             )
         )
-        self.assertEqual(result["orderId"], 9)
+        self.assertEqual(result["algoId"], 9)
         query = parse_qs(urlsplit(transport.requests[1].url).query)
         self.assertEqual(query["type"], ["STOP_MARKET"])
-        self.assertEqual(query["stopPrice"], ["60000"])
+        self.assertEqual(query["triggerPrice"], ["60000"])
         self.assertEqual(query["closePosition"], ["true"])
 
-    async def test_legacy_trailing_rate_is_capped_at_five_percent(self) -> None:
+    async def test_algo_trailing_rate_is_capped_at_ten_percent(self) -> None:
         credentials = BinanceCredentials(api_key="offline-key", secret_key="offline-secret")
         client = BinanceFuturesRestClient(
             credentials=credentials,
             transport=FakeTransport(response(200, {"dualSidePosition": False})),
         )
-        with self.assertRaisesRegex(ValueError, "0.1 and 5"):
+        with self.assertRaisesRegex(ValueError, "0.1 and 10"):
             await client.submit_trailing_stop(
-                symbol="BTCUSDT", side="SELL", callback_rate="5.1", quantity="0.001"
+                symbol="BTCUSDT", side="SELL", callback_rate="10.1", quantity="0.001"
             )
 
     async def test_algo_order_family_uses_algo_routes_and_ten_percent_cap(self) -> None:
         credentials = BinanceCredentials(api_key="offline-key", secret_key="offline-secret")
         transport = FakeTransport(
+            response(200, {"dualSidePosition": False}),
             response(200, {"algoId": 1}),
             response(200, [{"algoId": 1}]),
             response(200, {"algoId": 1}),
@@ -137,6 +138,7 @@ class BinanceFuturesClientTests(IsolatedAsyncioTestCase):
         self.assertEqual(
             [urlsplit(item.url).path for item in transport.requests],
             [
+                "/fapi/v1/positionSide/dual",
                 "/fapi/v1/algoOrder",
                 "/fapi/v1/openAlgoOrders",
                 "/fapi/v1/algoOrder",

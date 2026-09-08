@@ -168,6 +168,54 @@ class BinanceFuturesRestClient:
         if not isinstance(payload, Mapping):
             raise BinanceProtocolError("Binance Futures ping response must be an object")
 
+    async def start_user_data_stream(self) -> str:
+        """创建或续期合约用户数据流密钥（USER_STREAM）。
+
+        此接口只使用 API key 请求头，不使用签名；密钥不会进入异常或对象表示。
+        """
+
+        payload = await self._request_json("POST", self._v1("listenKey"), api_key_only=True)
+        mapping = self._require_mapping(payload, "user data stream")
+        value = mapping.get("listenKey")
+        if not isinstance(value, str) or not value:
+            raise BinanceProtocolError("Binance Futures listenKey response is malformed")
+        return value
+
+    async def keepalive_user_data_stream(self, listen_key: str) -> str | None:
+        """把合约用户数据流密钥再延长 60 分钟。"""
+
+        self._validate_listen_key(listen_key)
+        payload = await self._request_json(
+            "PUT", self._v1("listenKey"), params=(("listenKey", listen_key),), api_key_only=True
+        )
+        if isinstance(payload, Mapping):
+            value = payload.get("listenKey")
+            if value is None:
+                return None
+            if not isinstance(value, str) or not value:
+                raise BinanceProtocolError("Binance Futures listenKey response is malformed")
+            return value
+        if payload in ({}, None):
+            return None
+        raise BinanceProtocolError("Binance Futures listenKey response is malformed")
+
+    async def close_user_data_stream(self, listen_key: str) -> None:
+        """关闭合约用户数据流密钥。"""
+
+        self._validate_listen_key(listen_key)
+        await self._request_json(
+            "DELETE", self._v1("listenKey"), params=(("listenKey", listen_key),), api_key_only=True
+        )
+
+    @property
+    def user_data_stream_base_url(self) -> str:
+        """返回当前产品和环境的私有 WebSocket 主机。"""
+
+        base = self._profile.market_ws_base_url
+        if not base:
+            raise BinanceConfigurationError("Binance Futures user stream is unavailable")
+        return base.rstrip("/") + "/private"
+
     async def server_time(self) -> int:
         payload = await self._request_json("GET", self._v1("time"))
         mapping = self._require_mapping(payload, "server time")
@@ -214,9 +262,7 @@ class BinanceFuturesRestClient:
             time_value = mapping.get("time")
             time_ms = None if time_value is None else int(time_value)
         except (KeyError, InvalidOperation, TypeError, ValueError):
-            raise BinanceProtocolError(
-                "Binance Futures ticker response is malformed"
-            ) from None
+            raise BinanceProtocolError("Binance Futures ticker response is malformed") from None
         return BinanceFuturesTicker(symbol=response_symbol, price=price, time_ms=time_ms)
 
     async def klines(
@@ -277,15 +323,11 @@ class BinanceFuturesRestClient:
         下单前猜测账户模式。
         """
 
-        payload = await self._request_json(
-            "GET", self._v1("positionSide/dual"), signed=True
-        )
+        payload = await self._request_json("GET", self._v1("positionSide/dual"), signed=True)
         mapping = self._require_mapping(payload, "position side mode")
         value = mapping.get("dualSidePosition")
         if not isinstance(value, bool):
-            raise BinanceProtocolError(
-                "Binance Futures position side mode response is malformed"
-            )
+            raise BinanceProtocolError("Binance Futures position side mode response is malformed")
         return value
 
     async def position_mode(self) -> bool:
@@ -350,9 +392,7 @@ class BinanceFuturesRestClient:
 
         if self.product is not BinanceProduct.USDS_FUTURES:
             raise BinanceConfigurationError("multi-assets mode is only supported by USD-M Futures")
-        payload = await self._request_json(
-            "GET", self._v1("multiAssetsMargin"), signed=True
-        )
+        payload = await self._request_json("GET", self._v1("multiAssetsMargin"), signed=True)
         value = self._require_mapping(payload, "multi-assets mode").get("multiAssetsMargin")
         if not isinstance(value, bool):
             raise BinanceProtocolError("Binance Futures multi-assets mode response is malformed")
@@ -450,6 +490,16 @@ class BinanceFuturesRestClient:
         """提交真实订单；调用方必须先通过运行时交易守卫。"""
 
         values = dict(kwargs)
+        if str(values.get("type", "")).upper() in {
+            "STOP",
+            "TAKE_PROFIT",
+            "STOP_MARKET",
+            "TAKE_PROFIT_MARKET",
+            "TRAILING_STOP_MARKET",
+        }:
+            raise ValueError(
+                "conditional Futures orders must use submit_algo_order after Binance Algo migration"
+            )
         values["position_side"] = await self._checked_position_side(
             values.get("position_side"),
             values.get("reduce_only"),
@@ -478,17 +528,31 @@ class BinanceFuturesRestClient:
         if close_position and quantity is not None:
             raise ValueError("close_position cannot be combined with quantity")
 
-        return await self.submit_order(
+        if self.product is not BinanceProduct.USDS_FUTURES:
+            return await self.submit_order(
+                symbol=symbol,
+                side=side,
+                type="STOP_MARKET",
+                quantity=quantity,
+                stop_price=stop_price,
+                position_side=position_side,
+                close_position=close_position,
+                working_type=working_type,
+                price_protect=price_protect,
+                client_order_id=client_order_id,
+            )
+        return await self.submit_algo_order(
+            algo_type="CONDITIONAL",
             symbol=symbol,
             side=side,
             type="STOP_MARKET",
             quantity=quantity,
-            stop_price=stop_price,
+            trigger_price=stop_price,
             position_side=position_side,
             close_position=close_position,
             working_type=working_type,
             price_protect=price_protect,
-            client_order_id=client_order_id,
+            client_algo_id=client_order_id,
         )
 
     async def submit_take_profit(
@@ -509,17 +573,31 @@ class BinanceFuturesRestClient:
         if close_position and quantity is not None:
             raise ValueError("close_position cannot be combined with quantity")
 
-        return await self.submit_order(
+        if self.product is not BinanceProduct.USDS_FUTURES:
+            return await self.submit_order(
+                symbol=symbol,
+                side=side,
+                type="TAKE_PROFIT_MARKET",
+                quantity=quantity,
+                stop_price=stop_price,
+                position_side=position_side,
+                close_position=close_position,
+                working_type=working_type,
+                price_protect=price_protect,
+                client_order_id=client_order_id,
+            )
+        return await self.submit_algo_order(
+            algo_type="CONDITIONAL",
             symbol=symbol,
             side=side,
             type="TAKE_PROFIT_MARKET",
             quantity=quantity,
-            stop_price=stop_price,
+            trigger_price=stop_price,
             position_side=position_side,
             close_position=close_position,
             working_type=working_type,
             price_protect=price_protect,
-            client_order_id=client_order_id,
+            client_algo_id=client_order_id,
         )
 
     async def submit_trailing_stop(
@@ -542,19 +620,34 @@ class BinanceFuturesRestClient:
         if quantity is None:
             raise ValueError("TRAILING_STOP_MARKET requires quantity")
         rate = Decimal(str(callback_rate))
-        if not Decimal("0.1") <= rate <= Decimal("5"):
-            raise ValueError("callback_rate must be between 0.1 and 5 percent")
-        return await self.submit_order(
+        maximum = Decimal("10") if self.product is BinanceProduct.USDS_FUTURES else Decimal("5")
+        if not Decimal("0.1") <= rate <= maximum:
+            raise ValueError(f"callback_rate must be between 0.1 and {maximum} percent")
+        if self.product is not BinanceProduct.USDS_FUTURES:
+            return await self.submit_order(
+                symbol=symbol,
+                side=side,
+                type="TRAILING_STOP_MARKET",
+                quantity=quantity,
+                activation_price=activation_price,
+                callback_rate=rate,
+                position_side=position_side,
+                close_position=close_position,
+                working_type=working_type,
+                client_order_id=client_order_id,
+            )
+        return await self.submit_algo_order(
+            algo_type="CONDITIONAL",
             symbol=symbol,
             side=side,
             type="TRAILING_STOP_MARKET",
             quantity=quantity,
-            activation_price=activation_price,
+            activate_price=activation_price,
             callback_rate=rate,
             position_side=position_side,
             close_position=close_position,
             working_type=working_type,
-            client_order_id=client_order_id,
+            client_algo_id=client_order_id,
         )
 
     async def submit_protection_order(
@@ -605,6 +698,9 @@ class BinanceFuturesRestClient:
         values = dict(kwargs)
         if "symbol" not in values or "side" not in values:
             raise ValueError("submit_algo_order requires symbol and side")
+        values["position_side"] = await self._checked_position_side(
+            values.get("position_side"), values.get("reduce_only")
+        )
         if values.get("trigger_price") is not None and values.get("stop_price") is not None:
             raise ValueError("provide trigger_price or stop_price, not both")
         params: list[tuple[str, object]] = []
@@ -622,7 +718,8 @@ class BinanceFuturesRestClient:
             "working_type": "workingType",
             "price_protect": "priceProtect",
             "callback_rate": "callbackRate",
-            "activation_price": "activationPrice",
+            "activation_price": "activatePrice",
+            "activate_price": "activatePrice",
             "client_algo_id": "clientAlgoId",
             "reduce_only": "reduceOnly",
         }
@@ -689,9 +786,7 @@ class BinanceFuturesRestClient:
         params.append(
             ("algoId" if algo_id is not None else "clientAlgoId", algo_id or client_algo_id)
         )
-        payload = await self._request_json(
-            "GET", self._v1("algoOrder"), params=params, signed=True
-        )
+        payload = await self._request_json("GET", self._v1("algoOrder"), params=params, signed=True)
         return dict(self._require_mapping(payload, "algo order"))
 
     async def open_algo_orders(self, symbol: str | None = None) -> tuple[dict[str, Any], ...]:
@@ -703,6 +798,42 @@ class BinanceFuturesRestClient:
         )
         if not isinstance(payload, list) or any(not isinstance(item, Mapping) for item in payload):
             raise BinanceProtocolError("Binance Futures open algo orders response must be a list")
+        return tuple(dict(item) for item in payload)
+
+    async def all_algo_orders(
+        self,
+        symbol: str,
+        *,
+        algo_id: int | str | None = None,
+        start_time_ms: int | None = None,
+        end_time_ms: int | None = None,
+        limit: int = 500,
+    ) -> tuple[dict[str, Any], ...]:
+        """按官方分页参数读取指定合约的 Algo 历史和活动订单。"""
+
+        if not 1 <= limit <= 1_000:
+            raise ValueError("limit must be between 1 and 1000")
+        if start_time_ms is not None and start_time_ms < 0:
+            raise ValueError("start_time_ms must be non-negative")
+        if end_time_ms is not None and end_time_ms < 0:
+            raise ValueError("end_time_ms must be non-negative")
+        if start_time_ms is not None and end_time_ms is not None and end_time_ms < start_time_ms:
+            raise ValueError("end_time_ms must not precede start_time_ms")
+        params: list[tuple[str, object]] = [
+            ("symbol", self._normalize_symbol(symbol)),
+            ("limit", limit),
+        ]
+        if algo_id is not None:
+            params.append(("algoId", algo_id))
+        if start_time_ms is not None:
+            params.append(("startTime", start_time_ms))
+        if end_time_ms is not None:
+            params.append(("endTime", end_time_ms))
+        payload = await self._request_json(
+            "GET", self._v1("allAlgoOrders"), params=params, signed=True
+        )
+        if not isinstance(payload, list) or any(not isinstance(item, Mapping) for item in payload):
+            raise BinanceProtocolError("Binance Futures all algo orders response must be a list")
         return tuple(dict(item) for item in payload)
 
     async def cancel_algo_order(
@@ -725,8 +856,10 @@ class BinanceFuturesRestClient:
 
     async def cancel_all_algo_orders(self, symbol: str) -> dict[str, Any]:
         payload = await self._request_json(
-            "DELETE", self._v1("algoOpenOrders"),
-            params=(("symbol", self._normalize_symbol(symbol)),), signed=True,
+            "DELETE",
+            self._v1("algoOpenOrders"),
+            params=(("symbol", self._normalize_symbol(symbol)),),
+            signed=True,
         )
         return dict(self._require_mapping(payload, "cancel all algo orders"))
 
@@ -779,9 +912,7 @@ class BinanceFuturesRestClient:
     ) -> dict[str, Any]:
         """调用官方合约测试订单端点，但不实际创建订单。"""
 
-        normalized_position_side = await self._checked_position_side(
-            position_side, reduce_only
-        )
+        normalized_position_side = await self._checked_position_side(position_side, reduce_only)
 
         params: list[tuple[str, object]] = [
             ("symbol", self._normalize_symbol(symbol)),
@@ -793,9 +924,7 @@ class BinanceFuturesRestClient:
             ("price", price),
             (
                 "timeInForce",
-                None
-                if time_in_force is None
-                else self._enum_value(time_in_force, "time_in_force"),
+                None if time_in_force is None else self._enum_value(time_in_force, "time_in_force"),
             ),
             (
                 "positionSide",
@@ -822,14 +951,10 @@ class BinanceFuturesRestClient:
         hedge_mode = await self.position_side_mode()
         if hedge_mode:
             if position_side is None:
-                raise ValueError(
-                    "position_side must be LONG or SHORT in Hedge Mode"
-                )
+                raise ValueError("position_side must be LONG or SHORT in Hedge Mode")
             normalized = self._enum_value(str(position_side), "position_side")
             if normalized not in {"LONG", "SHORT"}:
-                raise ValueError(
-                    "position_side must be LONG or SHORT in Hedge Mode"
-                )
+                raise ValueError("position_side must be LONG or SHORT in Hedge Mode")
             if reduce_only is not None:
                 raise ValueError("reduce_only is not allowed in Hedge Mode")
             return normalized
@@ -894,7 +1019,10 @@ class BinanceFuturesRestClient:
         *,
         params: Sequence[tuple[str, object]] = (),
         signed: bool = False,
+        api_key_only: bool = False,
     ) -> Any:
+        if signed and api_key_only:
+            raise ValueError("signed and api_key_only are mutually exclusive")
         request_params = list(params)
         headers: dict[str, str] = {"Accept": "application/json"}
         if signed:
@@ -910,6 +1038,8 @@ class BinanceFuturesRestClient:
                 ("signature", sign_hmac_sha256(credentials.secret_key, unsigned_query))
             )
             headers["X-MBX-APIKEY"] = credentials.api_key
+        elif api_key_only:
+            headers["X-MBX-APIKEY"] = self._require_credentials().api_key
         query = urlencode(request_params)
         url = f"{self.base_url}{path}"
         if query:
@@ -957,17 +1087,13 @@ class BinanceFuturesRestClient:
         if self._credentials is not None:
             text = text.replace(self._credentials.api_key, "<redacted>")
             text = text.replace(self._credentials.secret_key, "<redacted>")
-        text = _SENSITIVE_ASSIGNMENT.sub(
-            lambda match: f"{match.group(1)}=<redacted>", text
-        )
+        text = _SENSITIVE_ASSIGNMENT.sub(lambda match: f"{match.group(1)}=<redacted>", text)
         return text[:500] or "request rejected"
 
     @staticmethod
     def _require_mapping(payload: Any, description: str) -> Mapping[str, Any]:
         if not isinstance(payload, Mapping):
-            raise BinanceProtocolError(
-                f"Binance Futures {description} response must be an object"
-            )
+            raise BinanceProtocolError(f"Binance Futures {description} response must be an object")
         return payload
 
     @staticmethod
@@ -976,6 +1102,16 @@ class BinanceFuturesRestClient:
         if not _SYMBOL.fullmatch(normalized):
             raise ValueError(f"invalid Binance Futures symbol: {symbol!r}")
         return normalized
+
+    @staticmethod
+    def _validate_listen_key(listen_key: str) -> str:
+        if not isinstance(listen_key, str) or not listen_key.strip():
+            raise ValueError("listen_key must not be blank")
+        # 密钥是透明字符串，但路径字符必须受限，防止误把查询参数拼进请求。
+        allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+        if any(char not in allowed for char in listen_key):
+            raise ValueError("listen_key contains invalid characters")
+        return listen_key
 
     @staticmethod
     def _enum_value(value: str, name: str) -> str:

@@ -51,7 +51,7 @@ KLINE_INTERVALS = frozenset(
 _SYMBOL_RE = re.compile(r"[A-Za-z0-9]{2,32}", re.ASCII)
 _STREAM_RE = re.compile(
     r"(?P<symbol>[a-z0-9]{2,32})@"
-    r"(?:(?P<book>bookTicker)|(?P<trade>trade)|kline_(?P<interval>"
+    r"(?:(?P<book>bookTicker)|(?P<trade>trade)|(?P<depth>depth(?:@100ms)?)|kline_(?P<interval>"
     + "|".join(re.escape(value) for value in sorted(KLINE_INTERVALS, key=len, reverse=True))
     + r"))",
     re.ASCII,
@@ -126,8 +126,27 @@ class BinanceKlineEvent:
     taker_buy_quote_volume: Decimal
 
 
+@dataclass(frozen=True, slots=True)
+class BinanceDepthEvent:
+    """现货差分深度更新。
+
+    ``bids`` and ``asks`` contain absolute quantities for each price level.  The
+    event is only a transport value; callers must apply Binance's REST snapshot
+    and update-id recovery procedure before treating a local book as valid.
+    """
+
+    stream: str
+    symbol: str
+    event_time_ms: int
+    first_update_id: int
+    final_update_id: int
+    bids: tuple[tuple[Decimal, Decimal], ...]
+    asks: tuple[tuple[Decimal, Decimal], ...]
+    previous_final_update_id: int | None = None
+
+
 BinanceMarketEvent: TypeAlias = (
-    BinanceBookTickerEvent | BinanceTradeEvent | BinanceKlineEvent
+    BinanceBookTickerEvent | BinanceTradeEvent | BinanceKlineEvent | BinanceDepthEvent
 )
 
 
@@ -154,6 +173,15 @@ def kline_stream(symbol: str, interval: str) -> str:
     return f"{normalized}@kline_{interval}"
 
 
+def depth_stream(symbol: str, *, update_speed_ms: int | None = None) -> str:
+    """返回现货差分深度流名称，默认 1000 毫秒，也支持 100 毫秒。"""
+
+    normalized = normalize_symbol(symbol).lower()
+    if update_speed_ms not in (None, 100):
+        raise ValueError("update_speed_ms must be 100 for the accelerated depth stream")
+    return f"{normalized}@depth" + ("@100ms" if update_speed_ms == 100 else "")
+
+
 def validate_stream_name(stream: str) -> str:
     """返回规范的公共数据流名称，无法规范化时拒绝。
 
@@ -163,7 +191,7 @@ def validate_stream_name(stream: str) -> str:
 
     if not isinstance(stream, str) or _STREAM_RE.fullmatch(stream) is None:
         raise ValueError(
-            "stream must be a canonical bookTicker, trade, or supported kline stream"
+            "stream must be a canonical bookTicker, trade, depth, or supported kline stream"
         )
     return stream
 
@@ -281,6 +309,16 @@ def parse_stream_message(
     event_type = payload.get("e")
     symbol = _wire_symbol(payload.get("s"))
     stream = stream_from_envelope or _derive_stream(event_type, symbol, payload)
+    # 原始深度帧不会标明来自 ``@depth`` 还是 ``@depth@100ms``。调用方明确提供
+    # 单个预期深度流时，保留规范名称用于校验和后续路由。
+    if (
+        stream_from_envelope is None
+        and event_type == "depthUpdate"
+        and allowed is not None
+        and len(allowed) == 1
+        and "@depth" in allowed[0]
+    ):
+        stream = allowed[0]
     if allowed is not None and stream not in allowed:
         raise BinanceProtocolError("received an event for an unsubscribed Binance stream")
 
@@ -289,6 +327,8 @@ def parse_stream_message(
         return _parse_book_ticker(stream, symbol, payload)
     if stream.endswith("@trade"):
         return _parse_trade(stream, symbol, payload)
+    if "@depth" in stream:
+        return _parse_depth(stream, symbol, payload)
     return _parse_kline(stream, symbol, payload)
 
 
@@ -466,6 +506,8 @@ class BinanceSpotMarketStream:
             sequence = event.update_id
         elif isinstance(event, BinanceTradeEvent):
             sequence = event.trade_id
+        elif isinstance(event, BinanceDepthEvent):
+            sequence = event.final_update_id
         if sequence is None:
             return
         previous = self._last_sequence.get(event.stream)
@@ -492,6 +534,10 @@ def _derive_stream(event_type: object, symbol: str, payload: Mapping[str, Any]) 
         return f"{prefix}@bookTicker"
     if event_type == "trade":
         return f"{prefix}@trade"
+    if event_type == "depthUpdate":
+        # 事件自身不携带更新速度；需要 100 毫秒流时，调用方必须把
+        # ``expected_streams`` 限制为对应名称。
+        return f"{prefix}@depth"
     if event_type == "kline":
         kline = payload.get("k")
         if not isinstance(kline, Mapping):
@@ -513,6 +559,8 @@ def _validate_envelope_matches_payload(
     if stream_symbol != symbol.lower():
         raise BinanceProtocolError("Binance stream symbol does not match its payload")
     expected_type = "kline" if stream_kind.startswith("kline_") else stream_kind
+    if stream_kind.startswith("depth"):
+        expected_type = "depthUpdate"
     # Binance 的 bookTicker 线上载荷在部分端点省略 ``e``；可由规范信封名称及其
     # 必填字段集合识别。
     if event_type != expected_type and not (
@@ -565,6 +613,58 @@ def _parse_trade(
         trade_time_ms=_integer(payload, "T", minimum=0),
         buyer_is_market_maker=_boolean(payload, "m"),
     )
+
+
+def _parse_depth(
+    stream: str,
+    symbol: str,
+    payload: Mapping[str, Any],
+) -> BinanceDepthEvent:
+    bids = _parse_depth_levels(payload, "b")
+    asks = _parse_depth_levels(payload, "a")
+    first = _integer(payload, "U", minimum=0)
+    final = _integer(payload, "u", minimum=0)
+    if final < first:
+        raise BinanceProtocolError("Binance depth update range is malformed")
+    previous = _optional_integer(payload, "pu", minimum=0)
+    if previous is not None and previous >= final:
+        raise BinanceProtocolError("Binance depth previous update ID is malformed")
+    return BinanceDepthEvent(
+        stream=stream,
+        symbol=symbol,
+        event_time_ms=_integer(payload, "E", minimum=0),
+        first_update_id=first,
+        final_update_id=final,
+        bids=bids,
+        asks=asks,
+        previous_final_update_id=previous,
+    )
+
+
+def _parse_depth_levels(
+    payload: Mapping[str, Any], key: str,
+) -> tuple[tuple[Decimal, Decimal], ...]:
+    values = payload.get(key)
+    if not isinstance(values, list):
+        raise BinanceProtocolError(f"Binance depth field {key!r} is malformed")
+    levels: list[tuple[Decimal, Decimal]] = []
+    for value in values:
+        if not isinstance(value, list) or len(value) != 2:
+            raise BinanceProtocolError(f"Binance depth field {key!r} is malformed")
+        price, quantity = value
+        if not isinstance(price, str) or not isinstance(quantity, str):
+            raise BinanceProtocolError(f"Binance depth field {key!r} is malformed")
+        try:
+            parsed_price = Decimal(price)
+            parsed_quantity = Decimal(quantity)
+        except InvalidOperation:
+            raise BinanceProtocolError(f"Binance depth field {key!r} is malformed") from None
+        if not parsed_price.is_finite() or parsed_price <= 0:
+            raise BinanceProtocolError(f"Binance depth field {key!r} has invalid price")
+        if not parsed_quantity.is_finite() or parsed_quantity < 0:
+            raise BinanceProtocolError(f"Binance depth field {key!r} has invalid quantity")
+        levels.append((parsed_price, parsed_quantity))
+    return tuple(levels)
 
 
 def _parse_kline(

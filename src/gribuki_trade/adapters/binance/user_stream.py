@@ -114,6 +114,24 @@ class BinanceExecutionReport:
 
 
 @dataclass(frozen=True, slots=True)
+class BinanceListStatus:
+    """现货 OCO、OTO、OTOCO 订单列表状态事件。"""
+
+    subscription_id: int
+    event_time_ms: int
+    transaction_time_ms: int
+    order_list_id: int
+    list_client_order_id: str
+    contingency_type: str
+    list_status_type: str
+    list_order_status: str
+    reject_reason: str
+    symbol: str
+    order_ids: tuple[int, ...]
+    client_order_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class BinanceUserBalance:
     asset: str
     free: Decimal
@@ -145,6 +163,7 @@ class BinanceEventStreamTerminated:
 
 BinanceUserDataEvent: TypeAlias = (
     BinanceExecutionReport
+    | BinanceListStatus
     | BinanceOutboundAccountPosition
     | BinanceBalanceUpdate
     | BinanceEventStreamTerminated
@@ -216,6 +235,8 @@ def parse_user_data_event(message: str | bytes) -> BinanceUserDataEvent:
     event_type = event.get("e")
     if event_type == "executionReport":
         return _parse_execution_report(subscription_id, event)
+    if event_type == "listStatus":
+        return _parse_list_status(subscription_id, event)
     if event_type == "outboundAccountPosition":
         return _parse_outbound_account_position(subscription_id, event)
     if event_type == "balanceUpdate":
@@ -249,6 +270,8 @@ class BinanceSpotUserDataStream:
         ping_timeout_seconds: float = 20.0,
         open_timeout_seconds: float = 10.0,
         close_timeout_seconds: float = 10.0,
+        rotation_seconds: float = 23 * 60 * 60,
+        monotonic: Callable[[], float] | None = None,
         max_reconnect_attempts: int = 3,
         reconnect_delay_seconds: float = 0.5,
         sleep: Sleep = asyncio.sleep,
@@ -275,6 +298,8 @@ class BinanceSpotUserDataStream:
             raise ValueError("WebSocket heartbeat intervals must be positive")
         if open_timeout_seconds <= 0 or close_timeout_seconds <= 0:
             raise ValueError("WebSocket timeouts must be positive")
+        if rotation_seconds <= 0:
+            raise ValueError("rotation_seconds must be positive")
         if (
             isinstance(max_reconnect_attempts, bool)
             or not isinstance(max_reconnect_attempts, int)
@@ -294,6 +319,8 @@ class BinanceSpotUserDataStream:
         self._ping_timeout_seconds = ping_timeout_seconds
         self._open_timeout_seconds = open_timeout_seconds
         self._close_timeout_seconds = close_timeout_seconds
+        self._rotation_seconds = rotation_seconds
+        self._monotonic = monotonic if monotonic is not None else time.monotonic
         self._max_reconnect_attempts = max_reconnect_attempts
         self._reconnect_delay_seconds = reconnect_delay_seconds
         self._sleep = sleep
@@ -365,6 +392,7 @@ class BinanceSpotUserDataStream:
                     async with context as connection:
                         self._connection = connection
                         self._connected = True
+                        connected_at = self._monotonic()
                         subscription_id, buffered = await self._subscribe(connection)
                         self._subscription_id = subscription_id
                         self._connection_epoch += 1
@@ -377,6 +405,8 @@ class BinanceSpotUserDataStream:
                                 self._stop_requested = True
                                 break
                         while not self._stop_requested:
+                            if self._monotonic() - connected_at >= self._rotation_seconds:
+                                break
                             frame = await connection.recv()
                             decoded = _decode_frame(frame)
                             if "id" in decoded:
@@ -555,6 +585,8 @@ def _parse_decoded_user_event(decoded: Mapping[str, Any]) -> BinanceUserDataEven
     event_type = event.get("e")
     if event_type == "executionReport":
         return _parse_execution_report(subscription_id, event)
+    if event_type == "listStatus":
+        return _parse_list_status(subscription_id, event)
     if event_type == "outboundAccountPosition":
         return _parse_outbound_account_position(subscription_id, event)
     if event_type == "balanceUpdate":
@@ -565,6 +597,36 @@ def _parse_decoded_user_event(decoded: Mapping[str, Any]) -> BinanceUserDataEven
             event_time_ms=_integer(event, "E", minimum=0),
         )
     raise BinanceProtocolError("unsupported Binance user-data event type")
+
+
+def _parse_list_status(
+    subscription_id: int,
+    event: Mapping[str, Any],
+) -> BinanceListStatus:
+    orders_value = event.get("O")
+    if not isinstance(orders_value, list):
+        raise BinanceProtocolError("Binance listStatus orders are malformed")
+    order_ids: list[int] = []
+    client_order_ids: list[str] = []
+    for item in orders_value:
+        if not isinstance(item, Mapping):
+            raise BinanceProtocolError("Binance listStatus order is malformed")
+        order_ids.append(_integer(item, "i", minimum=0))
+        client_order_ids.append(_required_string(item, "c"))
+    return BinanceListStatus(
+        subscription_id=subscription_id,
+        event_time_ms=_integer(event, "E", minimum=0),
+        transaction_time_ms=_integer(event, "T", minimum=0),
+        order_list_id=_integer(event, "g", minimum=-1),
+        list_client_order_id=_required_string(event, "c"),
+        contingency_type=_required_string(event, "l"),
+        list_status_type=_required_string(event, "L"),
+        list_order_status=_required_string(event, "J"),
+        reject_reason=_required_string(event, "r"),
+        symbol=_symbol(event, "s"),
+        order_ids=tuple(order_ids),
+        client_order_ids=tuple(client_order_ids),
+    )
 
 
 def _parse_execution_report(

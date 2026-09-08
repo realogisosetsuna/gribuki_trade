@@ -141,9 +141,21 @@ Margin/Portfolio Margin 阶段不会回退到 LIVE。
   --confirm "ENABLE LIVE TRADING"
 ~~~
 
-`order-test` 不进入撮合；`submit` 会创建真实订单。当前 Futures 服务提供远端对账数据，尚未
-把 Futures 订单接入 Spot 使用的 SQLite durable OMS；Futures 提交结果仍应通过交易所订单号和
-查询接口对账，不能把网络异常后的结果当成已成交。
+`order-test` 不进入撮合；`submit` 会创建真实订单。无人值守合约运行入口使用独立的 Futures
+SQLite OMS。它启动时先同步时间并对账余额、Hedge 仓位、普通订单和 Algo 订单，再连接
+`/private` 用户流；断线换代会重复对账，网络不确定的提交会持久化为 `UNKNOWN`，不会盲目重试。
+私有流不健康时，新的订单变化会被拒绝：
+
+~~~bash
+./.venv/Scripts/python.exe -m gribuki_trade binance-live-futures-stream \
+  --symbol BTCUSDT --database runtime/binance/live-futures-oms.sqlite3 \
+  --confirm "ENABLE LIVE TRADING"
+~~~
+
+该命令只监听和对账，不提交新订单；`--max-events N` 可用于受控验收后自动退出。策略层应通过
+`BinanceFuturesUnattendedExecutionService.submit_order` 和 `submit_algo_order` 发单，把客户端
+订单号/Algo 客户端编号作为幂等键。Algo 订单的 `algoId` 与触发后的实际 `orderId` 会分别保存并
+建立父子关联。动态止盈止损使用新的保护计划 revision，撤销或超时后必须先查询 Algo 状态再继续。
 
 ### 仍未完成
 

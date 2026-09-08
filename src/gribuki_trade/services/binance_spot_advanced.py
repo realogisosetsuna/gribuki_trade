@@ -126,6 +126,30 @@ class BinanceSpotAdvancedExecutionService:
         self._assert(BrokerOperation.CANCEL_ORDER)
         return await self._gateway.cancel_all_open_orders(symbol)
 
+    async def open_order_lists(self) -> tuple[BinanceOrderListSnapshot, ...]:
+        """读取当前打开的订单列表，供重启恢复使用。"""
+
+        self._assert(BrokerOperation.QUERY)
+        return await self._gateway.open_order_lists()
+
+    async def all_order_lists(
+        self,
+        *,
+        from_id: int | None = None,
+        limit: int = 500,
+        start_time_ms: int | None = None,
+        end_time_ms: int | None = None,
+    ) -> tuple[BinanceOrderListSnapshot, ...]:
+        """读取订单列表历史，供持久化 OMS 对账。"""
+
+        self._assert(BrokerOperation.QUERY)
+        return await self._gateway.all_order_lists(
+            from_id=from_id,
+            limit=limit,
+            start_time_ms=start_time_ms,
+            end_time_ms=end_time_ms,
+        )
+
     async def amend_order_keep_priority(
         self,
         *,

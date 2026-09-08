@@ -623,6 +623,56 @@ class BinanceSpotGateway:
         )
         return self._parse_order_list(payload, fallback_symbol=normalized)
 
+    async def open_order_lists(self) -> tuple[BinanceOrderListSnapshot, ...]:
+        """查询当前打开的现货订单列表，用于 OCO/OTO/OTOCO 恢复。"""
+
+        self._require_order_connection()
+        payload = await self._request_json(
+            "GET", "/api/v3/openOrderLists", signed=True
+        )
+        if not isinstance(payload, list):
+            raise BinanceProtocolError("Binance open order lists response must be a list")
+        if any(not isinstance(item, Mapping) for item in payload):
+            raise BinanceProtocolError("Binance open order list item is malformed")
+        return tuple(
+            self._order_list_from_payload(item, fallback_symbol=str(item.get("symbol", "")))
+            for item in payload
+        )
+
+    async def all_order_lists(
+        self,
+        *,
+        from_id: int | None = None,
+        limit: int = 500,
+        start_time_ms: int | None = None,
+        end_time_ms: int | None = None,
+    ) -> tuple[BinanceOrderListSnapshot, ...]:
+        """查询现货订单列表历史，供重启对账使用。"""
+
+        self._require_order_connection()
+        if not 1 <= limit <= 1_000:
+            raise ValueError("limit must be between 1 and 1000")
+        params: list[tuple[str, object]] = [("limit", limit)]
+        if from_id is not None:
+            if from_id < 0:
+                raise ValueError("from_id must be non-negative")
+            params.append(("fromId", from_id))
+        if start_time_ms is not None:
+            params.append(("startTime", start_time_ms))
+        if end_time_ms is not None:
+            params.append(("endTime", end_time_ms))
+        payload = await self._request_json(
+            "GET", "/api/v3/allOrderList", params=tuple(params), signed=True
+        )
+        if not isinstance(payload, list):
+            raise BinanceProtocolError("Binance all order lists response must be a list")
+        if any(not isinstance(item, Mapping) for item in payload):
+            raise BinanceProtocolError("Binance order list history item is malformed")
+        return tuple(
+            self._order_list_from_payload(item, fallback_symbol=str(item.get("symbol", "")))
+            for item in payload
+        )
+
     async def cancel_replace(
         self,
         *,

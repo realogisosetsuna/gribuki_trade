@@ -22,6 +22,7 @@ from gribuki_trade.adapters.binance import (
     BinanceEnvironment,
     BinanceEventStreamTerminated,
     BinanceExecutionReport,
+    BinanceListStatus,
     BinanceOrderSnapshot,
     BinanceOrderUpdate,
     BinanceOutboundAccountPosition,
@@ -287,6 +288,11 @@ class BinanceSpotTestnetExecutionService:
             self._require_started()
             if isinstance(event, BinanceExecutionReport):
                 return self._consume_execution_report(event)
+            if isinstance(event, BinanceListStatus):
+                # 订单列表事件是各成员订单状态的边界；通过同一事务边界的
+                # REST 对账刷新每个子订单，避免把列表状态误投影为单个成交状态。
+                await self._reconcile_startup(recovered_commands=0)
+                return True
             if isinstance(event, BinanceOutboundAccountPosition):
                 self._consume_account_position(event)
                 return True

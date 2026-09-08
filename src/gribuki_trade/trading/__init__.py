@@ -1,5 +1,20 @@
 """持久化订单管理与账户账本基础组件。"""
 
+from gribuki_trade.trading.futures_models import (
+    FuturesBalanceSnapshot,
+    FuturesCommand,
+    FuturesCommandStatus,
+    FuturesConfigSnapshot,
+    FuturesFill,
+    FuturesOrderKind,
+    FuturesOrderSnapshot,
+    FuturesOrderStatus,
+    FuturesPositionSnapshot,
+    FuturesProtectionPlan,
+    FuturesStreamHealth,
+    FuturesUserEvent,
+)
+from gribuki_trade.trading.futures_oms import FuturesOrderManagementStore
 from gribuki_trade.trading.models import (
     AssetBalance,
     BalanceValue,
@@ -36,4 +51,17 @@ __all__ = [
     "TradingCommand",
     "TradingCommandStatus",
     "TradingCommandType",
+    "FuturesBalanceSnapshot",
+    "FuturesCommand",
+    "FuturesCommandStatus",
+    "FuturesConfigSnapshot",
+    "FuturesFill",
+    "FuturesOrderKind",
+    "FuturesOrderManagementStore",
+    "FuturesOrderSnapshot",
+    "FuturesOrderStatus",
+    "FuturesPositionSnapshot",
+    "FuturesProtectionPlan",
+    "FuturesStreamHealth",
+    "FuturesUserEvent",
 ]

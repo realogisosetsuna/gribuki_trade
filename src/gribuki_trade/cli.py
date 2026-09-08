@@ -301,6 +301,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="must be exactly ENABLE LIVE TRADING",
     )
 
+    futures_live_stream = commands.add_parser(
+        "binance-live-futures-stream",
+        help="run the guarded USD-M Futures private stream and durable recovery loop",
+    )
+    futures_live_stream.add_argument(
+        "--symbol", action="append", default=["BTCUSDT"],
+        help="symbol to reconcile; repeat for multiple symbols",
+    )
+    futures_live_stream.add_argument(
+        "--database", default="runtime/binance/live-futures-oms.sqlite3",
+        help="durable Futures OMS database",
+    )
+    futures_live_stream.add_argument(
+        "--max-events", type=int,
+        help="stop after this many private events; omit for continuous operation",
+    )
+    futures_live_stream.add_argument(
+        "--confirm", required=True, choices=(LIVE_CONFIRMATION_PHRASE,),
+        help="must be exactly ENABLE LIVE TRADING; this command does not submit orders",
+    )
+
     order_test = commands.add_parser(
         "binance-testnet-order-test",
         help="validate a virtual order without entering the matching engine",
@@ -1729,6 +1750,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.order_id,
                 args.client_order_id,
                 args.confirm,
+            )
+        )
+    elif command == "binance-live-futures-stream":
+        result = asyncio.run(
+            _binance_live_futures_stream(
+                args.symbol, args.database, args.max_events, args.confirm
             )
         )
     elif command == "binance-testnet-order-test":
@@ -10094,6 +10121,69 @@ def _live_futures_service() -> tuple[LiveTradingGuard, Any]:
         guard=guard,
     )
     return guard, service
+
+
+async def _binance_live_futures_stream(
+    symbols: Sequence[str],
+    database: str,
+    maximum_events: int | None,
+    confirmation: str,
+) -> dict[str, object]:
+    """启动可恢复的 USD-M 私有流；本命令不提交或撤销订单。"""
+
+    from gribuki_trade.adapters.binance import BinanceFuturesUserDataStream
+    from gribuki_trade.services import BinanceFuturesUnattendedExecutionService
+    from gribuki_trade.trading import FuturesOrderManagementStore
+
+    if maximum_events is not None and maximum_events <= 0:
+        raise ValueError("--max-events must be positive")
+    guard, basic_service = _live_futures_service()
+    guard.confirm_live_trading(confirmation)
+    database_path = Path(database).expanduser().resolve()
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    stream = BinanceFuturesUserDataStream(
+        basic_service.client,
+        account_id=DEFAULT_LIVE_ACCOUNT,
+        guard=guard,
+    )
+    with FuturesOrderManagementStore(database_path) as oms:
+        service = BinanceFuturesUnattendedExecutionService(
+            basic_service.client,
+            oms,
+            account_id=DEFAULT_LIVE_ACCOUNT,
+            symbols=tuple(symbols),
+            user_stream=stream,
+            guard=guard,
+        )
+        try:
+            startup = await service.start()
+            received = await service.run_user_stream(maximum_events=maximum_events)
+            return {
+                "base_url": basic_service.client.base_url,
+                "database": str(database_path),
+                "environment": basic_service.client.stage.value,
+                "product": basic_service.client.product.value,
+                "received_events": received,
+                "startup": {
+                    "balances": startup.balances,
+                    "history_algo_orders": startup.history_algo_orders,
+                    "history_orders": startup.history_orders,
+                    "open_algo_orders": startup.open_algo_orders,
+                    "open_orders": startup.open_orders,
+                    "positions": startup.positions,
+                    "recovered_commands": startup.recovered_commands,
+                    "unresolved_protection_plans": list(
+                        startup.unresolved_protection_plans
+                    ),
+                },
+                "status": "stream_completed",
+                "symbols": list(service.symbols),
+            }
+        finally:
+            if service.started:
+                await service.stop()
+            else:
+                await stream.aclose()
 
 
 async def _binance_live_futures_status(symbol: str, confirmation: str) -> dict[str, object]:

@@ -32,6 +32,17 @@ cancel, while PAPER is rejected before any broker request. The adapter keeps
 the official product-specific `/fapi` and `/dapi` routes and never falls back
 from DEMO to LIVE.
 
+For USDⓈ-M unattended execution, `services/binance_futures_unattended.py`
+combines the REST client with the routed private user stream and
+`trading/futures_oms.py`. Startup and every stream epoch change reconcile
+balances, Hedge/One-way positions, normal orders, and Algo orders before order
+changes resume. Raw events, fills, protection identities, command outcomes,
+owner leases, and fencing tokens are durable in SQLite; a transport timeout or
+process restart leaves a command `UNKNOWN` until REST evidence resolves it.
+The service also refuses order changes when the private stream is disconnected
+or degraded. Public market streams remain transport adapters until their REST
+depth snapshot is applied by a local-book service.
+
 The Futures service also exposes guarded risk configuration and protection
 interfaces. `set_leverage` is per symbol; `set_margin_type` is `ISOLATED` or
 `CROSSED`; position mode and USD-M multi-assets mode are account settings and

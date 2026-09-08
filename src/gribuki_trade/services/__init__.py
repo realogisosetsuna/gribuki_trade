@@ -151,6 +151,10 @@ from gribuki_trade.services.binance_execution import (
 from gribuki_trade.services.binance_futures_execution import (
     BinanceFuturesExecutionService,
 )
+from gribuki_trade.services.binance_futures_unattended import (
+    BinanceFuturesUnattendedExecutionService,
+    FuturesStartupReconciliation,
+)
 from gribuki_trade.services.binance_monitor import (
     BinanceMarketMonitor,
     BinanceMonitorSnapshot,
@@ -329,6 +333,8 @@ __all__ = [
     "BinancePaperEngine",
     "BinanceSpotExecutionGateway",
     "BinanceFuturesExecutionService",
+    "BinanceFuturesUnattendedExecutionService",
+    "FuturesStartupReconciliation",
     "BinanceSpotExecutionService",
     "BinanceSpotAdvancedExecutionService",
     "BinanceSpotTestnetExecutionService",

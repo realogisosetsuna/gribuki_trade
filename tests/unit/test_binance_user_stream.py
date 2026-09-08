@@ -13,6 +13,7 @@ from gribuki_trade.adapters.binance import (
     BinanceCredentials,
     BinanceEventStreamTerminated,
     BinanceExecutionReport,
+    BinanceListStatus,
     BinanceOutboundAccountPosition,
     BinanceProtocolError,
     BinanceSpotUserDataStream,
@@ -162,6 +163,17 @@ class BinanceUserStreamValueTests(TestCase):
     def test_parse_all_documented_event_types(self) -> None:
         execution = parse_user_data_event(envelope(execution_report()).encode())
         position = parse_user_data_event(envelope(account_position()))
+        order_list = parse_user_data_event(
+            envelope(
+                {
+                    "e": "listStatus", "E": 100, "T": 99, "s": "ETHBTC", "g": 8,
+                    "c": "list-client", "l": "OCO", "L": "EXEC_STARTED",
+                    "J": "EXECUTING", "r": "NONE",
+                    "O": [{"s": "ETHBTC", "i": 11, "c": "leg-a"},
+                          {"s": "ETHBTC", "i": 12, "c": "leg-b"}],
+                }
+            )
+        )
         balance = parse_user_data_event(
             envelope(
                 {
@@ -190,6 +202,9 @@ class BinanceUserStreamValueTests(TestCase):
         self.assertIsNone(execution.original_client_order_id)
 
         self.assertIsInstance(position, BinanceOutboundAccountPosition)
+        self.assertIsInstance(order_list, BinanceListStatus)
+        self.assertEqual(order_list.order_ids, (11, 12))
+        self.assertEqual(order_list.list_status_type, "EXEC_STARTED")
         self.assertEqual(position.balances[1].asset, "BTC")
         self.assertEqual(position.balances[1].locked, Decimal("0.500000"))
         self.assertIsInstance(balance, BinanceBalanceUpdate)
