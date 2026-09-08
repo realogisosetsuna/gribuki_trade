@@ -6,6 +6,12 @@ from decimal import Decimal
 
 import pytest
 
+from gribuki_trade.strategy_lab.experiment_serialization import (
+    experiment_document,
+)
+from gribuki_trade.strategy_lab.experiment_serialization import (
+    experiment_to_json as serialize_experiment_to_json,
+)
 from gribuki_trade.strategy_lab.experiments import (
     CostScenario,
     DataManifest,
@@ -263,6 +269,18 @@ def test_experiment_freezes_manifests_metrics_costs_and_overfit_warnings() -> No
     assert '"validation_family_contributions"' in document
     assert '"stress"' in document
     assert '"baseline_trial_id"' in document
+
+
+def test_experiment_serialization_facade_preserves_research_only_boundary() -> None:
+    experiment, _, _, _ = _experiment()
+
+    document = experiment_document(experiment)
+    assert document["research_only"] is True
+    assert serialize_experiment_to_json(experiment) == experiment_to_json(experiment)
+    # 拆分前完整试验的归档摘要，防止同一实验 ID 的持久化 JSON 悄然漂移。
+    assert hashlib.sha256(experiment_to_json(experiment).encode("utf-8")).hexdigest() == (
+        "5268aea21bc7ff2dabf7d79d0b9275a3369f9db6fdb9dbbab6550bb556e6218e"
+    )
 
 
 def test_invalid_weight_caps_and_manifest_mismatch_fail_closed() -> None:

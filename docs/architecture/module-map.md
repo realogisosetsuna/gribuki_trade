@@ -32,14 +32,19 @@ first increment is:
 | `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py` owns Spot scalar validation, signing, redaction, and wire parsing | No network, credentials, or gateway state |
 | `trading/futures_oms.py` | `trading/futures_oms_codec.py` owns SQLite row codecs, JSON/Decimal conversion, timestamps, and event identities | No transactions or broker imports |
 | `trading/oms.py` | `trading/oms_codec.py` owns broker-neutral SQLite row codecs, JSON/Decimal/time conversion, identifiers, and order status projection rules | No connections, transactions, or broker imports; `oms.py` remains the transaction facade |
+| `storage/live_records.py` + `storage/live_record_codec.py` | Live observation ledger transactions and pure hash/JSON identifiers | `test_live_trade_records.py`, `test_live_trade_orchestration.py` |
 | `storage/paper_day.py` | `storage/paper_day_codec.py` owns PAPER-day row decoding, event digests, identifier validation, and lease argument normalization | No connections, transactions, or mutable store state |
 | `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_serialization.py` owns deterministic exit dataset, plan, outcome, registry documents and SHA-256/JSON encoding | Duck-typed pure codecs; no simulation, I/O, broker, or storage imports |
+| `strategy_lab/experiments.py` | `strategy_lab/experiment_serialization.py` owns strategy/data manifests, trial folds, metrics, and holdout JSON plus SHA-256 serialization | Type-check-only model imports; no simulation, I/O, broker, storage, or promotion authority |
 | `services/ashare_paper_day.py` | `services/ashare_paper_day_projection.py` owns LLM gate and DEEP exit audit/notification projections | Pure projections only; no storage, network, scheduler, or broker imports |
+| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_serialization.py` owns K-line/technical-bar codecs, exit-barrier helpers, UTC normalization, canonical hashes, and event JSONL/file writes | Pure market/exit serialization and durable text primitives; the runner facade retains scheduling, state transitions, and side effects while re-exporting historical private names |
 | `gui/integrations.py` | `gui/integration_validation.py` owns provider/model/token validation and safe error text | Pure configuration validation; Qt widgets, processes, and network probes remain in the GUI facade |
 | `cli.py` | `cli_output.py` owns Decimal formatting and atomic JSON output | Pure output helpers; command dispatch remains in the CLI facade |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_codec.py` owns sidecar JSON/object and event-line decoding | Pure UTF-8/JSON decoding and scalar validation; summary facade retains historical private helper names and report semantics |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_formatting.py` owns stable-code, time, money, percentage, and Markdown-cell formatting | Pure value-to-text formatting; summary keeps compatibility wrappers while projection and file writing remain in the facade |
 | `adapters/akshare_daily.py` | `adapters/akshare_daily_parsing.py` owns symbol/date normalization, frame column resolution, scalar validation, and `DailyBar` decoding | Pure payload parser; no AKShare client, network, timeout, or mutable adapter state |
+| `services/ashare_close_analysis.py` | `services/ashare_close_models.py` owns request, market-data collection, and run result contracts; `services/ashare_close_projection.py` owns pure assessment/evidence projections; `services/ashare_close_notifications.py` owns report rendering and message splitting | The facade retains market-data/model orchestration and notification enqueue policy; extracted modules have no broker, network, storage, or scheduler dependency |
+| `runtime/paper_account_chain.py` | `runtime/paper_account_manifest.py` owns pure lineage manifests, canonical JSON, account/seal hashes, source-prefix validation, and ledger projection compatibility | No filesystem, SQLite, lock, scheduler, or broker side effects; chain facade retains recovery and atomic persistence |
 
 These modules are intentionally narrow. The old facade names remain available
 so CLI entry points, services, and external integrations can migrate in later
@@ -63,3 +68,23 @@ uses filename patterns to keep the routing map compact.
 Local rules are deliberately limited to `src/gribuki_trade/runtime/`,
 `storage/`, `trading/`, `strategy_lab/`, and `adapters/binance/`. Check the
 nearest local `AGENTS.md` before changing one of those subtrees.
+
+## Directory layout for provider and service code
+
+The provider boundary is grouped by business role. `adapters/binance/` and
+`adapters/schwab/` remain platform-specific protocol packages; A-share and
+cross-market data live under `adapters/ashare/` and
+`adapters/market_data/`, macro feeds under `adapters/macro/`, and broker-free
+simulation under `adapters/simulated/`. The former flat adapter paths are
+small compatibility aliases and contain no implementation logic.
+
+Application services use the same grouping: `services/ashare/` owns A-share
+research, close analysis, paper-day and paper matching workflows, while
+`services/binance/` owns Binance monitoring, execution, paper and shadow
+flows. The top-level service paths remain aliases so existing integrations
+continue to resolve while new code can navigate by domain.
+
+The CLI command tree is assembled in `src/gribuki_trade/cli_commands/parser.py`.
+Each command family has a registration module under
+`src/gribuki_trade/cli_commands/parsers/`; `cli.py` remains the stable process
+entry point and command dispatcher.

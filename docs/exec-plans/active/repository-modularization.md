@@ -80,6 +80,13 @@ The A-share PAPER-day slice now includes
 and DEEP exit audit/notification projections; the runner retains compatibility
 wrappers while continuing to own scheduling, persistence, and side effects.
 
+The nested PAPER-day runner also delegates pure K-line/technical-bar codecs,
+exit-barrier helpers, UTC normalization, canonical hashing, and event JSONL/file
+primitives to `services/ashare/ashare_paper_day_serialization.py`. Historical
+private helper names remain aliases in the runner module. Focused validation is
+covered by `tests/unit/test_ashare_paper_day_serialization.py` and the existing
+PAPER-day compatibility suite.
+
 The AKShare daily-history slice now includes
 `adapters/akshare_daily_parsing.py`. It owns provider symbol/date normalization,
 DataFrame row extraction, column alias resolution, numeric/OHLC validation, and
@@ -116,3 +123,31 @@ python -m pytest --temp-dir runtime/tmp -q
 
 The existing live integration and long-running soak limitations remain
 verification gaps; this refactor must not claim to prove them.
+
+## Runtime PAPER continuity slice
+
+`runtime/paper_account_manifest.py` now owns the side-effect-free PAPER
+lineage contract: manifest parsing, canonical JSON, account and seal hashes,
+source-prefix validation, and projected-ledger compatibility checks.
+`runtime/paper_account_chain.py` remains the compatibility facade and owns
+cross-process locks, SQLite backup, metadata tables, filesystem atomicity, and
+recovery orchestration. The historical public `PaperAccountChainError`,
+`PaperAccountLedgerPreparation`, and `prepare_paper_day_ledger` imports remain
+unchanged; the old private helper names are aliases for the pure module during
+the migration. Regression coverage is in
+`tests/unit/test_paper_account_manifest.py` and
+`tests/unit/test_paper_account_chain.py`.
+
+## Provider and command directory grouping
+
+The implementation now has explicit navigation roots for A-share, cross-market,
+macro, simulated, Binance, and CLI command families. Compatibility aliases at
+the former flat paths are intentionally thin and use the implementation module
+object so existing imports and monkeypatch-based operational tests retain their
+semantics. This grouping is structural; it does not alter broker permissions,
+order state transitions, or durable schemas.
+
+Validation evidence for this increment: CLI parser tests 191 passed; adapter
+routing tests 54 passed; runtime/manifest and strategy serialization contracts
+passed; close-analysis component/service tests passed. Full quality gates remain
+required after the next paper-day extraction is merged.

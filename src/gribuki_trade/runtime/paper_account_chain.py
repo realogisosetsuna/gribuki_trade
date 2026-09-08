@@ -17,9 +17,8 @@ import os
 import sqlite3
 import tempfile
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import BinaryIO, Protocol, cast
@@ -30,26 +29,38 @@ from gribuki_trade.storage.paper_ledger import (
     SQLitePaperLedger,
 )
 
-_SCHEMA = "paper-account-chain@1"
+from . import paper_account_manifest as _manifest
+from .paper_account_manifest import (
+    LedgerCandidate as _Candidate,
+)
+from .paper_account_manifest import (
+    LedgerState as _LedgerState,
+)
+
+# 保留历史模块的纯函数名称，调用者可逐步迁移；锁和写入仍在此模块执行。
+_SCHEMA = _manifest.SCHEMA
+_CLONE_ORIGINS = _manifest.CLONE_ORIGINS
+_ALLOWED_ORIGINS = _manifest.ALLOWED_ORIGINS
+_account_hash = _manifest.account_hash
+_canonical_json = _manifest.canonical_json
+_clone_preparation = _manifest.clone_preparation
+_preparation_from_document = _manifest.preparation_from_document
+_seal_payload = _manifest.seal_payload
+_validate_count_and_tail = _manifest.validate_count_and_tail
+_verify_existing_ledger_matches_lineage = _manifest.verify_existing_ledger_matches_lineage
+_verify_lineage_source_binding = _manifest.verify_lineage_source_binding
+_verify_prefix_chain = _manifest.verify_prefix_chain
+
+# 显式重新导出，满足 ``no_implicit_reexport`` 下 runtime 包的兼容导入。
+PaperAccountChainError = _manifest.PaperAccountChainError
+PaperAccountLedgerPreparation = _manifest.PaperAccountLedgerPreparation
+
 _LEDGER_NAME = "ledger.sqlite3"
 _LINEAGE_NAME = "ledger-lineage.json"
 _PREPARATION_LOCK_NAME = ".ledger-preparation.lock"
 _BINDING_TABLE = "paper_account_lineage_bindings"
 _SEAL_TABLE = "paper_account_lineage_seals"
 _SEALED_LEDGER_TRIGGER = "paper_account_historical_seal_no_insert"
-_CLONE_ORIGINS = frozenset(
-    {"VERIFIED_PRIOR_SESSION_CLONE", "RECOVERED_ORPHAN_CLONE"}
-)
-_ALLOWED_ORIGINS = frozenset(
-    {
-        "NEW_ACCOUNT",
-        *_CLONE_ORIGINS,
-        # 这两种 origin 只允许出现在没有任何同账户历史候选的第一天。
-        # 它们是旧账本进入新协议的显式、可审计迁移规则，不是通用旁路。
-        "LEGACY_EMPTY_SESSION_LEDGER",
-        "LEGACY_SESSION_LOCAL",
-    }
-)
 
 
 class _FcntlModule(Protocol):
@@ -59,56 +70,6 @@ class _FcntlModule(Protocol):
     LOCK_NB: int
     LOCK_UN: int
     flock: Callable[[int, int], object]
-
-
-class PaperAccountChainError(RuntimeError):
-    """PAPER 账户历史无法被无歧义地延续。"""
-
-
-@dataclass(frozen=True, slots=True)
-class PaperAccountLedgerPreparation:
-    """绑定进 PAPER-day manifest 的稳定 lineage。"""
-
-    ledger_path: Path
-    account_id: str
-    session_date: date
-    origin: str
-    source_session_date: date | None
-    source_event_count: int
-    source_last_event_hash: str | None
-
-    def audit_document(self) -> dict[str, object]:
-        """返回不含路径、跨重启稳定的 manifest 内容。"""
-
-        return {
-            "account_id_sha256": _account_hash(self.account_id),
-            "origin": self.origin,
-            "schema": _SCHEMA,
-            "session_date": self.session_date.isoformat(),
-            "source_event_count": self.source_event_count,
-            "source_last_event_hash": self.source_last_event_hash,
-            "source_session_date": (
-                None
-                if self.source_session_date is None
-                else self.source_session_date.isoformat()
-            ),
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class _LedgerState:
-    account_ids: tuple[str, ...]
-    event_hashes: tuple[str, ...]
-    projected_session_date: date | None
-
-
-@dataclass(frozen=True, slots=True)
-class _Candidate:
-    directory_date: date
-    path: Path
-    event_hashes: tuple[str, ...]
-    projected_session_date: date
-    lineage: PaperAccountLedgerPreparation
 
 
 def prepare_paper_day_ledger(
@@ -212,9 +173,7 @@ def _prepare_locked(
             or source_before_clone.projected_session_date != source.directory_date
             or source_before_clone.event_hashes != source.event_hashes
         ):
-            raise PaperAccountChainError(
-                "prior PAPER ledger changed before it could be cloned"
-            )
+            raise PaperAccountChainError("prior PAPER ledger changed before it could be cloned")
         _atomic_sqlite_backup(source.path, ledger_path)
         source_after_clone = _read_ledger_state(source.path, account_id=account_id)
         _verify_existing_historical_seal(
@@ -292,9 +251,7 @@ def _historical_candidates(
         if directory_date >= before:
             continue
         if directory.is_symlink():
-            raise PaperAccountChainError(
-                "historical PAPER session directory must not be a symlink"
-            )
+            raise PaperAccountChainError("historical PAPER session directory must not be a symlink")
         if not directory.is_dir():
             continue
         dated_directories.append((directory_date, directory))
@@ -304,23 +261,15 @@ def _historical_candidates(
         ledger_path = directory / _LEDGER_NAME
         lineage_path = directory / _LINEAGE_NAME
         if ledger_path.is_symlink():
-            raise PaperAccountChainError(
-                "historical PAPER ledger must not be a symlink"
-            )
+            raise PaperAccountChainError("historical PAPER ledger must not be a symlink")
         if lineage_path.is_symlink():
-            raise PaperAccountChainError(
-                "historical PAPER lineage must not be a symlink"
-            )
+            raise PaperAccountChainError("historical PAPER lineage must not be a symlink")
         if not ledger_path.exists():
             if lineage_path.exists():
-                raise PaperAccountChainError(
-                    "historical PAPER lineage exists without its ledger"
-                )
+                raise PaperAccountChainError("historical PAPER lineage exists without its ledger")
             continue
         if not ledger_path.is_file():
-            raise PaperAccountChainError(
-                "historical PAPER ledger must be a regular file"
-            )
+            raise PaperAccountChainError("historical PAPER ledger must be a regular file")
 
         # 缺失 lineage 的迁移会写历史目录，因此也必须使用该日自己的跨进程锁。
         with _preparation_lock(directory / _PREPARATION_LOCK_NAME):
@@ -342,9 +291,7 @@ def _historical_candidates(
             if not state.account_ids:
                 # 空账本不能承载资金/持仓来源；若它属于本账户且已有 sidecar，仍校验
                 # account/session/binding，避免损坏文件被完全忽略。
-                if lineage_path.exists() or _embedded_binding_exists(
-                    ledger_path, directory_date
-                ):
+                if lineage_path.exists() or _embedded_binding_exists(ledger_path, directory_date):
                     preparation = _load_or_recover_lineage(
                         ledger_path=ledger_path,
                         lineage_path=lineage_path,
@@ -501,9 +448,7 @@ def _infer_missing_lineage(
             source_last_event_hash=None,
         )
     if state.projected_session_date != session_date:
-        raise PaperAccountChainError(
-            "legacy current ledger projection does not match session_date"
-        )
+        raise PaperAccountChainError("legacy current ledger projection does not match session_date")
     return PaperAccountLedgerPreparation(
         ledger_path=ledger_path,
         account_id=account_id,
@@ -513,75 +458,6 @@ def _infer_missing_lineage(
         source_event_count=len(state.event_hashes),
         source_last_event_hash=(state.event_hashes[-1] if state.event_hashes else None),
     )
-
-
-def _clone_preparation(
-    *,
-    ledger_path: Path,
-    session_date: date,
-    account_id: str,
-    source: _Candidate,
-    origin: str = "VERIFIED_PRIOR_SESSION_CLONE",
-) -> PaperAccountLedgerPreparation:
-    return PaperAccountLedgerPreparation(
-        ledger_path=ledger_path,
-        account_id=account_id,
-        session_date=session_date,
-        origin=origin,
-        source_session_date=source.directory_date,
-        source_event_count=len(source.event_hashes),
-        source_last_event_hash=(source.event_hashes[-1] if source.event_hashes else None),
-    )
-
-
-def _verify_lineage_source_binding(
-    preparation: PaperAccountLedgerPreparation,
-    *,
-    state: _LedgerState,
-    prior_candidates: tuple[_Candidate, ...],
-) -> None:
-    """将 lineage 来源日期、数量和尾哈希绑定到真实的最近历史账本。"""
-
-    if preparation.origin in _CLONE_ORIGINS:
-        if not prior_candidates:
-            raise PaperAccountChainError(
-                "cloned PAPER lineage has no verified historical source"
-            )
-        source = prior_candidates[-1]
-        expected_tail = source.event_hashes[-1] if source.event_hashes else None
-        if (
-            preparation.source_session_date != source.directory_date
-            or preparation.source_event_count != len(source.event_hashes)
-            or preparation.source_last_event_hash != expected_tail
-        ):
-            raise PaperAccountChainError(
-                "PAPER lineage source does not match the latest verified ledger"
-            )
-        if state.event_hashes[: len(source.event_hashes)] != source.event_hashes:
-            raise PaperAccountChainError(
-                "current PAPER ledger does not contain its declared source stream"
-            )
-        return
-    if prior_candidates:
-        raise PaperAccountChainError(
-            "non-cloned PAPER lineage cannot discard an existing historical source"
-        )
-
-
-def _verify_prefix_chain(candidates: tuple[_Candidate, ...]) -> None:
-    prior: _Candidate | None = None
-    for candidate in candidates:
-        if candidate.projected_session_date != candidate.directory_date:
-            raise PaperAccountChainError(
-                "historical PAPER ledger projection does not match its directory"
-            )
-        if prior is not None:
-            prefix = candidate.event_hashes[: len(prior.event_hashes)]
-            if prefix != prior.event_hashes:
-                raise PaperAccountChainError(
-                    "historical PAPER account ledgers contain divergent event streams"
-                )
-        prior = candidate
 
 
 @contextmanager
@@ -656,9 +532,7 @@ def _read_ledger_state(ledger_path: Path, *, account_id: str) -> _LedgerState:
         with SQLitePaperLedger(ledger_path) as ledger:
             before_accounts = ledger.account_ids()
             if len(before_accounts) > 1:
-                raise PaperAccountChainError(
-                    "PAPER ledger mixes multiple account identifiers"
-                )
+                raise PaperAccountChainError("PAPER ledger mixes multiple account identifiers")
             if not before_accounts:
                 return _LedgerState((), (), None)
             if before_accounts != (account_id,):
@@ -676,47 +550,6 @@ def _read_ledger_state(ledger_path: Path, *, account_id: str) -> _LedgerState:
         event_hashes=tuple(event.event_hash for event in first),
         projected_session_date=snapshot.session_date,
     )
-
-
-def _verify_existing_ledger_matches_lineage(
-    state: _LedgerState,
-    preparation: PaperAccountLedgerPreparation,
-) -> None:
-    """把 lineage 的来源基线重新绑定到当前 SQLite 事件链。"""
-
-    if not state.account_ids:
-        if preparation.source_event_count != 0:
-            raise PaperAccountChainError(
-                "PAPER lineage declares events but current ledger is empty"
-            )
-        return
-    if state.account_ids != (preparation.account_id,):
-        raise PaperAccountChainError(
-            "current PAPER ledger is not isolated to lineage account"
-        )
-    baseline_count = preparation.source_event_count
-    if len(state.event_hashes) < baseline_count:
-        raise PaperAccountChainError("current PAPER ledger is shorter than lineage")
-    if baseline_count:
-        expected_tail = preparation.source_last_event_hash
-        actual_tail = state.event_hashes[baseline_count - 1]
-        if actual_tail != expected_tail:
-            raise PaperAccountChainError(
-                "current PAPER ledger does not contain the lineage event prefix"
-            )
-    if preparation.origin == "LEGACY_SESSION_LOCAL" and baseline_count != len(
-        state.event_hashes
-    ):
-        raise PaperAccountChainError(
-            "legacy PAPER lineage must bind the complete migrated event stream"
-        )
-    allowed_projection_dates = {preparation.session_date}
-    if preparation.source_session_date is not None:
-        allowed_projection_dates.add(preparation.source_session_date)
-    if state.projected_session_date not in allowed_projection_dates:
-        raise PaperAccountChainError(
-            "current PAPER ledger projection is incompatible with lineage"
-        )
 
 
 def _atomic_sqlite_backup(source: Path, destination: Path) -> None:
@@ -754,9 +587,7 @@ def _write_lineage(path: Path, preparation: PaperAccountLedgerPreparation) -> No
         raise PaperAccountChainError("PAPER ledger lineage must not be a symlink")
     if path.exists() and not path.is_file():
         raise PaperAccountChainError("PAPER ledger lineage must be a regular file")
-    payload = (_canonical_json(preparation.audit_document(), indent=2) + "\n").encode(
-        "utf-8"
-    )
+    payload = (_canonical_json(preparation.audit_document(), indent=2) + "\n").encode("utf-8")
     temporary: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -798,66 +629,6 @@ def _read_lineage(
         ledger_path=ledger_path,
         expected_session_date=expected_session_date,
         expected_account_id=expected_account_id,
-    )
-
-
-def _preparation_from_document(
-    document: Mapping[str, object],
-    *,
-    ledger_path: Path,
-    expected_session_date: date,
-    expected_account_id: str,
-) -> PaperAccountLedgerPreparation:
-    expected_fields = {
-        "account_id_sha256",
-        "origin",
-        "schema",
-        "session_date",
-        "source_event_count",
-        "source_last_event_hash",
-        "source_session_date",
-    }
-    if set(document) != expected_fields:
-        raise PaperAccountChainError("PAPER ledger lineage fields are invalid")
-    if document.get("schema") != _SCHEMA:
-        raise PaperAccountChainError("PAPER ledger lineage schema is unsupported")
-    if document.get("account_id_sha256") != _account_hash(expected_account_id):
-        raise PaperAccountChainError("PAPER ledger lineage account does not match")
-    if document.get("session_date") != expected_session_date.isoformat():
-        raise PaperAccountChainError("PAPER ledger lineage session does not match")
-    origin = document.get("origin")
-    event_count = document.get("source_event_count")
-    last_hash = document.get("source_last_event_hash")
-    source_date = document.get("source_session_date")
-    if not isinstance(origin, str) or origin not in _ALLOWED_ORIGINS:
-        raise PaperAccountChainError("PAPER ledger lineage origin is invalid")
-    if isinstance(event_count, bool) or not isinstance(event_count, int) or event_count < 0:
-        raise PaperAccountChainError("PAPER ledger lineage event count is invalid")
-    _validate_count_and_tail(event_count, last_hash, context="PAPER ledger lineage")
-    try:
-        parsed_source_date = None if source_date is None else date.fromisoformat(str(source_date))
-    except ValueError as error:
-        raise PaperAccountChainError("PAPER ledger lineage source date is invalid") from error
-    if parsed_source_date is not None and parsed_source_date >= expected_session_date:
-        raise PaperAccountChainError(
-            "PAPER ledger lineage source date must precede session date"
-        )
-    if origin in _CLONE_ORIGINS and parsed_source_date is None:
-        raise PaperAccountChainError("cloned PAPER lineage must identify its source date")
-    if origin not in _CLONE_ORIGINS and parsed_source_date is not None:
-        raise PaperAccountChainError(
-            "non-cloned PAPER lineage must not identify a source date"
-        )
-    if origin in {"NEW_ACCOUNT", "LEGACY_EMPTY_SESSION_LEDGER"} and event_count != 0:
-        raise PaperAccountChainError("empty-origin PAPER lineage cannot contain events")
-    return PaperAccountLedgerPreparation(
-        ledger_path=ledger_path,
-        account_id=expected_account_id,
-        session_date=expected_session_date,
-        origin=origin,
-        source_session_date=parsed_source_date,
-        source_event_count=event_count,
-        source_last_event_hash=cast(str | None, last_hash),
     )
 
 
@@ -999,8 +770,7 @@ def _verify_existing_historical_seal(
         connection = sqlite3.connect(ledger_path)
         try:
             existing = connection.execute(
-                f"SELECT seal_json, seal_sha256 FROM {_SEAL_TABLE} "
-                "WHERE session_date = ?",
+                f"SELECT seal_json, seal_sha256 FROM {_SEAL_TABLE} WHERE session_date = ?",
                 (session_date.isoformat(),),
             ).fetchone()
         finally:
@@ -1010,26 +780,7 @@ def _verify_existing_historical_seal(
     if existing is None:
         return
     if str(existing[0]) != expected_payload or str(existing[1]) != expected_digest:
-        raise PaperAccountChainError(
-            "historical PAPER ledger no longer matches its immutable seal"
-        )
-
-
-def _seal_payload(
-    *,
-    account_id: str,
-    session_date: date,
-    event_hashes: tuple[str, ...],
-) -> str:
-    return _canonical_json(
-        {
-            "account_id_sha256": _account_hash(account_id),
-            "event_count": len(event_hashes),
-            "last_event_hash": event_hashes[-1] if event_hashes else None,
-            "schema": "paper-account-ledger-seal@1",
-            "session_date": session_date.isoformat(),
-        }
-    )
+        raise PaperAccountChainError("historical PAPER ledger no longer matches its immutable seal")
 
 
 @contextmanager
@@ -1123,31 +874,6 @@ def _initialize_metadata(ledger_path: Path) -> None:
             connection.close()
     except sqlite3.Error as error:
         raise PaperAccountChainError("unable to initialize PAPER lineage metadata") from error
-
-
-def _validate_count_and_tail(count: int, tail: object, *, context: str) -> None:
-    if tail is not None and (
-        not isinstance(tail, str)
-        or len(tail) != 64
-        or any(character not in "0123456789abcdef" for character in tail)
-    ):
-        raise PaperAccountChainError(f"{context} tail hash is invalid")
-    if (count == 0) != (tail is None):
-        raise PaperAccountChainError(f"{context} event count and tail hash disagree")
-
-
-def _canonical_json(document: Mapping[str, object], *, indent: int | None = None) -> str:
-    return json.dumps(
-        dict(document),
-        ensure_ascii=False,
-        sort_keys=True,
-        indent=indent,
-        separators=None if indent is not None else (",", ":"),
-    )
-
-
-def _account_hash(account_id: str) -> str:
-    return hashlib.sha256(account_id.encode("utf-8")).hexdigest()
 
 
 def _fsync_path_and_parent(path: Path) -> None:

@@ -15,7 +15,7 @@ import threading
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from os import PathLike
 from pathlib import Path
@@ -32,6 +32,19 @@ from gribuki_trade.domain.live_records import (
     NewLiveRecordEvent,
 )
 from gribuki_trade.domain.orders import Side
+from gribuki_trade.storage.live_record_codec import (
+    _aware_utc,
+    _canonical_json,
+    _deep_protection_work_id,
+    _digest_key,
+    _error_code,
+    _event_hash,
+    _lease_attempt,
+    _parse_time,
+    _protection_id,
+    _protection_work_id,
+    _time,
+)
 
 _ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,95}$")
 
@@ -1778,74 +1791,6 @@ def _row_to_work(row: sqlite3.Row) -> LiveWorkItem:
     )
 
 
-def _event_hash(
-    event: NewLiveRecordEvent,
-    payload_sha256: str,
-    previous_hash: str | None,
-) -> str:
-    document = {
-        "account_id": event.account_id,
-        "event_id": event.event_id,
-        "event_type": event.event_type.value,
-        "idempotency_key": event.idempotency_key,
-        "occurred_at": event.occurred_at.isoformat(),
-        "payload_sha256": payload_sha256,
-        "previous_hash": previous_hash,
-    }
-    payload = json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.sha256(payload).hexdigest()
-
-
-def _verify(events: Sequence[LiveRecordEvent]) -> None:
-    previous_hash: str | None = None
-    for event in events:
-        digest = hashlib.sha256(event.payload_json.encode("utf-8")).hexdigest()
-        if digest != event.payload_sha256 or event.previous_hash != previous_hash:
-            raise LiveRecordIntegrityError("live-record hash chain is invalid")
-        candidate = NewLiveRecordEvent(
-            event_id=event.event_id,
-            account_id=event.account_id,
-            event_type=event.event_type,
-            occurred_at=event.occurred_at,
-            idempotency_key=event.idempotency_key,
-            payload_json=event.payload_json,
-        )
-        if _event_hash(candidate, digest, previous_hash) != event.event_hash:
-            raise LiveRecordIntegrityError("live-record event hash is invalid")
-        previous_hash = event.event_hash
-
-
-def _protection_id(account_id: str, command_id: str) -> str:
-    return "live-protection-" + _digest_key(account_id, command_id)
-
-
-def _protection_work_id(account_id: str, command_id: str) -> str:
-    return "live-work-protect-" + _digest_key(account_id, command_id)
-
-
-def _deep_protection_work_id(account_id: str, command_id: str) -> str:
-    return "live-work-deep-" + _digest_key(account_id, command_id)
-
-
-def _digest_key(*values: str) -> str:
-    return hashlib.sha256("\0".join(values).encode("utf-8")).hexdigest()[:32]
-
-
-def _canonical_json(document: Mapping[str, object]) -> str:
-    return json.dumps(
-        document,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=_json_default,
-    )
-
-
-def _json_default(value: object) -> str:
-    if isinstance(value, (datetime, Decimal)):
-        return value.isoformat() if isinstance(value, datetime) else str(value)
-    raise TypeError(f"unsupported JSON value: {type(value).__name__}")
-
 
 def _json_object(payload: str) -> dict[str, object]:
     value = json.loads(payload)
@@ -1868,33 +1813,24 @@ def _text(document: Mapping[str, object], name: str) -> str:
     return value
 
 
-def _error_code(value: str) -> str:
-    normalized = str(value).strip().upper()
-    if _ERROR_CODE.fullmatch(normalized) is None:
-        raise ValueError("error/result code must be a stable uppercase identifier")
-    return normalized
+def _verify(events: Sequence[LiveRecordEvent]) -> None:
+    previous_hash: str | None = None
+    for event in events:
+        digest = hashlib.sha256(event.payload_json.encode("utf-8")).hexdigest()
+        if digest != event.payload_sha256 or event.previous_hash != previous_hash:
+            raise LiveRecordIntegrityError("live-record hash chain is invalid")
+        candidate = NewLiveRecordEvent(
+            event_id=event.event_id,
+            account_id=event.account_id,
+            event_type=event.event_type,
+            occurred_at=event.occurred_at,
+            idempotency_key=event.idempotency_key,
+            payload_json=event.payload_json,
+        )
+        if _event_hash(candidate, digest, previous_hash) != event.event_hash:
+            raise LiveRecordIntegrityError("live-record event hash is invalid")
+        previous_hash = event.event_hash
 
-
-def _lease_attempt(value: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ValueError("lease_attempt must be a positive integer")
-    return value
-
-
-def _aware_utc(value: datetime) -> datetime:
-    if not isinstance(value, datetime):
-        raise TypeError("timestamp must be datetime")
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("timestamp must be timezone-aware")
-    return value.astimezone(UTC)
-
-
-def _time(value: datetime) -> str:
-    return _aware_utc(value).isoformat(timespec="microseconds")
-
-
-def _parse_time(value: str) -> datetime:
-    return datetime.fromisoformat(value).astimezone(UTC)
 
 
 __all__ = [

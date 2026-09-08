@@ -40,3 +40,9 @@ Evidence paths: `src/gribuki_trade/strategy_lab/`,
 格式化操作不应携带模拟状态或文件 I/O。`strategy_lab/exit_serialization.py`
 因此只接收结构化值并产生确定性的 JSON 文档和 SHA-256 摘要；历史
 `exit_evaluator` 导入路径继续作为兼容门面。
+
+通用权重实验也遵循同一边界：`strategy_lab/experiment_serialization.py`
+只负责清单、折叠、指标、试验和留出集的确定性编码。它通过
+`TYPE_CHECKING` 引用不可变模型，运行时不依赖评价器或存储；
+`experiments.py` 继续保留历史导入路径和研究约束，避免已归档实验的
+内容摘要因拆分而改变。
