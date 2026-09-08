@@ -8,7 +8,6 @@ import hashlib
 import json
 import os
 import sys
-import tempfile
 import time
 from collections.abc import Awaitable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
@@ -51,6 +50,11 @@ from gribuki_trade.adapters.schwab import (
     SCHWAB_CLIENT_ID_SECRET,
     SCHWAB_CLIENT_SECRET_SECRET,
     SCHWAB_OAUTH_TOKEN_SECRET,
+)
+from gribuki_trade.cli_output import (
+    _atomic_write_cli_json,
+    _decimal_text,
+    _three_decimal_text,
 )
 from gribuki_trade.cli_parsing import (
     _add_order_arguments,
@@ -2162,49 +2166,6 @@ def _optional_local_secret(name: str) -> str | None:
         return KeyringSecretProvider().get_secret(name)
     except SecretProviderError:
         return None
-
-
-def _decimal_text(value: Decimal | None) -> str | None:
-    return None if value is None else format(value, "f")
-
-
-def _three_decimal_text(value: Decimal | None) -> str | None:
-    """面向人员的研究文档所采用的稳定展示精度。"""
-
-    return None if value is None else format(value.quantize(Decimal("0.001")), "f")
-
-
-def _atomic_write_cli_json(path: Path, payload: object) -> None:
-    """在同一文件系统上持久替换一个可选 CLI JSON 产物。"""
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            newline="\n",
-            delete=False,
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-        ) as stream:
-            temporary = Path(stream.name)
-            json.dump(
-                payload,
-                stream,
-                ensure_ascii=False,
-                sort_keys=True,
-                indent=2,
-                allow_nan=False,
-            )
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
 
 
 def _strategy_factor_discover(max_trials: int) -> dict[str, object]:

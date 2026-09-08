@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import json
-import re
 import sqlite3
 import threading
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from os import PathLike
 from typing import cast
 from uuid import uuid4
 
-from gribuki_trade.domain.orders import OrderIntent, OrderStatus, OrderType, Side
+from gribuki_trade.domain.orders import OrderIntent, OrderStatus, Side
 from gribuki_trade.ports.broker import BrokerEvent
 from gribuki_trade.trading.models import (
     AssetBalance,
@@ -28,41 +26,45 @@ from gribuki_trade.trading.models import (
     TradingCommandType,
 )
 
+from . import oms_codec as _oms_codec
+from .oms_codec import (
+    _OPEN_STATUSES,
+    _TERMINAL_STATUSES,
+    _attribute,
+    _decimal_text,
+    _error_code,
+    _fill_payload,
+    _first_attribute,
+    _identifier,
+    _json,
+    _non_negative_decimal,
+    _optional_attribute,
+    _order_payload,
+    _positive_decimal,
+    _require_row,
+    _row_to_balance,
+    _row_to_command,
+    _row_to_fill,
+    _row_to_order,
+    _row_to_order_event,
+    _row_to_position,
+    _same_sign,
+    _should_apply,
+    _time,
+    _utc,
+    _validate_order_time,
+)
+
+# 保留历史模块级常量，避免下游私有导入在拆分后失效。
+_SAFE_ERROR_CODE = _oms_codec._SAFE_ERROR_CODE
+_STATUS_RANK = _oms_codec._STATUS_RANK
+
 ORDER_CREATED_EVENT = "ORDER_CREATED"
 ORDER_STATUS_EVENT = "ORDER_STATUS"
 ORDER_FILL_EVENT = "ORDER_FILL"
 COMMAND_UNKNOWN_EVENT = "COMMAND_UNKNOWN"
 ORDER_RECONCILED_EVENT = "ORDER_RECONCILED"
 
-_OPEN_STATUSES = frozenset(
-    {
-        OrderStatus.CREATED,
-        OrderStatus.VALIDATED,
-        OrderStatus.SUBMITTING,
-        OrderStatus.ACCEPTED,
-        OrderStatus.PARTIALLY_FILLED,
-        OrderStatus.CANCEL_PENDING,
-        OrderStatus.UNKNOWN,
-    }
-)
-_TERMINAL_STATUSES = frozenset(
-    {
-        OrderStatus.LOCAL_REJECTED,
-        OrderStatus.FILLED,
-        OrderStatus.CANCELED,
-        OrderStatus.BROKER_REJECTED,
-        OrderStatus.EXPIRED,
-    }
-)
-_STATUS_RANK = {
-    OrderStatus.CREATED: 0,
-    OrderStatus.VALIDATED: 1,
-    OrderStatus.SUBMITTING: 2,
-    OrderStatus.ACCEPTED: 3,
-    OrderStatus.CANCEL_PENDING: 4,
-    OrderStatus.PARTIALLY_FILLED: 5,
-}
-_SAFE_ERROR_CODE = re.compile(r"^[a-z0-9_.-]{1,64}$")
 
 
 class SQLiteOrderManagementStore:
@@ -1405,242 +1407,3 @@ class SQLiteOrderManagementStore:
     def _ensure_open(self) -> None:
         if self._closed:
             raise RuntimeError("SQLite OMS is closed")
-
-
-def _row_to_order(row: sqlite3.Row) -> OrderSnapshot:
-    order = OrderIntent(
-        client_order_id=str(row["client_order_id"]),
-        account_id=str(row["account_id"]),
-        strategy_id=str(row["strategy_id"]),
-        symbol=str(row["symbol"]),
-        side=Side(str(row["side"])),
-        order_type=OrderType(str(row["order_type"])),
-        quantity=Decimal(str(row["quantity"])),
-        limit_price=Decimal(str(row["limit_price"])),
-        created_at=_parse_time(str(row["created_at"])),
-    )
-    average = row["average_fill_price"]
-    return OrderSnapshot(
-        order=order,
-        status=OrderStatus(str(row["status"])),
-        filled_quantity=Decimal(str(row["filled_quantity"])),
-        average_fill_price=None if average is None else Decimal(str(average)),
-        exchange_order_id=None
-        if row["exchange_order_id"] is None
-        else str(row["exchange_order_id"]),
-        reason=None if row["reason"] is None else str(row["reason"]),
-        updated_at=_parse_time(str(row["updated_at"])),
-        broker_error_code=(
-            None if row["broker_error_code"] is None else int(row["broker_error_code"])
-        ),
-    )
-
-
-def _row_to_order_event(row: sqlite3.Row) -> OrderEventRecord:
-    return OrderEventRecord(
-        sequence=int(row["sequence"]),
-        event_id=str(row["event_id"]),
-        client_order_id=str(row["client_order_id"]),
-        event_type=str(row["event_type"]),
-        status=None if row["status"] is None else OrderStatus(str(row["status"])),
-        occurred_at=_parse_time(str(row["occurred_at"])),
-        payload_json=str(row["payload_json"]),
-        applied=bool(row["applied"]),
-    )
-
-
-def _row_to_command(row: sqlite3.Row) -> TradingCommand:
-    return TradingCommand(
-        id=int(row["id"]),
-        command_id=str(row["command_id"]),
-        command_type=TradingCommandType(str(row["command_type"])),
-        client_order_id=str(row["client_order_id"]),
-        payload_json=str(row["payload_json"]),
-        created_at=_parse_time(str(row["created_at"])),
-        status=TradingCommandStatus(str(row["status"])),
-        attempt_count=int(row["attempt_count"]),
-        lease_until=_optional_time(row["lease_until"]),
-        last_error_code=None
-        if row["last_error_code"] is None
-        else str(row["last_error_code"]),
-        dispatched_at=_optional_time(row["dispatched_at"]),
-    )
-
-
-def _row_to_fill(row: sqlite3.Row) -> ExecutionFill:
-    return ExecutionFill(
-        fill_id=str(row["fill_id"]),
-        client_order_id=str(row["client_order_id"]),
-        account_id=str(row["account_id"]),
-        symbol=str(row["symbol"]),
-        side=Side(str(row["side"])),
-        quantity=Decimal(str(row["quantity"])),
-        price=Decimal(str(row["price"])),
-        occurred_at=_parse_time(str(row["occurred_at"])),
-        fee_asset=None if row["fee_asset"] is None else str(row["fee_asset"]),
-        fee_amount=Decimal(str(row["fee_amount"])),
-        exchange_order_id=None
-        if row["exchange_order_id"] is None
-        else str(row["exchange_order_id"]),
-    )
-
-
-def _row_to_balance(row: sqlite3.Row) -> AssetBalance:
-    return AssetBalance(
-        account_id=str(row["account_id"]),
-        asset=str(row["asset"]),
-        free=Decimal(str(row["free"])),
-        locked=Decimal(str(row["locked"])),
-        updated_at=_parse_time(str(row["updated_at"])),
-    )
-
-
-def _row_to_position(row: sqlite3.Row) -> PositionSnapshot:
-    return PositionSnapshot(
-        account_id=str(row["account_id"]),
-        symbol=str(row["symbol"]),
-        quantity=Decimal(str(row["quantity"])),
-        average_entry_price=Decimal(str(row["average_entry_price"])),
-        realized_pnl=Decimal(str(row["realized_pnl"])),
-        updated_at=_parse_time(str(row["updated_at"])),
-    )
-
-
-def _order_payload(order: OrderIntent) -> dict[str, object]:
-    return {
-        "account_id": order.account_id,
-        "client_order_id": order.client_order_id,
-        "created_at": _time(order.created_at),
-        "limit_price": str(order.limit_price),
-        "order_type": order.order_type.value,
-        "quantity": str(order.quantity),
-        "side": order.side.value,
-        "strategy_id": order.strategy_id,
-        "symbol": order.symbol,
-    }
-
-
-def _fill_payload(fill: ExecutionFill) -> dict[str, object]:
-    return {
-        "account_id": fill.account_id,
-        "client_order_id": fill.client_order_id,
-        "exchange_order_id": fill.exchange_order_id,
-        "fee_amount": str(fill.fee_amount),
-        "fee_asset": fill.fee_asset,
-        "fill_id": fill.fill_id,
-        "occurred_at": _time(fill.occurred_at),
-        "price": str(fill.price),
-        "quantity": str(fill.quantity),
-        "side": fill.side.value,
-        "symbol": fill.symbol,
-    }
-
-
-def _should_apply(
-    current: OrderSnapshot, status: OrderStatus, filled_quantity: Decimal
-) -> bool:
-    if filled_quantity < current.filled_quantity:
-        return False
-    if current.status in _TERMINAL_STATUSES:
-        return False
-    if current.status is OrderStatus.UNKNOWN or status is OrderStatus.UNKNOWN:
-        return current.status not in _TERMINAL_STATUSES
-    current_rank = _STATUS_RANK.get(current.status)
-    new_rank = _STATUS_RANK.get(status)
-    return not (
-        current_rank is not None
-        and new_rank is not None
-        and new_rank < current_rank
-        and filled_quantity == current.filled_quantity
-    )
-
-
-def _same_sign(left: Decimal, right: Decimal) -> bool:
-    return (left > 0 and right > 0) or (left < 0 and right < 0)
-
-
-def _validate_order_time(order: OrderIntent) -> None:
-    _utc(order.created_at, "order.created_at")
-
-
-def _positive_decimal(value: object, name: str) -> Decimal:
-    normalized = _non_negative_decimal(value, name)
-    if normalized <= 0:
-        raise ValueError(f"{name} must be positive")
-    return normalized
-
-
-def _non_negative_decimal(value: object, name: str) -> Decimal:
-    try:
-        normalized = Decimal(str(value))
-    except Exception as error:
-        raise ValueError(f"{name} must be a decimal number") from error
-    if not normalized.is_finite() or normalized < 0:
-        raise ValueError(f"{name} must be non-negative")
-    return normalized
-
-
-def _identifier(value: str, name: str) -> str:
-    normalized = value.strip()
-    if not normalized:
-        raise ValueError(f"{name} must not be empty")
-    if len(normalized) > 256:
-        raise ValueError(f"{name} is too long")
-    return normalized
-
-
-def _error_code(value: str) -> str:
-    return value if _SAFE_ERROR_CODE.fullmatch(value) else "unclassified_error"
-
-
-def _json(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def _decimal_text(value: Decimal | None) -> str | None:
-    return None if value is None else str(value)
-
-
-def _utc(value: datetime, name: str) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError(f"{name} must be timezone-aware")
-    return value.astimezone(UTC)
-
-
-def _time(value: datetime) -> str:
-    return _utc(value, "datetime").isoformat(timespec="microseconds")
-
-
-def _parse_time(value: str) -> datetime:
-    return _utc(datetime.fromisoformat(value), "stored datetime")
-
-
-def _optional_time(value: object) -> datetime | None:
-    return None if value is None else _parse_time(str(value))
-
-
-def _attribute(value: object, name: str) -> object:
-    sentinel = object()
-    result = getattr(value, name, sentinel)
-    if result is sentinel:
-        raise TypeError(f"broker event payload is missing {name!r}")
-    return result
-
-
-def _optional_attribute(value: object, name: str) -> object | None:
-    return getattr(value, name, None)
-
-
-def _first_attribute(value: object, *names: str) -> object | None:
-    sentinel = object()
-    for name in names:
-        result = getattr(value, name, sentinel)
-        if result is not sentinel:
-            return result
-    return None
-
-
-def _require_row(row: sqlite3.Row | None) -> sqlite3.Row:
-    if row is None:
-        raise RuntimeError("SQLite OMS row disappeared")
-    return row

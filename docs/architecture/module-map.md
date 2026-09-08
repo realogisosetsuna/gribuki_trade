@@ -13,6 +13,13 @@
 | `reporting` / `gui` | Report contracts/artifacts and PySide6 presentation | `reporting/`, `gui/` | `test_report_contract*`, `test_report_artifacts.py`, `test_gui_*` |
 | `strategy_lab` / `backtest` | Offline experiments, factor DSL, walk-forward evaluation and costs | `strategy_lab/`, `backtest/` | `test_strategy_lab_*`, `test_crypto_backtest.py`, `test_recommendation_outcomes.py` |
 
+The A-share PAPER-day runner keeps scheduling and durable side effects in
+`services/ashare_paper_day.py`. Its deterministic audit and notification
+projections live in `services/ashare_paper_day_projection.py`; the runner
+retains compatibility wrappers for historical private helper names. The
+projection module has no storage, network, scheduler, or broker dependency and
+is tested independently in `test_ashare_paper_day_projection.py`.
+
 ## Large-module ownership boundaries
 
 The repository keeps compatibility facades at historical import paths while
@@ -21,9 +28,18 @@ first increment is:
 
 | Facade | Extracted responsibility | Boundary |
 |---|---|---|
-| `cli.py` | `cli_parsing.py` owns argparse converters and shared order arguments | Pure conversion only; command dispatch and service wiring remain in `cli.py` |
+| `cli.py` | `cli_parsing.py` owns argparse converters; `cli_output.py` owns Decimal formatting and atomic JSON output | Pure conversion/output helpers only; command dispatch and service wiring remain in `cli.py` |
 | `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py` owns Spot scalar validation, signing, redaction, and wire parsing | No network, credentials, or gateway state |
 | `trading/futures_oms.py` | `trading/futures_oms_codec.py` owns SQLite row codecs, JSON/Decimal conversion, timestamps, and event identities | No transactions or broker imports |
+| `trading/oms.py` | `trading/oms_codec.py` owns broker-neutral SQLite row codecs, JSON/Decimal/time conversion, identifiers, and order status projection rules | No connections, transactions, or broker imports; `oms.py` remains the transaction facade |
+| `storage/paper_day.py` | `storage/paper_day_codec.py` owns PAPER-day row decoding, event digests, identifier validation, and lease argument normalization | No connections, transactions, or mutable store state |
+| `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_serialization.py` owns deterministic exit dataset, plan, outcome, registry documents and SHA-256/JSON encoding | Duck-typed pure codecs; no simulation, I/O, broker, or storage imports |
+| `services/ashare_paper_day.py` | `services/ashare_paper_day_projection.py` owns LLM gate and DEEP exit audit/notification projections | Pure projections only; no storage, network, scheduler, or broker imports |
+| `gui/integrations.py` | `gui/integration_validation.py` owns provider/model/token validation and safe error text | Pure configuration validation; Qt widgets, processes, and network probes remain in the GUI facade |
+| `cli.py` | `cli_output.py` owns Decimal formatting and atomic JSON output | Pure output helpers; command dispatch remains in the CLI facade |
+| `reporting/paper_day_summary.py` | `reporting/paper_day_codec.py` owns sidecar JSON/object and event-line decoding | Pure UTF-8/JSON decoding and scalar validation; summary facade retains historical private helper names and report semantics |
+| `reporting/paper_day_summary.py` | `reporting/paper_day_formatting.py` owns stable-code, time, money, percentage, and Markdown-cell formatting | Pure value-to-text formatting; summary keeps compatibility wrappers while projection and file writing remain in the facade |
+| `adapters/akshare_daily.py` | `adapters/akshare_daily_parsing.py` owns symbol/date normalization, frame column resolution, scalar validation, and `DailyBar` decoding | Pure payload parser; no AKShare client, network, timeout, or mutable adapter state |
 
 These modules are intentionally narrow. The old facade names remain available
 so CLI entry points, services, and external integrations can migrate in later
@@ -34,6 +50,9 @@ PAPER/post-close workflows and the remaining execution orchestration helpers.
 When adding a new slice, keep parser/codec/state-transition code pure where
 possible, put provider protocol code under `adapters`, keep durable writes in
 `storage` or `trading`, and add a focused test route before moving callers.
+
+The repository-wide sequence and ownership targets are recorded in
+[`modularization-roadmap.md`](modularization-roadmap.md).
 
 Use the row matching the task, then follow its representative tests before
 opening neighboring modules.

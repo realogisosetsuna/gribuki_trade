@@ -22,20 +22,17 @@ import tempfile
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
-from decimal import ROUND_CEILING, Decimal, InvalidOperation
+from datetime import date, datetime
+from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
 from typing import cast
-from zoneinfo import ZoneInfo
 
 from gribuki_trade.reporting.contracts import (
     ReportKind,
-    humanize_internal_code,
     report_contract,
     validate_markdown_report_contract,
 )
 
-SHANGHAI = ZoneInfo("Asia/Shanghai")
 UNAVAILABLE = "不可得（sidecar 未记录）"
 
 
@@ -1034,135 +1031,79 @@ def write_paper_day_summary(projection: PaperDayExecutiveProjection) -> Path:
 
 
 def _read_json_object(path: Path, code: str) -> dict[str, object]:
-    try:
-        parsed = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise PaperDaySidecarError(code, f"cannot read {path.name}") from error
-    if not isinstance(parsed, dict):
-        raise PaperDaySidecarError(code, f"{path.name} must contain a JSON object")
-    return cast(dict[str, object], parsed)
+    """兼容旧私有名称；实际 JSON 解码位于独立 codec 模块。"""
+
+    from .paper_day_codec import read_json_object
+
+    return read_json_object(path, code)
 
 
 def _read_events(path: Path) -> tuple[tuple[PaperDaySidecarEvent, ...], tuple[str, ...]]:
-    try:
-        raw = path.read_bytes()
-    except OSError as error:
-        raise PaperDaySidecarError(
-            "EVENT_LOG_NOT_AVAILABLE", "cannot read session.log.jsonl"
-        ) from error
-    warnings: list[str] = []
-    events: list[PaperDaySidecarEvent] = []
-    lines = raw.splitlines(keepends=True)
-    for index, raw_line in enumerate(lines):
-        if not raw_line.strip():
-            continue
-        try:
-            parsed = json.loads(raw_line.decode("utf-8"))
-        except (UnicodeError, json.JSONDecodeError) as error:
-            is_trailing_partial = index == len(lines) - 1 and not raw_line.endswith(
-                (b"\n", b"\r")
-            )
-            if is_trailing_partial:
-                warnings.append("忽略了 session.log.jsonl 末尾一个尚未完成的并发追加片段。")
-                continue
-            raise PaperDaySidecarError(
-                "EVENT_LOG_INVALID", f"invalid event JSON at line {index + 1}"
-            ) from error
-        if not isinstance(parsed, dict):
-            raise PaperDaySidecarError(
-                "EVENT_LOG_INVALID", f"event line {index + 1} is not an object"
-            )
-        events.append(_parse_event(cast(dict[str, object], parsed), index + 1))
-    return tuple(events), tuple(warnings)
+    """兼容旧私有名称；实际事件解码位于独立 codec 模块。"""
 
+    from .paper_day_codec import read_events
 
-def _parse_event(value: dict[str, object], line: int) -> PaperDaySidecarEvent:
-    sequence = _optional_int(value.get("sequence"))
-    if sequence is None or sequence < 1:
-        raise PaperDaySidecarError("EVENT_LOG_INVALID", f"line {line} has invalid sequence")
-    payload = _optional_object(value.get("payload"))
-    if payload is None:
-        raise PaperDaySidecarError("EVENT_LOG_INVALID", f"line {line} has invalid payload")
-    return PaperDaySidecarEvent(
-        sequence=sequence,
-        event_id=_required_string(value, "event_id", "EVENT_LOG_INVALID"),
-        event_type=_required_string(value, "event_type", "EVENT_LOG_INVALID"),
-        known_at=_required_datetime(value, "known_at", line),
-        occurred_at=_required_datetime(value, "occurred_at", line),
-        payload=payload,
-        phase=_required_string(value, "phase", "EVENT_LOG_INVALID"),
-        severity=_required_string(value, "severity", "EVENT_LOG_INVALID"),
-        symbol=_optional_string(value.get("symbol")),
-        correlation_id=_optional_string(value.get("correlation_id")),
-    )
+    return read_events(path)
 
 
 def _required_string(value: Mapping[str, object], key: str, code: str) -> str:
-    result = _optional_string(value.get(key))
-    if result is None:
-        raise PaperDaySidecarError(code, f"missing or invalid {key}")
-    return result
+    from .paper_day_codec import required_string
+
+    return required_string(value, key, code)
 
 
 def _required_date(value: Mapping[str, object], key: str, code: str) -> date:
-    raw = _required_string(value, key, code)
-    try:
-        return date.fromisoformat(raw)
-    except ValueError as error:
-        raise PaperDaySidecarError(code, f"invalid {key}") from error
+    from .paper_day_codec import required_date
+
+    return required_date(value, key, code)
 
 
 def _required_datetime(value: Mapping[str, object], key: str, line: int) -> datetime:
-    raw = _optional_string(value.get(key))
-    if raw is None:
-        raise PaperDaySidecarError(
-            "EVENT_LOG_INVALID", f"line {line} has invalid {key}"
-        )
-    try:
-        parsed = datetime.fromisoformat(raw)
-    except ValueError as error:
-        raise PaperDaySidecarError(
-            "EVENT_LOG_INVALID", f"line {line} has invalid {key}"
-        ) from error
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise PaperDaySidecarError(
-            "EVENT_LOG_INVALID", f"line {line} has naive {key}"
-        )
-    return parsed.astimezone(UTC)
+    from .paper_day_codec import required_datetime
+
+    return required_datetime(value, key, line)
+
+
+def _parse_event(value: dict[str, object], line: int) -> PaperDaySidecarEvent:
+    from .paper_day_codec import parse_event
+
+    return parse_event(value, line)
 
 
 def _optional_string(value: object) -> str | None:
-    return value if isinstance(value, str) and value.strip() else None
+    from .paper_day_codec import optional_string
+
+    return optional_string(value)
 
 
 def _optional_int(value: object) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
+    from .paper_day_codec import optional_int
+
+    return optional_int(value)
 
 
 def _optional_bool(value: object) -> bool | None:
-    return value if isinstance(value, bool) else None
+    from .paper_day_codec import optional_bool
+
+    return optional_bool(value)
 
 
 def _optional_decimal(value: object) -> Decimal | None:
-    if isinstance(value, bool) or value is None:
-        return None
-    if not isinstance(value, (str, int, float, Decimal)):
-        return None
-    try:
-        result = Decimal(str(value))
-    except InvalidOperation:
-        return None
-    return result if result.is_finite() else None
+    from .paper_day_codec import optional_decimal
+
+    return optional_decimal(value)
 
 
 def _optional_object(value: object) -> dict[str, object] | None:
-    if not isinstance(value, dict):
-        return None
-    return cast(dict[str, object], value)
+    from .paper_day_codec import optional_object
+
+    return optional_object(value)
 
 
 def _list_length(value: object) -> int | None:
-    return len(value) if isinstance(value, list) else None
+    from .paper_day_codec import list_length
+
+    return list_length(value)
 
 
 def _has_event(events: Iterable[PaperDaySidecarEvent], event_type: str) -> bool:
@@ -2494,26 +2435,27 @@ def _llm_audit_lines(projection: PaperDayExecutiveProjection) -> list[str]:
 
 
 def _llm_score_text(value: Decimal | None) -> str:
-    return UNAVAILABLE if value is None else format(value, "f")
+    from .paper_day_formatting import llm_score_text
+
+    return llm_score_text(value)
 
 
 def _deep_selected_system_text(value: str) -> str:
-    return {
-        "ADVERSARIAL_LLM": "结构化对抗分析系统",
-        "BASELINE_LLM": "原单分析器",
-        "DETERMINISTIC_ONLY": "仅确定性价格规则",
-        "DETERMINISTIC_OR_BASELINE_FALLBACK": "确定性规则或原单分析器降级结果",
-    }.get(value, _readable_code(value))
+    from .paper_day_formatting import deep_selected_system_text
+
+    return deep_selected_system_text(value)
 
 
 def _tail_identifier(value: str | None) -> str:
-    if value is None:
-        return "不可得"
-    return value[-16:]
+    from .paper_day_formatting import tail_identifier
+
+    return tail_identifier(value)
 
 
 def _safe_table_text(value: str) -> str:
-    return " ".join(value.split()).replace("|", "\\|")
+    from .paper_day_formatting import safe_table_text
+
+    return safe_table_text(value)
 
 
 def _risk_policy_audit_lines(projection: PaperDayExecutiveProjection) -> list[str]:
@@ -2762,11 +2704,15 @@ def _position_limit_display(value: int | None, enabled: bool | None) -> str:
 
 
 def _short_hash(value: str | None) -> str:
-    return UNAVAILABLE if value is None else f"`{value[:12]}`"
+    from .paper_day_formatting import short_hash
+
+    return short_hash(value)
 
 
 def _percent(value: Decimal | None) -> str:
-    return UNAVAILABLE if value is None else f"{value * 100:.2f}%"
+    from .paper_day_formatting import percent
+
+    return percent(value)
 
 
 def _price_range(value: PaperDayPriceAcceptanceProjection) -> str:
@@ -2822,44 +2768,45 @@ def _sell_quantity_rule_text(value: PaperDayQuantityRuleProjection | None) -> st
 
 
 def _pairs(values: tuple[tuple[str, int], ...]) -> str:
-    return (
-        "、".join(f"{_readable_code(key)}={count}" for key, count in values)
-        if values
-        else "无"
-    )
+    from .paper_day_formatting import pairs
+
+    return pairs(values)
 
 
 def _readable_code(value: str) -> str:
-    """主报告显示中文；带参数或未知值仍保留原始审计定位。"""
+    from .paper_day_formatting import readable_code
 
-    normalized = value.strip()
-    if not normalized:
-        return "—"
-    if ":" in normalized:
-        prefix, suffix = normalized.split(":", maxsplit=1)
-        return f"{humanize_internal_code(prefix)}（审计参数：{suffix}）"
-    return humanize_internal_code(normalized)
+    return readable_code(value)
 
 
 def _optional_number(value: int | None) -> str:
-    return UNAVAILABLE if value is None else str(value)
+    from .paper_day_formatting import optional_number
+
+    return optional_number(value)
 
 
 def _money(value: Decimal | None) -> str:
-    return UNAVAILABLE if value is None else f"{value:.2f} 元"
+    from .paper_day_formatting import money
+
+    return money(value)
 
 
 def _price(value: Decimal | None) -> str:
-    return UNAVAILABLE if value is None else f"{value:.3f}"
+    from .paper_day_formatting import price
+
+    return price(value)
 
 
 def _local_time(value: datetime, *, with_date: bool = False) -> str:
-    local = value.astimezone(SHANGHAI)
-    return local.strftime("%Y-%m-%d %H:%M:%S" if with_date else "%H:%M:%S")
+    from .paper_day_formatting import local_time
+
+    return local_time(value, with_date=with_date)
 
 
 def _time_or_unavailable(value: datetime | None) -> str:
-    return UNAVAILABLE if value is None else _local_time(value)
+    from .paper_day_formatting import time_or_unavailable
+
+    return time_or_unavailable(value)
 
 
 def _universe_range(projection: PaperDayExecutiveProjection) -> str:

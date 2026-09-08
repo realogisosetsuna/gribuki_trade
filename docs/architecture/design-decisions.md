@@ -33,3 +33,10 @@ unsafe expressions and promotion bypasses.
 
 Evidence paths: `src/gribuki_trade/strategy_lab/`,
 `src/gribuki_trade/backtest/`, and `tests/unit/test_strategy_lab_factors.py`.
+
+## Keep research artifact codecs separate from evaluators
+
+退出策略评估器中的数据集、滚动计划和登记簿需要稳定摘要与归档格式，但这些
+格式化操作不应携带模拟状态或文件 I/O。`strategy_lab/exit_serialization.py`
+因此只接收结构化值并产生确定性的 JSON 文档和 SHA-256 摘要；历史
+`exit_evaluator` 导入路径继续作为兼容门面。
