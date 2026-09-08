@@ -38,13 +38,10 @@ from gribuki_trade.strategy_lab.exit_serialization import (
 from gribuki_trade.strategy_lab.exit_serialization import (
     sha256_document as _sha256_document,
 )
-from gribuki_trade.strategy_lab.exit_serialization import (
-    walk_forward_document as _walk_forward_document,
-)
-from gribuki_trade.strategy_lab.experiments import (
-    WalkForwardConfig,
-    WalkForwardPlan,
-    build_walk_forward_plan,
+from gribuki_trade.strategy_lab.exit_walk_forward import (
+    ExitPolicyWalkForwardFold,
+    ExitPolicyWalkForwardPlan,
+    build_exit_policy_walk_forward_plan,
 )
 
 _MARKET_TZ = ZoneInfo("Asia/Shanghai")
@@ -521,92 +518,6 @@ class ExitPolicyEvaluator:
 
 
 @dataclass(frozen=True, slots=True)
-class ExitPolicyWalkForwardFold:
-    """按入场交易日分组后的一个验证折。"""
-
-    fold_id: str
-    train_sessions: tuple[date, ...]
-    purge_sessions: tuple[date, ...]
-    validation_sessions: tuple[date, ...]
-    embargo_sessions: tuple[date, ...]
-    validation_episode_indices: tuple[int, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class ExitPolicyWalkForwardPlan:
-    """保留交易日边界和样本索引映射的退出策略滚动计划。"""
-
-    dataset_sha256: str
-    session_plan: WalkForwardPlan
-    folds: tuple[ExitPolicyWalkForwardFold, ...]
-    holdout_sessions: tuple[date, ...]
-    holdout_episode_indices: tuple[int, ...]
-    minimum_validation_episodes: int
-    minimum_holdout_episodes: int
-
-    def __post_init__(self) -> None:
-        if _SHA256.fullmatch(self.dataset_sha256) is None:
-            raise ValueError("dataset_sha256 must be a lowercase SHA-256 digest")
-
-    @property
-    def plan_sha256(self) -> str:
-        return _sha256_document(_walk_forward_document(self))
-
-
-def build_exit_policy_walk_forward_plan(
-    dataset: ExitPolicyDataset,
-    config: WalkForwardConfig,
-    *,
-    minimum_validation_episodes: int,
-    minimum_holdout_episodes: int,
-) -> ExitPolicyWalkForwardPlan:
-    """先按交易日切分，再映射到样本，避免同日标的跨集合泄漏。"""
-
-    _positive_integer(minimum_validation_episodes, "minimum_validation_episodes")
-    _positive_integer(minimum_holdout_episodes, "minimum_holdout_episodes")
-    session_plan = build_walk_forward_plan(dataset.entry_sessions, config)
-    indices_by_session: dict[date, list[int]] = {}
-    for index, episode in enumerate(dataset.episodes):
-        indices_by_session.setdefault(episode.entry_session_date, []).append(index)
-
-    folds = tuple(
-        ExitPolicyWalkForwardFold(
-            fold_id=fold.fold_id,
-            train_sessions=_sessions_at(dataset.entry_sessions, fold.train_indices),
-            purge_sessions=_sessions_at(dataset.entry_sessions, fold.purge_indices),
-            validation_sessions=_sessions_at(
-                dataset.entry_sessions,
-                fold.validation_indices,
-            ),
-            embargo_sessions=_sessions_at(dataset.entry_sessions, fold.embargo_indices),
-            validation_episode_indices=_episode_indices_for_sessions(
-                indices_by_session,
-                _sessions_at(dataset.entry_sessions, fold.validation_indices),
-            ),
-        )
-        for fold in session_plan.folds
-    )
-    for fold in folds:
-        if len(fold.validation_episode_indices) < minimum_validation_episodes:
-            raise ValueError(
-                f"{fold.fold_id} has fewer than minimum_validation_episodes"
-            )
-    holdout_sessions = _sessions_at(dataset.entry_sessions, session_plan.test_indices)
-    holdout_indices = _episode_indices_for_sessions(indices_by_session, holdout_sessions)
-    if len(holdout_indices) < minimum_holdout_episodes:
-        raise ValueError("holdout has fewer than minimum_holdout_episodes")
-    return ExitPolicyWalkForwardPlan(
-        dataset_sha256=dataset.content_sha256,
-        session_plan=session_plan,
-        folds=folds,
-        holdout_sessions=holdout_sessions,
-        holdout_episode_indices=holdout_indices,
-        minimum_validation_episodes=minimum_validation_episodes,
-        minimum_holdout_episodes=minimum_holdout_episodes,
-    )
-
-
-@dataclass(frozen=True, slots=True)
 class ExitPolicyFoldResult:
     """一个候选在单个验证折上的指标。"""
 
@@ -994,20 +905,6 @@ def _validated_indices(indices: tuple[int, ...], size: int) -> tuple[int, ...]:
     if indices[0] < 0 or indices[-1] >= size:
         raise IndexError("observation index is outside the frozen dataset")
     return indices
-
-
-def _sessions_at(sessions: tuple[date, ...], indices: tuple[int, ...]) -> tuple[date, ...]:
-    return tuple(sessions[index] for index in indices)
-
-
-def _episode_indices_for_sessions(
-    indices_by_session: dict[date, list[int]],
-    sessions: tuple[date, ...],
-) -> tuple[int, ...]:
-    return tuple(
-        index for session in sessions for index in indices_by_session.get(session, ())
-    )
-
 
 
 def _identifier(value: object, name: str) -> str:

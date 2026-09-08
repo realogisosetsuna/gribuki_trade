@@ -23,6 +23,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         ),
         ("gribuki_trade.strategy_lab.exit_simulation", "strategy_lab/exit_simulation.py"),
         (
+            "gribuki_trade.strategy_lab.exit_walk_forward",
+            "strategy_lab/exit_walk_forward.py",
+        ),
+        (
             "gribuki_trade.adapters.market_data.cross_market_payload",
             "adapters/market_data/cross_market_payload.py",
         ),
@@ -51,6 +55,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         (
             "gribuki_trade.adapters.market_data.akshare_daily_stitch",
             "adapters/market_data/akshare_daily_stitch.py",
+        ),
+        (
+            "gribuki_trade.adapters.market_data.akshare_payload",
+            "adapters/market_data/akshare_payload.py",
         ),
         (
             "gribuki_trade.services.ashare.ashare_intraday_llm_serialization",
@@ -82,6 +90,7 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         ),
         ("gribuki_trade.trading.futures_oms_schema", "trading/futures_oms_schema.py"),
         ("gribuki_trade.trading.futures_oms_policy", "trading/futures_oms_policy.py"),
+        ("gribuki_trade.trading.oms_position_policy", "trading/oms_position_policy.py"),
         (
             "gribuki_trade.ingest.search_discovery_policy",
             "ingest/search_discovery_policy.py",

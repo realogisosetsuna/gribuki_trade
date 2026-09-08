@@ -181,6 +181,18 @@ module-layout, and source-comment tests; the full suite then passed 1771 tests w
 five environment-skipped tests, 41 subtests, and one recurring Windows pytest-cache
 warning. Readiness, Ruff, mypy (340 source files), and compileall also passed.
 
+The broker-neutral OMS now delegates pure fill-to-position projection to
+`trading/oms_position_policy.py`; the facade still owns row reads and transaction
+writes. The projection is covered by dedicated opening, partial-close, and reversal
+tests.
+
+The same follow-up extracts AKShare provider payload decoding into
+`adapters/market_data/akshare_payload.py` and exit-strategy trading-day walk-forward
+planning into `strategy_lab/exit_walk_forward.py`. Focused tests for these slices and
+the OMS projection passed; the subsequent full suite passed 1778 tests with five
+environment-skipped tests, 41 subtests, and the same Windows pytest-cache warning.
+Ruff and mypy passed for 343 source files.
+
 The latest increment separates live-sync result payloads from the CLI facade,
 strict PAPER-day LLM audit payload recovery from the nested runner, Binance error
 and rate-limit protocol helpers from the REST gateway, and live-record work-queue

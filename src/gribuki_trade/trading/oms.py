@@ -48,12 +48,12 @@ from .oms_codec import (
     _row_to_order,
     _row_to_order_event,
     _row_to_position,
-    _same_sign,
     _should_apply,
     _time,
     _utc,
     _validate_order_time,
 )
+from .oms_position_policy import project_position_fill
 from .oms_schema import initialize_oms_schema
 
 # 保留历史模块级常量，避免下游私有导入在拆分后失效。
@@ -1142,25 +1142,12 @@ class SQLiteOrderManagementStore:
             old_quantity = Decimal(str(row["quantity"]))
             old_average = Decimal(str(row["average_entry_price"]))
             realized = Decimal(str(row["realized_pnl"]))
-        delta = fill.quantity if fill.side is Side.BUY else -fill.quantity
-        new_quantity = old_quantity + delta
-        if old_quantity == 0 or _same_sign(old_quantity, delta):
-            total = abs(old_quantity) + abs(delta)
-            new_average = (
-                abs(old_quantity) * old_average + abs(delta) * fill.price
-            ) / total
-        else:
-            closed = min(abs(old_quantity), abs(delta))
-            if old_quantity > 0:
-                realized += (fill.price - old_average) * closed
-            else:
-                realized += (old_average - fill.price) * closed
-            if new_quantity == 0:
-                new_average = Decimal("0")
-            elif _same_sign(new_quantity, old_quantity):
-                new_average = old_average
-            else:
-                new_average = fill.price
+        projection = project_position_fill(
+            fill,
+            old_quantity=old_quantity,
+            old_average_entry_price=old_average,
+            old_realized_pnl=realized,
+        )
         connection.execute(
             """
             INSERT INTO oms_positions (
@@ -1176,9 +1163,9 @@ class SQLiteOrderManagementStore:
             (
                 fill.account_id,
                 fill.symbol,
-                str(new_quantity),
-                str(new_average),
-                str(realized),
+                str(projection.quantity),
+                str(projection.average_entry_price),
+                str(projection.realized_pnl),
                 _time(fill.occurred_at),
             ),
         )

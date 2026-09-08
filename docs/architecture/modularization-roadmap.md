@@ -34,9 +34,10 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `trading/futures_oms.py` | `trading/futures_oms_schema.py` | Futures OMS SQLite DDL and indexes with caller-owned transaction scope |
 | `trading/futures_oms.py` | `trading/futures_oms_policy.py` | Pure order-status projection, protection-plan version policy, and restart-recovery query parameters |
 | `trading/oms.py` | `trading/oms_codec.py` | Broker-neutral OMS SQLite row codecs, JSON/Decimal/time conversion, identifiers, and status projection |
+| `trading/oms.py` | `trading/oms_position_policy.py` | Pure fill-to-position quantity, average-price, reversal, and realized-P&L projection |
 | `storage/paper_day.py` | `storage/paper_day_codec.py` | PAPER-day row decoding, event digests, identifiers, and lease argument validation |
 | `storage/live_records.py` | `storage/live_record_codec.py` | Live-record scalar validation, canonical JSON, event/protection/work identifiers, and event hashes |
-| `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_serialization.py`, `strategy_lab/exit_simulation.py` | Exit documents plus pure daily replay, costs, slippage, metrics, and objective scoring |
+| `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_serialization.py`, `strategy_lab/exit_simulation.py`, `strategy_lab/exit_walk_forward.py` | Exit documents, pure daily replay/cost metrics, and trading-day walk-forward fold/index planning |
 | `strategy_lab/experiments.py` | `strategy_lab/experiment_serialization.py` | Strategy/data manifests, trial folds, metrics and holdout JSON plus SHA-256 serialization |
 | `services/ashare_paper_day.py` | `services/ashare_paper_day_projection.py` | LLM gate and DEEP exit audit/notification projections |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_serialization.py` | K-line/technical-bar codecs, exit-barrier/time helpers, UTC normalization, canonical hashes, and event JSONL/file primitives |
@@ -44,6 +45,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `adapters/akshare_daily.py` | `adapters/akshare_daily_parsing.py` | Symbol/date normalization, frame parsing, and DailyBar validation |
 | `adapters/market_data/cross_market.py` | `adapters/market_data/cross_market_payload.py` | DataFrame/quote/date/number parsing and exact-universe validation |
 | `adapters/market_data/akshare_daily.py` | `adapters/market_data/akshare_daily_stitch.py` | Delayed-history tail stitching and overlap diagnostics |
+| `adapters/market_data/akshare.py` | `adapters/market_data/akshare_payload.py` | Provider record decoding, JSONP/Eastmoney payload parsing, required-column validation, and shared provider errors |
 | `gui/integrations.py` | `gui/integration_validation.py` | Provider/model/token validation and safe UI error text |
 | `features/close_analysis.py` | `features/close_analysis_indicators.py` | ATR/RSI/ADX, volatility, liquidity, trend, and score calculations |
 | `services/ashare_close_analysis.py` | `services/ashare_close_models.py`, `services/ashare_close_projection.py`, `services/ashare_close_notifications.py` | Point-in-time request/result contracts, pure evidence/technical projections, and deterministic report rendering/message splitting |
@@ -113,6 +115,7 @@ Current source evidence includes `src/gribuki_trade/cli_parsing.py`,
 `src/gribuki_trade/storage/paper_day_codec.py`, and
 `src/gribuki_trade/strategy_lab/exit_serialization.py`,
 `src/gribuki_trade/strategy_lab/exit_simulation.py`,
+`src/gribuki_trade/strategy_lab/exit_walk_forward.py`,
 `src/gribuki_trade/services/adversarial_macro_serialization.py`,
 `src/gribuki_trade/reporting/paper_day_renderer.py`,
 `src/gribuki_trade/services/ashare/ashare_intraday_quantity.py`,

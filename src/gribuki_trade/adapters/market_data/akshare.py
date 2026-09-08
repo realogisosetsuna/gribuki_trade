@@ -25,13 +25,30 @@ from gribuki_trade.ports.market_data import (
     FreshnessStatus,
     IntradayBar,
     MarketDataMeta,
-    MarketDataTimeoutError,
-    MarketDataUnavailableError,
     MarketSnapshot,
     MinuteInterval,
     SourceSemantics,
     TradeDirection,
     TradePrint,
+)
+
+from .akshare_payload import (
+    AKShareError,
+    AKShareNoDataError,
+    AKSharePayloadError,
+    AKShareTimeoutError,
+)
+from .akshare_payload import (
+    eastmoney_minute_record as _eastmoney_minute_record,
+)
+from .akshare_payload import (
+    frame_records as _frame_records,
+)
+from .akshare_payload import (
+    require_columns as _require_columns,
+)
+from .akshare_payload import (
+    sina_jsonp_records as _sina_jsonp_records,
 )
 
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
@@ -40,21 +57,13 @@ _SpotCacheEntry = tuple[
     datetime, Mapping[str, Any], str, bool, tuple[str, ...]
 ]
 
-
-class AKShareError(MarketDataUnavailableError):
-    """数据提供者、传输和载荷失败的基类。"""
-
-
-class AKShareNoDataError(AKShareError):
-    """数据提供者没有为有效请求返回记录。"""
-
-
-class AKSharePayloadError(AKShareError):
-    """数据提供者返回的字段缺失或无效。"""
-
-
-class AKShareTimeoutError(MarketDataTimeoutError, AKShareError):
-    """异步适配器调用超过调用方可见的超时。"""
+__all__ = [
+    "AKShareError",
+    "AKShareMarketDataAdapter",
+    "AKShareNoDataError",
+    "AKSharePayloadError",
+    "AKShareTimeoutError",
+]
 
 
 class AKShareMarketDataAdapter:
@@ -861,73 +870,6 @@ def _http_timeout(total_seconds: float) -> httpx.Timeout:
         connect=connect_seconds,
         pool=connect_seconds,
     )
-
-
-def _frame_records(frame: Any, operation: str) -> list[Mapping[str, Any]]:
-    if frame is None or not hasattr(frame, "to_dict"):
-        raise AKSharePayloadError(f"AKShare {operation} did not return a DataFrame")
-    try:
-        records = frame.to_dict(orient="records")
-    except (TypeError, ValueError, AttributeError) as exc:
-        raise AKSharePayloadError(
-            f"AKShare {operation} returned an unreadable DataFrame"
-        ) from exc
-    if not isinstance(records, list) or any(not isinstance(row, Mapping) for row in records):
-        raise AKSharePayloadError(f"AKShare {operation} returned invalid records")
-    return records
-
-
-def _sina_jsonp_records(payload: str) -> list[Mapping[str, Any]]:
-    marker = "=("
-    start = payload.find(marker)
-    end = payload.rfind(");")
-    if start < 0 or end <= start + len(marker):
-        raise AKSharePayloadError("AKShare stock_zh_a_minute returned invalid JSONP")
-    try:
-        decoded = json.loads(payload[start + len(marker) : end])
-    except (json.JSONDecodeError, TypeError) as exc:
-        raise AKSharePayloadError(
-            "AKShare stock_zh_a_minute returned invalid JSONP"
-        ) from exc
-    if not isinstance(decoded, list) or any(
-        not isinstance(row, Mapping) for row in decoded
-    ):
-        raise AKSharePayloadError(
-            "AKShare stock_zh_a_minute returned invalid records"
-        )
-    if not decoded:
-        raise AKShareNoDataError("AKShare stock_zh_a_minute returned no rows")
-    return decoded
-
-
-def _eastmoney_minute_record(value: str, *, has_vwap: bool) -> Mapping[str, Any]:
-    fields = value.split(",")
-    if len(fields) < 7:
-        raise AKSharePayloadError(
-            "AKShare Eastmoney minute endpoint returned a truncated record"
-        )
-    return {
-        "时间": fields[0],
-        "开盘": fields[1],
-        "收盘": fields[2],
-        "最高": fields[3],
-        "最低": fields[4],
-        "成交量": fields[5],
-        "成交额": fields[6],
-        "均价": fields[7] if has_vwap and len(fields) > 7 else None,
-    }
-
-
-def _require_columns(
-    rows: list[Mapping[str, Any]], required: frozenset[str], operation: str
-) -> None:
-    if not rows:
-        raise AKShareNoDataError(f"AKShare {operation} returned no rows")
-    missing = required.difference(rows[0])
-    if missing:
-        raise AKSharePayloadError(
-            f"AKShare {operation} missing columns: {', '.join(sorted(missing))}"
-        )
 
 
 def _normalize_symbol(symbol: str) -> tuple[str, str]:
