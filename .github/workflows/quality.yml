@@ -37,5 +37,7 @@ jobs:
         run: python -m ruff check conftest.py src tests
       - name: Mypy
         run: python -m mypy src
+      - name: Agent readiness
+        run: python scripts/check_repo_agent_readiness.py
       - name: Pytest
         run: python -m pytest --temp-dir runtime/tmp/ci -q
