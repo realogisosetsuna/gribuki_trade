@@ -34,6 +34,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "gribuki_trade.services.ashare.ashare_paper_day_config",
             "services/ashare/ashare_paper_day_config.py",
         ),
+        (
+            "gribuki_trade.cli_commands.post_close_results",
+            "cli_commands/post_close_results.py",
+        ),
         ("gribuki_trade.trading.oms_schema", "trading/oms_schema.py"),
         ("gribuki_trade.storage.live_record_models", "storage/live_record_models.py"),
         ("gribuki_trade.adapters.ashare.screening_factors", "adapters/ashare/screening_factors.py"),
@@ -43,6 +47,8 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "gribuki_trade.services.ashare.ashare_paper_day_schedule",
             "services/ashare/ashare_paper_day_schedule.py",
         ),
+        ("gribuki_trade.trading.futures_oms_schema", "trading/futures_oms_schema.py"),
+        ("gribuki_trade.services.adversarial_macro_policy", "services/adversarial_macro_policy.py"),
     )
     for name, suffix in modules:
         module = importlib.import_module(name)

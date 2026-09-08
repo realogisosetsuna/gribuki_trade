@@ -31,6 +31,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `cli.py` | `cli_commands/parsers/`, `cli_commands/handlers/binance.py`, `cli_commands/handlers/ashare.py`, `cli_parsing.py`, `cli_output.py` | Command-family registration, Binance and read-only A-share workflow handlers, argparse converters, Decimal formatting, and atomic JSON output |
 | `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py`, `adapters/binance/spot_order_params.py` | Spot wire parsing, scalar validation, signing/redaction, and pure Spot/OCO/OTO/OTOCO parameter encoding |
 | `trading/futures_oms.py` | `trading/futures_oms_codec.py` | Futures SQLite codecs, JSON/Decimal/time conversion, event identity |
+| `trading/futures_oms.py` | `trading/futures_oms_schema.py` | Futures OMS SQLite DDL and indexes with caller-owned transaction scope |
 | `trading/oms.py` | `trading/oms_codec.py` | Broker-neutral OMS SQLite row codecs, JSON/Decimal/time conversion, identifiers, and status projection |
 | `storage/paper_day.py` | `storage/paper_day_codec.py` | PAPER-day row decoding, event digests, identifiers, and lease argument validation |
 | `storage/live_records.py` | `storage/live_record_codec.py` | Live-record scalar validation, canonical JSON, event/protection/work identifiers, and event hashes |
@@ -45,6 +46,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `features/close_analysis.py` | `features/close_analysis_indicators.py` | ATR/RSI/ADX, volatility, liquidity, trend, and score calculations |
 | `services/ashare_close_analysis.py` | `services/ashare_close_models.py`, `services/ashare_close_projection.py`, `services/ashare_close_notifications.py` | Point-in-time request/result contracts, pure evidence/technical projections, and deterministic report rendering/message splitting |
 | `services/adversarial_macro.py` | `services/adversarial_macro_serialization.py` | Canonical request/identity/analysis documents, hashes, and scalar normalization |
+| `services/adversarial_macro.py` | `services/adversarial_macro_policy.py` | Role validation, peer envelopes, conservative aggregation, and round stability |
 | `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_quantity.py` | Pure lot/quantity rules and sell-quantity planning for A-share intraday PAPER execution |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_config.py` | Frozen schedule/risk configuration and policy manifest projections |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_renderer.py` | Pure Markdown rendering and audit sections from immutable projections |

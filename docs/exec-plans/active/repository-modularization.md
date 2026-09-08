@@ -158,6 +158,11 @@ live-record schema/migration DDL, and A-share PAPER-day session-time calculation
 These modules remain pure or connection-scoped; transport, transaction, calendar
 I/O, and runner side effects stay in their original facades.
 
+The following increment adds post-close CLI result contracts, adversarial macro
+policy projections, and Futures OMS schema DDL. Their facades retain compatibility
+names while provider calls, transaction boundaries, and durable state transitions
+remain at the original boundaries.
+
 Validation evidence for this increment: CLI and parser tests 195 passed; the
 Binance Spot, cross-market, reporting, adversarial macro, exit simulation, A-share
 quantity/configuration, and close-analysis suites passed together (398 focused
@@ -171,3 +176,6 @@ The current follow-up focused route passed 101 tests, including the Chinese-sour
 check, module-layout checks, Binance gateway/request-builder tests, live-record
 schema/model/store tests, and PAPER-day schedule/runner tests. Full quality gates
 remain required after this follow-up is staged.
+
+The next focused route passed 212 behavioral tests before the final Chinese-source
+comment cleanup; the full route will be rerun before staging this increment.

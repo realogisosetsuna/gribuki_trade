@@ -29,7 +29,6 @@ from gribuki_trade.analysis.schemas import (
     MacroAnalysis,
     MacroAnalysisDecision,
     MacroAnalysisRequest,
-    MacroClaim,
 )
 from gribuki_trade.ports.llm_analyzer import (
     AnalyzerAuditIdentity,
@@ -38,27 +37,59 @@ from gribuki_trade.ports.llm_analyzer import (
     MacroAnalyzer,
     UsageReportingMacroAnalyzer,
 )
+from gribuki_trade.services import adversarial_macro_policy as _policy
+from gribuki_trade.services import adversarial_macro_serialization as _serialization
 from gribuki_trade.services.adversarial_macro_serialization import (
-    _MAX_CLAIM_CHARACTERS,
-    _MAX_INVALIDATION_CONDITIONS,
     _MAX_ROLE_CLAIMS,
     _analysis_document,
     _cross_track_conflict,
     _document_sha256,
     _evidence_pack_sha256,
     _identity_document,
-    _median,
     _prompt_contract_sha256,
     _request_sha256,
     _role_round_number,
-    _single_line,
-    _unique_text,
 )
 
 _FAILURE_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,79}$")
 _ADAPTER_VERSION: Final = "adversarial-macro-wrapper@1"
 _AGGREGATION_VERSION: Final = "conservative-median@1"
 _PEER_ENVELOPE_VERSION: Final = "untrusted-peer-arguments@1"
+
+# facade 继续保留历史私有序列化辅助函数。
+_MAX_CLAIM_CHARACTERS = _serialization._MAX_CLAIM_CHARACTERS
+_MAX_INVALIDATION_CONDITIONS = _serialization._MAX_INVALIDATION_CONDITIONS
+_median = _serialization._median
+_single_line = _serialization._single_line
+_unique_text = _serialization._unique_text
+
+# 纯策略 helper 仍通过此门面暴露，兼容既有调用方。
+_role_output_failure = _policy._role_output_failure
+_peer_document = _policy._peer_document
+_rounds_are_stable = _policy._rounds_are_stable
+_round_signature = _policy._round_signature
+
+
+def _aggregate_analysis(
+    request: MacroAnalysisRequest,
+    final_round: AdversarialRound,
+    *,
+    audit_identity: AnalyzerAuditIdentity,
+    config: AdversarialMacroConfig,
+) -> MacroAnalysis | None:
+    return _policy._aggregate_analysis(
+        request,
+        final_round,
+        audit_identity=audit_identity,
+        config=config,
+        directional_roles=frozenset(
+            {
+                AdversarialMacroRole.CATALYST_ADVOCATE.value,
+                AdversarialMacroRole.RISK_CHALLENGER.value,
+                AdversarialMacroRole.MARKET_REGIME_ANALYST.value,
+            }
+        ),
+    )
 
 
 class AdversarialMacroDepth(StrEnum):
@@ -1014,55 +1045,6 @@ class FeatureFlaggedAdversarialMacroAnalyzer:
                 )
 
 
-def _role_output_failure(
-    analysis: MacroAnalysis,
-    *,
-    role_request: MacroAnalysisRequest,
-    original_request: MacroAnalysisRequest,
-    base_identity: AnalyzerAuditIdentity,
-) -> str | None:
-    try:
-        analysis.validate_against(role_request)
-    except ValueError:
-        return "ADVERSARIAL_ROLE_OUTPUT_INVALID"
-    if analysis.model_version != base_identity.requested_model:
-        return "ADVERSARIAL_ROLE_MODEL_MISMATCH"
-    if analysis.decision is MacroAnalysisDecision.ABSTAIN:
-        return "ADVERSARIAL_REQUIRED_ROLE_ABSTAINED"
-    if not analysis.claims or not analysis.invalidation_conditions:
-        return "ADVERSARIAL_ROLE_EVIDENCE_OR_FALSIFIER_MISSING"
-    if len(analysis.invalidation_conditions) < len(analysis.claims):
-        return "ADVERSARIAL_ROLE_EVIDENCE_OR_FALSIFIER_MISSING"
-    available = {item.evidence_id for item in original_request.evidence}
-    uncorroborated_media = {
-        item.evidence_id
-        for item in original_request.evidence
-        if "单一公共媒体且未经独立印证" in item.excerpt
-    }
-    for claim in analysis.claims:
-        if (
-            not claim.text.strip()
-            or len(claim.text) > _MAX_CLAIM_CHARACTERS
-            or not claim.evidence_ids
-            or not set(claim.evidence_ids).issubset(available)
-            or any(
-                not item.strip() or len(item) > _MAX_CLAIM_CHARACTERS
-                for item in claim.contradictions
-            )
-        ):
-            return "ADVERSARIAL_ROLE_OUTPUT_INVALID"
-        if set(claim.evidence_ids).issubset(uncorroborated_media):
-            return "ADVERSARIAL_UNCORROBORATED_MEDIA_CLAIM"
-    if len(analysis.claims) > _MAX_ROLE_CLAIMS:
-        return "ADVERSARIAL_ROLE_OUTPUT_INVALID"
-    if len(analysis.invalidation_conditions) > _MAX_INVALIDATION_CONDITIONS or any(
-        not item.strip() or len(item) > _MAX_CLAIM_CHARACTERS
-        for item in analysis.invalidation_conditions
-    ):
-        return "ADVERSARIAL_ROLE_OUTPUT_INVALID"
-    return None
-
-
 def _role_request(
     request: MacroAnalysisRequest,
     *,
@@ -1107,168 +1089,6 @@ def _role_request(
         horizon=request.horizon,
         technical_summary=(*request.technical_summary, *role_policy, *peer_summary),
         evidence=request.evidence,
-    )
-
-
-def _peer_document(
-    previous_round: AdversarialRound | None,
-    *,
-    receiving_role: AdversarialMacroRole,
-) -> dict[str, object]:
-    if previous_round is None:
-        return {
-            "arguments": [],
-            "envelope_version": _PEER_ENVELOPE_VERSION,
-            "round_number": 0,
-        }
-    arguments: list[dict[str, object]] = []
-    for opinion in previous_round.opinions:
-        if opinion.role is receiving_role:
-            continue
-        arguments.append(
-            {
-                "claims": [
-                    {
-                        "evidence_ids": list(claim.evidence_ids),
-                        "text": _single_line(claim.text)[:_MAX_CLAIM_CHARACTERS],
-                    }
-                    for claim in opinion.analysis.claims[:_MAX_ROLE_CLAIMS]
-                ],
-                "decision": opinion.analysis.decision.value,
-                "invalidation_conditions": [
-                    _single_line(item)[:_MAX_CLAIM_CHARACTERS]
-                    for item in opinion.analysis.invalidation_conditions[
-                        :_MAX_INVALIDATION_CONDITIONS
-                    ]
-                ],
-                "macro_impact": str(opinion.analysis.macro_impact),
-                "role": opinion.role.value,
-            }
-        )
-    return {
-        "arguments": arguments,
-        "envelope_version": _PEER_ENVELOPE_VERSION,
-        "round_number": previous_round.round_number,
-    }
-
-
-def _aggregate_analysis(
-    request: MacroAnalysisRequest,
-    final_round: AdversarialRound,
-    *,
-    audit_identity: AnalyzerAuditIdentity,
-    config: AdversarialMacroConfig,
-) -> MacroAnalysis | None:
-    directional_roles = {
-        AdversarialMacroRole.CATALYST_ADVOCATE,
-        AdversarialMacroRole.RISK_CHALLENGER,
-        AdversarialMacroRole.MARKET_REGIME_ANALYST,
-    }
-    directional = tuple(
-        opinion for opinion in final_round.opinions if opinion.role in directional_roles
-    )
-    if not directional:
-        return None
-    macro_scores = tuple(opinion.analysis.macro_impact for opinion in directional)
-    technical_scores = tuple(
-        opinion.analysis.technical_alignment for opinion in directional
-    )
-    macro_impact = _median(macro_scores)
-    technical_alignment = _median(technical_scores)
-    spread = max(macro_scores) - min(macro_scores)
-    material_disagreement = spread >= config.material_disagreement_threshold
-    decision = (
-        MacroAnalysisDecision.WATCH
-        if material_disagreement
-        or any(
-            opinion.analysis.decision is MacroAnalysisDecision.WATCH
-            for opinion in final_round.opinions
-        )
-        else MacroAnalysisDecision.PUBLISH
-    )
-
-    claims: list[MacroClaim] = []
-    seen_claims: set[tuple[str, tuple[str, ...]]] = set()
-    for opinion in final_round.opinions:
-        for claim in opinion.analysis.claims:
-            key = (_single_line(claim.text), tuple(claim.evidence_ids))
-            if key in seen_claims:
-                continue
-            seen_claims.add(key)
-            claims.append(claim)
-            if len(claims) == _MAX_ROLE_CLAIMS:
-                break
-        if len(claims) == _MAX_ROLE_CLAIMS:
-            break
-    if not claims:
-        return None
-
-    invalidation_conditions = _unique_text(
-        item
-        for opinion in final_round.opinions
-        for item in opinion.analysis.invalidation_conditions
-    )[:_MAX_INVALIDATION_CONDITIONS]
-    if not invalidation_conditions:
-        return None
-    uncertainties = list(
-        _unique_text(
-            item
-            for opinion in final_round.opinions
-            for item in opinion.analysis.uncertainties
-        )[:10]
-    )
-    if material_disagreement:
-        uncertainties.insert(0, "ADVERSARIAL_MATERIAL_DIRECTIONAL_DISAGREEMENT")
-        uncertainties = list(dict.fromkeys(uncertainties))[:10]
-    data_gaps = _unique_text(
-        item
-        for opinion in final_round.opinions
-        for item in opinion.analysis.data_gaps
-    )[:10]
-    analysis = MacroAnalysis(
-        analysis_id=request.analysis_id,
-        as_of=request.as_of,
-        decision=decision,
-        regime=(
-            f"结构化对抗分析已完成（{config.depth.value}）；"
-            f"方向分歧幅度={spread}；结果不是校准概率"
-        ),
-        technical_alignment=technical_alignment,
-        macro_impact=macro_impact,
-        scenarios=(),
-        claims=tuple(claims),
-        uncertainties=tuple(uncertainties),
-        data_gaps=data_gaps,
-        invalidation_conditions=invalidation_conditions,
-        reported_confidence="UNCALIBRATED",
-        refusal_reason="",
-        model_version=audit_identity.requested_model,
-    )
-    try:
-        analysis.validate_against(request)
-    except ValueError:
-        return None
-    return analysis
-
-
-def _rounds_are_stable(previous: AdversarialRound, current: AdversarialRound) -> bool:
-    return _round_signature(previous) == _round_signature(current)
-
-
-def _round_signature(value: AdversarialRound) -> tuple[object, ...]:
-    return tuple(
-        (
-            opinion.role.value,
-            opinion.analysis.decision.value,
-            opinion.analysis.technical_alignment,
-            opinion.analysis.macro_impact,
-            tuple(
-                (_single_line(claim.text), tuple(claim.evidence_ids))
-                for claim in opinion.analysis.claims
-            ),
-            tuple(_single_line(item) for item in opinion.analysis.invalidation_conditions),
-        )
-        for opinion in value.opinions
     )
 
 
