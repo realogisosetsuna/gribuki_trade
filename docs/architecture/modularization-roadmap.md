@@ -51,6 +51,9 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_quantity.py` | Pure lot/quantity rules and sell-quantity planning for A-share intraday PAPER execution |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_config.py` | Frozen schedule/risk configuration and policy manifest projections |
 | `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_serialization.py` | Safe audit documents, stable JSON normalization, and hashes |
+| `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_policy.py` | Risk config, price acceptance, board price bands, and validation |
+| `reporting/paper_day_summary.py` | `reporting/paper_day_llm_projection.py` | LLM sidecar data classes and pure projection statistics |
+| `cli_commands/handlers/binance.py` | `cli_commands/binance_results.py` | Balance validation, testnet deltas, and reconciliation payload shaping |
 | `gui/integrations.py` | `gui/napcat_process.py` | NapCat launch-command validation and owned process lifecycle |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_renderer.py` | Pure Markdown rendering and audit sections from immutable projections |
 | `storage/live_records.py` | `storage/live_record_models.py` | Durable-row dataclasses and pure SQLite row-to-domain decoding |

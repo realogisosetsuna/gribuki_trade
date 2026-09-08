@@ -167,6 +167,15 @@ This increment also adds AKShare delayed-history stitching, intraday LLM audit
 serialization, and NapCat process lifecycle boundaries. Provider access, LLM
 execution, and GUI settings remain in their original facades.
 
+The current increment additionally separates PAPER-day LLM sidecar projections,
+intraday execution policy, and Binance CLI result shaping. These are pure data or
+policy modules; file loading, account matching, network calls, and LIVE guards stay
+in their existing owners.
+
+Focused validation for this increment passed 260 tests. The full suite passed 1730
+tests with five environment-skipped tests and 41 subtests; Ruff, mypy (325 source
+files), readiness, compileall, and the Chinese-source check passed.
+
 Validation evidence for this increment: CLI and parser tests 195 passed; the
 Binance Spot, cross-market, reporting, adversarial macro, exit simulation, A-share
 quantity/configuration, and close-analysis suites passed together (398 focused

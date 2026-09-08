@@ -39,6 +39,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "gribuki_trade.cli_commands.post_close_results",
             "cli_commands/post_close_results.py",
         ),
+        (
+            "gribuki_trade.cli_commands.binance_results",
+            "cli_commands/binance_results.py",
+        ),
         ("gribuki_trade.trading.oms_schema", "trading/oms_schema.py"),
         ("gribuki_trade.storage.live_record_models", "storage/live_record_models.py"),
         ("gribuki_trade.adapters.ashare.screening_factors", "adapters/ashare/screening_factors.py"),
@@ -51,6 +55,14 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         (
             "gribuki_trade.services.ashare.ashare_intraday_llm_serialization",
             "services/ashare/ashare_intraday_llm_serialization.py",
+        ),
+        (
+            "gribuki_trade.reporting.paper_day_llm_projection",
+            "reporting/paper_day_llm_projection.py",
+        ),
+        (
+            "gribuki_trade.services.ashare.ashare_intraday_policy",
+            "services/ashare/ashare_intraday_policy.py",
         ),
         (
             "gribuki_trade.services.ashare.ashare_paper_day_schedule",

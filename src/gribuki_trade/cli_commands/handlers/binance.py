@@ -9,6 +9,11 @@ from __future__ import annotations
 from typing import Any
 
 from gribuki_trade import cli as _runtime_cli
+from gribuki_trade.cli_commands import binance_results as _results
+
+_binance_balance_decimal = _results._binance_balance_decimal
+_testnet_balance_diff = _results._testnet_balance_diff
+_testnet_reconciliation_payload = _results._testnet_reconciliation_payload
 
 # 处理器通过 CLI 外观解析兼容钩子，确保测试和嵌入调用方可以替换网关，
 # 同时避免直接耦合券商实现。
@@ -441,18 +446,6 @@ async def _binance_live_futures_balance(
     finally:
         await service.disconnect()
 
-
-def _binance_balance_decimal(value: object, field: str) -> _cli.Decimal:
-    """拒绝无效余额，避免把缺失、非有限数或协议变化当作零。"""
-    try:
-        number = _cli.Decimal(str(value))
-    except _cli.InvalidOperation:
-        raise _cli.BinanceProtocolError(
-            f"Binance Futures balance field {field} is malformed"
-        ) from None
-    if not number.is_finite():
-        raise _cli.BinanceProtocolError(f"Binance Futures balance field {field} is not finite")
-    return number
 
 
 async def _binance_live_futures_order_test(
@@ -1269,33 +1262,6 @@ async def _wait_for_testnet_fill_reports(
                 )
 
 
-def _testnet_balance_diff(
-    before: _cli.BinanceAccount, after: _cli.BinanceAccount
-) -> list[dict[str, str]]:
-    before_values = {item.asset: (item.free, item.locked) for item in before.balances}
-    after_values = {item.asset: (item.free, item.locked) for item in after.balances}
-    changed: list[dict[str, str]] = []
-    for asset in sorted(before_values.keys() | after_values.keys()):
-        before_free, before_locked = before_values.get(
-            asset, (_cli.Decimal("0"), _cli.Decimal("0"))
-        )
-        after_free, after_locked = after_values.get(asset, (_cli.Decimal("0"), _cli.Decimal("0")))
-        if (before_free, before_locked) == (after_free, after_locked):
-            continue
-        changed.append(
-            {
-                "asset": asset,
-                "before_free": format(before_free, "f"),
-                "before_locked": format(before_locked, "f"),
-                "after_free": format(after_free, "f"),
-                "after_locked": format(after_locked, "f"),
-                "delta_free": format(after_free - before_free, "f"),
-                "delta_locked": format(after_locked - before_locked, "f"),
-                "delta_total": format(after_free + after_locked - before_free - before_locked, "f"),
-            }
-        )
-    return changed
-
 
 async def _binance_testnet_oms_fill(
     symbol: str, target_notional: _cli.Decimal, database: str
@@ -1472,19 +1438,6 @@ async def _wait_for_testnet_execution(
             if report.execution_type == execution_type:
                 return report
 
-
-def _testnet_reconciliation_payload(report: _cli.BinanceStartupReconciliation) -> dict[str, object]:
-    return {
-        "dispatched_pending_commands": report.dispatched_pending_commands,
-        "exchange_history_orders": report.exchange_history_orders,
-        "exchange_open_orders": report.exchange_open_orders,
-        "exchange_trades": report.exchange_trades,
-        "reconciled_orders": report.reconciled_orders,
-        "recorded_balances": report.recorded_balances,
-        "recorded_fills": report.recorded_fills,
-        "recovered_commands": report.recovered_commands,
-        "unresolved_order_ids": list(report.unresolved_order_ids),
-    }
 
 
 async def _retry_testnet_reconciliation(
