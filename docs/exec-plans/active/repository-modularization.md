@@ -145,7 +145,8 @@ macro, simulated, Binance, and CLI command families. This increment also extract
 Binance Spot order parameter encoding, cross-market payload parsing, reporting
 Markdown rendering, adversarial macro audit serialization, strategy exit simulation,
 A-share quantity/configuration policy, and close-analysis indicators into focused
-modules. Binance workflows and read-only A-share market/research handlers are grouped
+modules. The durable-state follow-up also extracts live-record row models, OMS schema
+initialization, and A-share screening factors. Binance workflows and read-only A-share market/research handlers are grouped
 under `cli_commands/handlers/` alongside the parser families. Compatibility aliases at
 the former flat paths are intentionally thin and use the implementation module
 object so existing imports and monkeypatch-based operational tests retain their
@@ -155,6 +156,8 @@ order state transitions, or durable schemas.
 Validation evidence for this increment: CLI and parser tests 195 passed; the
 Binance Spot, cross-market, reporting, adversarial macro, exit simulation, A-share
 quantity/configuration, and close-analysis suites passed together (398 focused
-tests); Ruff, mypy (310 source files), readiness, compileall, and Chinese-source
-checks passed. Full quality gates remain required
-after the next orchestration slice is merged.
+tests). The live-record, OMS, screening, and module-layout follow-up passed 82
+focused tests; Ruff, mypy (310 source files), readiness, compileall, and
+Chinese-source checks passed. The full suite passed 1682 tests, with five
+environment-skipped tests and 41 subtests. Full quality gates remain required after
+the next orchestration slice is merged.

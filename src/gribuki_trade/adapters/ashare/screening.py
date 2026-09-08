@@ -25,7 +25,6 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import partial
-from statistics import stdev
 from typing import Any, TypeVar, cast
 from zoneinfo import ZoneInfo
 
@@ -33,12 +32,46 @@ from gribuki_trade.ports.ashare_screening import (
     AShareBoard,
     AShareFactorRecord,
     AShareFactorSnapshot,
-    AShareFactorValue,
+    AShareFactorValue,  # noqa: F401 - historical facade export
     AShareUniverseRecord,
     AShareUniverseSnapshot,
-    ScreeningFactorId,
+    ScreeningFactorId,  # noqa: F401 - historical facade export
     ScreeningHistoryPolicy,
     ScreeningSourceQuality,
+)
+
+from .screening_factors import (
+    CORPORATE_ACTION_TOLERANCE as _CORPORATE_ACTION_TOLERANCE,  # noqa: F401 - historical facade export
+)
+from .screening_factors import (
+    MIN_CORPORATE_ACTION_COVERAGE as _MIN_CORPORATE_ACTION_COVERAGE,  # noqa: F401 - historical facade export
+)
+from .screening_factors import (
+    HistoryBar as _HistoryBar,
+)
+from .screening_factors import (
+    average_amount_20 as _average_amount_20,
+)
+from .screening_factors import (
+    calculate_factors as _calculate_factors,
+)
+from .screening_factors import (
+    corporate_action_guard as _corporate_action_guard,
+)
+from .screening_factors import (
+    empty_factor_values as _empty_factor_values,
+)
+from .screening_factors import (
+    factor_values_with_average_amount as _factor_values_with_average_amount,
+)
+from .screening_factors import (
+    max_drawdown_magnitude as _max_drawdown_magnitude,  # noqa: F401 - historical facade export
+)
+from .screening_factors import (
+    mean as _mean,  # noqa: F401 - historical facade export
+)
+from .screening_factors import (
+    returns as _returns,  # noqa: F401 - historical facade export
 )
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -55,8 +88,6 @@ _DEFAULT_MAX_FACTOR_SYMBOLS = 300
 _DEFAULT_HISTORY_CONCURRENCY = 4
 _DEFAULT_HISTORY_CALENDAR_DAYS = 430
 _FEATURE_VERSION = "ashare-screening-raw-factors@1"
-_CORPORATE_ACTION_TOLERANCE = Decimal("0.02")
-_MIN_CORPORATE_ACTION_COVERAGE = Decimal("0.95")
 
 # AKShare 的新浪日线解码器通过 py_mini_racer 内嵌 V8。在 Windows 上并发首次
 # 初始化可能终止整个 Python 进程，因此回退调用必须跨适配器实例串行执行。
@@ -131,18 +162,6 @@ class _SourceSpec:
 class _ListingMetadata:
     listing_date: date
     industry: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class _HistoryBar:
-    trade_date: date
-    open: Decimal
-    high: Decimal
-    low: Decimal
-    close: Decimal
-    previous_close: Decimal | None
-    volume: Decimal
-    amount: Decimal
 
 
 _UNIVERSE_SOURCES = (
@@ -840,127 +859,6 @@ def _parse_sina_history(
         )
         previous = item
     return tuple(output)
-
-
-def _calculate_factors(bars: tuple[_HistoryBar, ...]) -> tuple[AShareFactorValue, ...]:
-    """根据已完成交易日计算原始、未标准化因子。
-
-    动量为简单收盘到收盘收益。120 日变体截止于 ``as_of`` 前五个交易日。趋势
-    为 ``MA20 / MA60 - 1``；突破位置为 ``最新收盘 / 前20日最高价 - 1``；量比
-    为最新成交量除以前20日均值。波动率是 60 个简单收益的样本标准差，并以
-    ``sqrt(252)`` 年化。回撤是 60 个收盘价内的正损失幅度。Amihud 是 20 日
-    ``abs(return) / amount_cny`` 均值，且只有每个成交额均为正时才存在。任何
-    缺失结果都不会用中性值替代。
-    """
-
-    closes = tuple(item.close for item in bars)
-    current = closes[-1]
-    momentum_20 = current / closes[-21] - Decimal(1)
-    momentum_60 = current / closes[-61] - Decimal(1)
-    momentum_120_skip_5 = closes[-6] / closes[-126] - Decimal(1)
-    ma20 = _mean(closes[-20:])
-    ma60 = _mean(closes[-60:])
-    prior20 = bars[-21:-1]
-    prior_high = max(item.high for item in prior20)
-    breakout_position = current / prior_high - Decimal(1)
-    prior_volume = _mean(tuple(item.volume for item in prior20))
-    volume_ratio = None if prior_volume == 0 else bars[-1].volume / prior_volume
-    returns_60 = _returns(closes[-61:])
-    volatility = Decimal(str(stdev(float(item) for item in returns_60))) * Decimal(
-        str(math.sqrt(252))
-    )
-    max_drawdown = _max_drawdown_magnitude(closes[-60:])
-    amihud_values = tuple(
-        abs(current_close / previous_close - Decimal(1)) / bar.amount
-        for previous_close, current_close, bar in zip(
-            closes[-21:-1], closes[-20:], bars[-20:], strict=True
-        )
-        if bar.amount > 0
-    )
-    amihud = _mean(amihud_values) if len(amihud_values) == 20 else None
-    average_amount = _average_amount_20(bars)
-    values: Mapping[ScreeningFactorId, Decimal | None] = {
-        ScreeningFactorId.MOMENTUM_20: momentum_20,
-        ScreeningFactorId.MOMENTUM_60: momentum_60,
-        ScreeningFactorId.MOMENTUM_120_SKIP_5: momentum_120_skip_5,
-        ScreeningFactorId.TREND_MA20_OVER_MA60: ma20 / ma60 - Decimal(1),
-        ScreeningFactorId.BREAKOUT_20_POSITION: breakout_position,
-        ScreeningFactorId.VOLUME_RATIO_20: volume_ratio,
-        ScreeningFactorId.ANNUALIZED_VOLATILITY_60: volatility,
-        ScreeningFactorId.MAX_DRAWDOWN_60_MAGNITUDE: max_drawdown,
-        ScreeningFactorId.AMIHUD_ILLIQUIDITY_20: amihud,
-        ScreeningFactorId.AVERAGE_AMOUNT_20_CNY: average_amount,
-    }
-    return tuple(
-        AShareFactorValue(
-            factor_id=factor_id,
-            value=None if value is None else float(value),
-        )
-        for factor_id, value in values.items()
-    )
-
-
-def _corporate_action_guard(bars: tuple[_HistoryBar, ...]) -> str | None:
-    comparable = 0
-    for previous, current in zip(bars, bars[1:], strict=False):
-        if current.previous_close is None:
-            continue
-        comparable += 1
-        discontinuity = abs(current.previous_close / previous.close - Decimal(1))
-        if discontinuity > _CORPORATE_ACTION_TOLERANCE:
-            return f"CORPORATE_ACTION_DISCONTINUITY:{current.trade_date.isoformat()}"
-    possible = max(1, len(bars) - 1)
-    coverage = Decimal(comparable) / Decimal(possible)
-    if coverage < _MIN_CORPORATE_ACTION_COVERAGE:
-        return f"CORPORATE_ACTION_GUARD_INCOMPLETE:{coverage:.3f}"
-    return None
-
-
-def _empty_factor_values() -> tuple[AShareFactorValue, ...]:
-    return tuple(AShareFactorValue(factor_id=item, value=None) for item in ScreeningFactorId)
-
-
-def _factor_values_with_average_amount(
-    average_amount: Decimal | None,
-) -> tuple[AShareFactorValue, ...]:
-    return tuple(
-        AShareFactorValue(
-            factor_id=item,
-            value=(
-                float(average_amount)
-                if item is ScreeningFactorId.AVERAGE_AMOUNT_20_CNY
-                and average_amount is not None
-                else None
-            ),
-        )
-        for item in ScreeningFactorId
-    )
-
-
-def _average_amount_20(bars: tuple[_HistoryBar, ...]) -> Decimal | None:
-    if len(bars) < 20:
-        return None
-    return _mean(tuple(item.amount for item in bars[-20:]))
-
-
-def _returns(closes: tuple[Decimal, ...]) -> tuple[Decimal, ...]:
-    return tuple(
-        current / previous - Decimal(1)
-        for previous, current in zip(closes, closes[1:], strict=False)
-    )
-
-
-def _max_drawdown_magnitude(closes: tuple[Decimal, ...]) -> Decimal:
-    peak = closes[0]
-    largest = Decimal(0)
-    for close in closes:
-        peak = max(peak, close)
-        largest = max(largest, Decimal(1) - close / peak)
-    return largest
-
-
-def _mean(values: tuple[Decimal, ...]) -> Decimal:
-    return sum(values, Decimal(0)) / Decimal(len(values))
 
 
 def _resolve_columns(

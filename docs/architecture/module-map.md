@@ -49,6 +49,9 @@ first increment is:
 | `services/adversarial_macro.py` | `services/adversarial_macro_serialization.py` owns canonical request, identity, analysis documents, hashes, and scalar normalization | Pure audit encoding only; analyzer orchestration and provider calls stay in the service facade |
 | `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_quantity.py` owns lot rules and sell-quantity planning | Pure quantity policy has no storage, network, scheduler, or broker dependency; the runner facade retains matching and ledger transitions |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_config.py` owns frozen schedule/risk configuration and policy manifest projections | Pure configuration and policy documents; runner retains storage, scheduling, event, and notification side effects |
+| `storage/live_records.py` | `storage/live_record_models.py` owns durable-row dataclasses and SQLite row-to-domain decoding | Pure row decoding; store retains transactions, leases, hash-chain writes, and state transitions |
+| `trading/oms.py` | `trading/oms_schema.py` owns SQLite DDL and idempotent schema migration | Schema setup accepts the caller-owned connection; OMS retains transaction boundaries and order state transitions |
+| `adapters/ashare/screening.py` | `adapters/ashare/screening_factors.py` owns historical-bar models and pure factor/corporate-action calculations | No provider, storage, or network dependency; screening facade retains universe/history fetching and degradation policy |
 | `runtime/paper_account_chain.py` | `runtime/paper_account_manifest.py` owns pure lineage manifests, canonical JSON, account/seal hashes, source-prefix validation, and ledger projection compatibility | No filesystem, SQLite, lock, scheduler, or broker side effects; chain facade retains recovery and atomic persistence |
 
 These modules are intentionally narrow. The old facade names remain available

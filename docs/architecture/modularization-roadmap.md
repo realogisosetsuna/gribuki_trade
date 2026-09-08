@@ -48,6 +48,9 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_quantity.py` | Pure lot/quantity rules and sell-quantity planning for A-share intraday PAPER execution |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_config.py` | Frozen schedule/risk configuration and policy manifest projections |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_renderer.py` | Pure Markdown rendering and audit sections from immutable projections |
+| `storage/live_records.py` | `storage/live_record_models.py` | Durable-row dataclasses and pure SQLite row-to-domain decoding |
+| `trading/oms.py` | `trading/oms_schema.py` | SQLite DDL and idempotent schema migration, with connection ownership left to the OMS facade |
+| `adapters/ashare/screening.py` | `adapters/ashare/screening_factors.py` | Historical-bar model, raw factor calculations, and corporate-action guards |
 
 ## Next slices
 
@@ -56,7 +59,9 @@ The next large files are grouped by the responsibilities they mix:
 | Area | Large files | Extraction order |
 |---|---|---|
 | A-share execution | `services/ashare_paper_day.py`, remaining `services/ashare_intraday_paper.py` orchestration | projections/configuration → calendar/session logic → orchestration |
-| Durable state | `storage/live_records.py` | codecs/projections → schema/lease helpers → transaction methods |
+| Durable state | `storage/live_records.py` | row models/codecs are split; lease helpers and transaction methods remain |
+| Broker-neutral execution | `trading/oms.py` | schema/migration is split; command/outbox/fill transaction methods remain |
+| A-share screening | `adapters/ashare/screening.py` | pure factor calculations are split; provider calls and degradation policy remain |
 | Research | remaining `services/adversarial_macro.py` orchestration and other strategy/research facades | pure calculations → dataset/manifest IO → orchestration |
 | Presentation | remaining `reporting/paper_day_summary.py`, `gui/integrations.py` | sidecar loading/projection assembly → provider boundary → UI wiring |
 | CLI | `cli.py` | A-share workflow handlers → output formatting → compatibility migration |
@@ -89,6 +94,9 @@ Current source evidence includes `src/gribuki_trade/cli_parsing.py`,
 `src/gribuki_trade/services/ashare/ashare_intraday_quantity.py`,
 `src/gribuki_trade/services/ashare/ashare_paper_day_config.py`,
 `src/gribuki_trade/features/close_analysis_indicators.py`, and
+`src/gribuki_trade/storage/live_record_models.py`,
+`src/gribuki_trade/trading/oms_schema.py`,
+`src/gribuki_trade/adapters/ashare/screening_factors.py`, and
 `src/gribuki_trade/strategy_lab/experiment_serialization.py`. Focused verification is
 covered by `tests/unit/test_cli_parsing.py`,
 `tests/unit/test_cli_output.py`, `tests/unit/test_binance_spot_parsing.py`,

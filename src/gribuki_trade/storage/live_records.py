@@ -9,12 +9,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import sqlite3
 import threading
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from os import PathLike
@@ -45,8 +43,14 @@ from gribuki_trade.storage.live_record_codec import (
     _protection_work_id,
     _time,
 )
-
-_ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,95}$")
+from gribuki_trade.storage.live_record_models import (
+    LiveConfirmationCommit,
+    StoredLiveCommand,
+    _row_to_command,
+    _row_to_event,
+    _row_to_tracking,
+    _row_to_work,
+)
 
 
 class LiveRecordStoreError(RuntimeError):
@@ -67,33 +71,6 @@ class LiveRecordStateError(LiveRecordStoreError):
     def __init__(self, code: str) -> None:
         self.code = _error_code(code)
         super().__init__(f"live-record state transition rejected ({self.code})")
-
-
-@dataclass(frozen=True, slots=True)
-class StoredLiveCommand:
-    """命令索引中的一条两阶段确认状态。"""
-
-    command_id: str
-    account_id: str
-    sender_id: str
-    source_message_id: str
-    fingerprint: str
-    fill_json: str
-    state: str
-    proposal_event_id: str
-    terminal_event_id: str | None
-    proposed_at: datetime
-    terminal_at: datetime | None
-
-
-@dataclass(frozen=True, slots=True)
-class LiveConfirmationCommit:
-    """原子确认结果及其持久保护工作标识。"""
-
-    event: LiveRecordEvent
-    created: bool
-    protection_id: str | None
-    protection_work_id: str | None
 
 
 class SQLiteLiveRecordStore:
@@ -1712,85 +1689,6 @@ class SQLiteLiveRecordStore:
             raise RuntimeError("live-record store is closed")
 
 
-def _row_to_event(row: sqlite3.Row) -> LiveRecordEvent:
-    return LiveRecordEvent(
-        sequence=int(row["sequence"]),
-        event_id=str(row["event_id"]),
-        account_id=str(row["account_id"]),
-        event_type=LiveRecordEventType(str(row["event_type"])),
-        occurred_at=_parse_time(str(row["occurred_at"])),
-        idempotency_key=str(row["idempotency_key"]),
-        payload_json=str(row["payload_json"]),
-        payload_sha256=str(row["payload_sha256"]),
-        previous_hash=(str(row["previous_hash"]) if row["previous_hash"] else None),
-        event_hash=str(row["event_hash"]),
-    )
-
-
-def _row_to_command(row: sqlite3.Row) -> StoredLiveCommand:
-    return StoredLiveCommand(
-        command_id=str(row["command_id"]),
-        account_id=str(row["account_id"]),
-        sender_id=str(row["sender_id"]),
-        source_message_id=str(row["source_message_id"]),
-        fingerprint=str(row["fingerprint"]),
-        fill_json=str(row["fill_json"]),
-        state=str(row["state"]),
-        proposal_event_id=str(row["proposal_event_id"]),
-        terminal_event_id=(str(row["terminal_event_id"]) if row["terminal_event_id"] else None),
-        proposed_at=_parse_time(str(row["proposed_at"])),
-        terminal_at=(None if row["terminal_at"] is None else _parse_time(str(row["terminal_at"]))),
-    )
-
-
-def _row_to_tracking(row: sqlite3.Row) -> LiveProtectionTracking:
-    from gribuki_trade.domain.paper_trading import PaperInstrumentType
-
-    return LiveProtectionTracking(
-        protection_id=str(row["protection_id"]),
-        account_id=str(row["account_id"]),
-        buy_command_id=str(row["buy_command_id"]),
-        symbol=str(row["symbol"]),
-        instrument_type=PaperInstrumentType(str(row["instrument_type"])),
-        acquired_at=_parse_time(str(row["acquired_at"])),
-        original_quantity=int(row["original_quantity"]),
-        remaining_quantity=int(row["remaining_quantity"]),
-        plan_ready=bool(row["plan_ready"]),
-        plan_stream_id=(
-            None if row["plan_stream_id"] is None else str(row["plan_stream_id"])
-        ),
-        last_observed_bar_end=(
-            None
-            if row["last_observed_bar_end"] is None
-            else _parse_time(str(row["last_observed_bar_end"]))
-        ),
-        last_alert_bar_end=(
-            None
-            if row["last_alert_bar_end"] is None
-            else _parse_time(str(row["last_alert_bar_end"]))
-        ),
-    )
-
-
-def _row_to_work(row: sqlite3.Row) -> LiveWorkItem:
-    return LiveWorkItem(
-        work_id=str(row["work_id"]),
-        kind=LiveWorkKind(str(row["kind"])),
-        account_id=str(row["account_id"]),
-        command_id=str(row["command_id"]),
-        protection_id=(str(row["protection_id"]) if row["protection_id"] else None),
-        payload_json=str(row["payload_json"]),
-        status=LiveWorkStatus(str(row["status"])),
-        attempts=int(row["attempts"]),
-        available_at=_parse_time(str(row["available_at"])),
-        lease_until=(None if row["lease_until"] is None else _parse_time(str(row["lease_until"]))),
-        created_at=_parse_time(str(row["created_at"])),
-        updated_at=_parse_time(str(row["updated_at"])),
-        result_code=(str(row["result_code"]) if row["result_code"] else None),
-        error_code=(str(row["error_code"]) if row["error_code"] else None),
-    )
-
-
 
 def _json_object(payload: str) -> dict[str, object]:
     value = json.loads(payload)
@@ -1830,7 +1728,6 @@ def _verify(events: Sequence[LiveRecordEvent]) -> None:
         if _event_hash(candidate, digest, previous_hash) != event.event_hash:
             raise LiveRecordIntegrityError("live-record event hash is invalid")
         previous_hash = event.event_hash
-
 
 
 __all__ = [
