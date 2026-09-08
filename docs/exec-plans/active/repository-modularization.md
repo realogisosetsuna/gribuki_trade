@@ -215,6 +215,12 @@ now pushed. Focused payload and storage/provider routes passed; the repository
 gates then passed readiness, Ruff, mypy (333 source files), compileall, and the
 full suite with 1758 passed, 5 environment-skipped tests, and 41 subtests.
 
+The next reporting/execution slice is also prepared: PAPER-day account, fill,
+order, and notification projections now live beside their immutable sidecar
+models, while Binance execution record conversions live outside the execution
+orchestrator. Focused reporting and execution routes passed 39 tests; the
+facades retain their historical private helper names and durable side effects.
+
 The current provider/UI follow-up passed 106 focused tests, then the full suite
 passed 1718 tests with five environment-skipped tests and 41 subtests. Ruff,
 mypy (322 source files), readiness, compileall, and the Chinese-source check all
