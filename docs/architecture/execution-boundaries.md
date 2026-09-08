@@ -14,6 +14,30 @@ Source: `src/gribuki_trade/runtime/mode.py` and `runtime/guard.py`.
 Verification: `tests/unit/test_runtime_guard.py`, broker adapter tests, and
 CLI tests covering confirmation errors.
 
+Binance Spot execution uses the durable SQLite OMS in
+`services/binance_execution.py`. `BinanceSpotTestnetExecutionService` remains
+TESTNET-only; `BinanceSpotExecutionService` is the explicit TESTNET/LIVE entry
+point and requires a `LiveTradingGuard` for every connect, query, subscribe,
+submit, and cancel operation. Public market monitoring is isolated in
+`services/binance_monitor.py` and never requires credentials or order access;
+its snapshots report receive latency percentiles and clock-skew samples.
+
+USD-M/COIN-M Futures REST execution is exposed through
+`services/binance_futures_execution.py`. It supports account and position
+queries, open/order history and trade reconciliation, order submission, single
+order cancellation, and cancel-all. LIVE clients must be created with
+`allow_live=True` and a `LiveTradingGuard`; every query and order-changing
+operation is checked against the guard. SHADOW may query but cannot submit or
+cancel, while PAPER is rejected before any broker request. The adapter keeps
+the official product-specific `/fapi` and `/dapi` routes and never falls back
+from DEMO to LIVE.
+
+The LIVE balance CLI commands only connect, synchronize time, and query
+account data under the same guards. Spot reports per-asset free and locked
+balances; USD-M Futures reports selected account and asset balance fields.
+Decimal amounts remain strings, assets are never added across currencies,
+and account payloads are filtered to balance fields before output.
+
 ## Research and LLM gates
 
 Research services persist evidence and provenance before recommendation/review.

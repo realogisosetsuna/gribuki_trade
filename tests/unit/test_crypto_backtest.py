@@ -160,6 +160,53 @@ def test_replay_delays_orders_one_bar_and_accounts_for_fees_and_slippage() -> No
     assert report.final_portfolio.balance("BTC") == 0
 
 
+def test_order_submission_latency_can_skip_the_next_bar() -> None:
+    config = CryptoBacktestConfig(
+        symbol="BTCUSDT",
+        base_asset="BTC",
+        quote_asset="USDT",
+        order_submission_latency=timedelta(seconds=1),
+    )
+
+    def buy_once(event: BacktestBarEvent) -> tuple[CryptoOrderRequest, ...]:
+        if len(event.history) == 1:
+            return (
+                CryptoOrderRequest(
+                    order_id="delayed-buy",
+                    side=Side.BUY,
+                    order_type=CryptoOrderType.MARKET,
+                    quantity=Decimal("1"),
+                ),
+            )
+        return ()
+
+    report = CryptoBacktestEngine(config).run(
+        replay_bars(),
+        buy_once,
+        initial_balances={"USDT": Decimal("1000")},
+    )
+
+    assert report.fills[0].executed_at == replay_bars()[2].open_time
+    assert report.fills[0].price == replay_bars()[2].open
+
+
+def test_order_submission_latency_must_be_a_non_negative_timedelta() -> None:
+    with pytest.raises(TypeError, match="order_submission_latency"):
+        CryptoBacktestConfig(
+            "BTCUSDT",
+            "BTC",
+            "USDT",
+            order_submission_latency=1,  # type: ignore[arg-type]
+        )
+    with pytest.raises(ValueError, match="order_submission_latency"):
+        CryptoBacktestConfig(
+            "BTCUSDT",
+            "BTC",
+            "USDT",
+            order_submission_latency=-timedelta(milliseconds=1),
+        )
+
+
 def test_limit_fill_uses_limit_not_optimistic_gap_price() -> None:
     bars = (
         bar(0, open_price="105", high="106", low="104", close="105"),

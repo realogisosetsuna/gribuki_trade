@@ -29,6 +29,7 @@ from gribuki_trade.adapters.binance import (
     BinanceUserDataEvent,
 )
 from gribuki_trade.domain.orders import OrderIntent, OrderStatus, Side
+from gribuki_trade.runtime import BrokerOperation, LiveTradingGuard
 from gribuki_trade.trading import (
     AssetBalance,
     BalanceValue,
@@ -143,10 +144,15 @@ class BinanceSpotTestnetExecutionService:
         symbols: Sequence[str],
         user_stream: BinanceUserDataSource | None = None,
         clock: Callable[[], datetime] | None = None,
+        _allow_live: bool = False,
+        guard: LiveTradingGuard | None = None,
+        exchange: str = "BINANCE",
     ) -> None:
-        _require_testnet(gateway, "gateway")
+        _require_binance_environment(gateway, "gateway", allow_live=_allow_live)
         if user_stream is not None:
-            _require_testnet(user_stream, "user_stream")
+            _require_binance_environment(user_stream, "user_stream", allow_live=_allow_live)
+        if _allow_live and guard is None:
+            raise ValueError("a LiveTradingGuard is required for live Binance execution")
         normalized_account = account_id.strip()
         if not normalized_account:
             raise ValueError("account_id must not be empty")
@@ -161,6 +167,8 @@ class BinanceSpotTestnetExecutionService:
         self._symbol_set = frozenset(normalized_symbols)
         self._user_stream = user_stream
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._guard = guard
+        self._exchange = exchange
         self._operation_lock = asyncio.Lock()
         self._started = False
         self._stopping = False
@@ -184,6 +192,7 @@ class BinanceSpotTestnetExecutionService:
             if self._started:
                 raise RuntimeError("Binance Testnet execution service is already started")
             self._stopping = False
+            self._assert_operation(BrokerOperation.CONNECT)
             recovered = self._oms.recover_after_restart(
                 now=self._now(),
                 account_id=self._account_id,
@@ -228,6 +237,7 @@ class BinanceSpotTestnetExecutionService:
         self._validate_order(order)
         async with self._operation_lock:
             self._require_started()
+            self._assert_operation(BrokerOperation.SUBMIT_ORDER, account_id=order.account_id)
             persisted = self._oms.create_order(order)
             command = self._submit_command(order.client_order_id)
             if command.status is TradingCommandStatus.PENDING:
@@ -242,6 +252,7 @@ class BinanceSpotTestnetExecutionService:
             self._require_started()
             current = self._oms.require_order(client_order_id)
             self._validate_order(current.order)
+            self._assert_operation(BrokerOperation.CANCEL_ORDER)
             existing = self._command(f"cancel:{client_order_id}")
             if existing is not None:
                 # SENT 与 UNKNOWN 在此处都是最终交付决定：二者都不允许盲目发送第二次撤单请求。
@@ -266,6 +277,7 @@ class BinanceSpotTestnetExecutionService:
 
         async with self._operation_lock:
             self._require_started()
+            self._assert_operation(BrokerOperation.QUERY)
             return await self._reconcile_startup(recovered_commands=0)
 
     async def consume_user_event(self, event: BinanceUserDataEvent) -> bool:
@@ -289,6 +301,7 @@ class BinanceSpotTestnetExecutionService:
         """消费已配置私有数据流，直至停止或达到测试限制。"""
 
         self._require_started()
+        self._assert_operation(BrokerOperation.SUBSCRIBE)
         if self._user_stream is None:
             raise RuntimeError("no Binance user-data stream is configured")
         if maximum_events is not None and maximum_events <= 0:
@@ -350,6 +363,7 @@ class BinanceSpotTestnetExecutionService:
             dispatched += 1
 
     async def _dispatch_submit(self, command: TradingCommand) -> None:
+        self._assert_operation(BrokerOperation.SUBMIT_ORDER)
         order = self._oms.require_order(command.client_order_id).order
         try:
             await self._gateway.submit_order(order)
@@ -378,6 +392,7 @@ class BinanceSpotTestnetExecutionService:
                 filled_quantity=update.executed_quantity,
                 exchange_order_id=update.exchange_order_id,
                 reason=update.reason,
+                broker_error_code=update.error_code,
             )
             # 在确认持久化命令前先持久化交易所结果。
             self._oms.mark_command_sent(command.command_id, occurred_at=occurred_at)
@@ -389,6 +404,7 @@ class BinanceSpotTestnetExecutionService:
             raise
 
     async def _dispatch_cancel(self, command: TradingCommand) -> None:
+        self._assert_operation(BrokerOperation.CANCEL_ORDER)
         try:
             order = self._oms.require_order(command.client_order_id).order
             snapshot = await self._gateway.cancel_order_by_client_id(
@@ -432,6 +448,7 @@ class BinanceSpotTestnetExecutionService:
             raise
 
     async def _reconcile_startup(self, *, recovered_commands: int) -> BinanceStartupReconciliation:
+        self._assert_operation(BrokerOperation.QUERY)
         now = self._now()
         account = await self._gateway.account()
         balances = self._record_account_snapshot(account, now=now, source="startup")
@@ -698,11 +715,25 @@ class BinanceSpotTestnetExecutionService:
         if order.account_id != self._account_id:
             raise ValueError("order account_id does not match the execution service")
         if order.symbol != order.symbol.upper() or order.symbol not in self._symbol_set:
-            raise ValueError("order symbol is not in the Testnet execution allow-list")
+            raise ValueError("order symbol is not in the Binance execution allow-list")
 
     def _require_started(self) -> None:
         if not self._started:
-            raise RuntimeError("Binance Testnet execution service is not started")
+            raise RuntimeError("Binance execution service is not started")
+
+    def _assert_operation(
+        self,
+        operation: BrokerOperation,
+        *,
+        account_id: str | None = None,
+    ) -> None:
+        if self._guard is None:
+            return
+        self._guard.assert_broker_operation(
+            self._exchange,
+            account_id or self._account_id,
+            operation,
+        )
 
     def _now(self) -> datetime:
         value = self._clock()
@@ -726,6 +757,57 @@ def _require_testnet(component: object, label: str) -> None:
     if environment is not BinanceEnvironment.TESTNET:
         raise BinanceTestnetOnlyError(
             f"{label} targets {environment.value}; this service is TESTNET-only"
+        )
+
+
+def _require_binance_environment(component: object, label: str, *, allow_live: bool) -> None:
+    value = getattr(component, "environment", None)
+    try:
+        environment = (
+            value
+            if isinstance(value, BinanceEnvironment)
+            else BinanceEnvironment(str(value).upper())
+        )
+    except ValueError:
+        raise BinanceTestnetOnlyError(
+            f"{label} must explicitly advertise Binance TESTNET or LIVE"
+        ) from None
+    if environment is BinanceEnvironment.LIVE and not allow_live:
+        raise BinanceTestnetOnlyError(
+            f"{label} targets LIVE; this service is TESTNET-only; use "
+            "BinanceSpotExecutionService with a LiveTradingGuard"
+        )
+
+
+class BinanceSpotExecutionService(BinanceSpotTestnetExecutionService):
+    """受守卫保护的 Binance 现货执行服务，支持测试网或显式解锁的实盘。
+
+    该服务复用测试网服务的持久化 OMS 流程。只有网关和用户数据流明确指向
+    LIVE，且进程内的 :class:`LiveTradingGuard` 允许每项操作时，才会访问实盘。
+    """
+
+    def __init__(
+        self,
+        gateway: BinanceSpotExecutionGateway,
+        oms: SQLiteOrderManagementStore,
+        *,
+        account_id: str,
+        symbols: Sequence[str],
+        guard: LiveTradingGuard,
+        user_stream: BinanceUserDataSource | None = None,
+        clock: Callable[[], datetime] | None = None,
+        exchange: str = "BINANCE",
+    ) -> None:
+        super().__init__(
+            gateway,
+            oms,
+            account_id=account_id,
+            symbols=symbols,
+            user_stream=user_stream,
+            clock=clock,
+            _allow_live=True,
+            guard=guard,
+            exchange=exchange,
         )
 
 

@@ -108,10 +108,19 @@ class SQLiteOrderManagementStore:
                     average_fill_price TEXT,
                     exchange_order_id TEXT,
                     reason TEXT,
+                    broker_error_code INTEGER,
                     updated_at TEXT NOT NULL
                 )
                 """
             )
+            columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(oms_orders)").fetchall()
+            }
+            if "broker_error_code" not in columns:
+                connection.execute(
+                    "ALTER TABLE oms_orders ADD COLUMN broker_error_code INTEGER"
+                )
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS oms_order_events (
@@ -611,6 +620,7 @@ class SQLiteOrderManagementStore:
         average_fill_price: Decimal | str | int | None = None,
         exchange_order_id: str | int | None = None,
         reason: str | None = None,
+        broker_error_code: int | None = None,
         event_type: str = ORDER_STATUS_EVENT,
     ) -> OrderSnapshot:
         """追加幂等状态事件，并更新其物化订单。"""
@@ -653,12 +663,18 @@ class SQLiteOrderManagementStore:
                 else _identifier(str(exchange_order_id), "exchange_order_id")
             )
             normalized_reason = None if reason is None else reason.strip()[:256] or None
+            normalized_error_code = (
+                current.broker_error_code
+                if broker_error_code is None
+                else int(broker_error_code)
+            )
             payload_json = _json(
                 {
                     "average_fill_price": _decimal_text(normalized_average),
                     "exchange_order_id": normalized_exchange_id,
                     "filled_quantity": str(normalized_filled),
                     "reason": normalized_reason,
+                    "broker_error_code": normalized_error_code,
                     "status": status.value,
                 }
             )
@@ -690,7 +706,7 @@ class SQLiteOrderManagementStore:
                     """
                     UPDATE oms_orders
                     SET status = ?, filled_quantity = ?, average_fill_price = ?,
-                        exchange_order_id = ?, reason = ?, updated_at = ?
+                        exchange_order_id = ?, reason = ?, broker_error_code = ?, updated_at = ?
                     WHERE client_order_id = ?
                     """,
                     (
@@ -699,6 +715,7 @@ class SQLiteOrderManagementStore:
                         _decimal_text(normalized_average),
                         normalized_exchange_id,
                         normalized_reason,
+                        normalized_error_code,
                         _time(max(occurred_at, current.updated_at)),
                         client_order_id,
                     ),
@@ -718,6 +735,7 @@ class SQLiteOrderManagementStore:
         average_fill_price: Decimal | str | int | None = None,
         exchange_order_id: str | int | None = None,
         reason: str | None = None,
+        broker_error_code: int | None = None,
         event_id: str | None = None,
     ) -> OrderSnapshot:
         """应用权威 REST 快照，并解决未知命令。"""
@@ -732,6 +750,7 @@ class SQLiteOrderManagementStore:
             average_fill_price=average_fill_price,
             exchange_order_id=exchange_order_id,
             reason=reason,
+            broker_error_code=broker_error_code,
             event_type=ORDER_RECONCILED_EVENT,
         )
         with self._transaction() as connection:
@@ -1411,6 +1430,9 @@ def _row_to_order(row: sqlite3.Row) -> OrderSnapshot:
         else str(row["exchange_order_id"]),
         reason=None if row["reason"] is None else str(row["reason"]),
         updated_at=_parse_time(str(row["updated_at"])),
+        broker_error_code=(
+            None if row["broker_error_code"] is None else int(row["broker_error_code"])
+        ),
     )
 
 

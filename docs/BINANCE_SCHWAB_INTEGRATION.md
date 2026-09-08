@@ -19,8 +19,8 @@ Spot gateway 已实现：
 - 对 `-1007`、写请求 5xx、transport/protocol 不确定性统一进入 `UNKNOWN`，不盲目重发；
 - Testnet/LIVE 使用不同 URL 和凭据名，绝不跨环境回退。
 
-底层 LIVE gateway 只有调用者显式传入 `allow_live=True` 才能构造。这只是低层防误用开关，
-不表示仓库已经提供生产 LIVE 执行入口。
+底层 LIVE gateway 只有调用者显式传入 `allow_live=True` 才能构造。用户侧 LIVE 入口还必须
+通过 `LiveTradingGuard` 的进程内确认、账户白名单和交易所白名单。
 
 ### 已编排的 Testnet 执行
 
@@ -44,6 +44,60 @@ Spot Testnet：
 .\.venv\Scripts\python.exe -m gribuki_trade binance-testnet-oms-fill --symbol BTCUSDT --notional 20 --database runtime/binance/testnet-oms-fill.sqlite3 --confirm TESTNET_FILL
 ~~~
 
+### Spot LIVE 用户入口
+
+LIVE 命令默认不执行；每次调用都必须显式传入 `ENABLE LIVE TRADING`，并由
+`LiveTradingGuard` 在当前进程内校验 Binance 账户白名单。建议先运行只读状态和
+`/api/v3/order/test` 校验：
+
+~~~bash
+./.venv/Scripts/python.exe -m gribuki_trade binance-live-status \
+  --symbol BTCUSDT --confirm "ENABLE LIVE TRADING"
+./.venv/Scripts/python.exe -m gribuki_trade binance-live-order-test \
+  --symbol BTCUSDT --notional 20 --confirm "ENABLE LIVE TRADING"
+~~~
+
+需要真实提交或撤单时使用 durable SQLite OMS；`submit` 会进入真实撮合，`cancel` 只
+接受该 OMS 已记录的 `client_order_id`：
+
+~~~bash
+./.venv/Scripts/python.exe -m gribuki_trade binance-live-order submit \
+  --symbol BTCUSDT --notional 20 --database runtime/binance/live-oms.sqlite3 \
+  --confirm "ENABLE LIVE TRADING"
+./.venv/Scripts/python.exe -m gribuki_trade binance-live-order cancel \
+  --client-order-id <client-order-id> --database runtime/binance/live-oms.sqlite3 \
+  --confirm "ENABLE LIVE TRADING"
+~~~
+
+LIVE 凭据只从 `binance.live.api_key` 和 `binance.live.secret_key` 加载；命令不会回退
+到 Testnet 凭据。状态和 order-test 不创建真实订单，离线测试也不会调用 LIVE 网络。
+Spot LIVE 提交结果会返回 `reason` 和 `broker_error_code`；例如余额不足时可以直接看到
+交易所拒绝原因，不能把 `order-test` 的 accepted 当成资金已经足够。
+
+详细余额使用独立的只读命令；默认展示非零资产，`--include-zero` 展示全部返回资产，
+`--asset USDT` 可筛选指定币种。Spot 和 USDⓈ-M 是分别查询的钱包，并非币安全部账户资产。
+
+API 白名单使用当前代理的公网出口地址时，可在同一个 Git Bash 环境快速查询：
+
+~~~bash
+bash ./scripts/current_ip.sh
+bash ./scripts/current_ip.sh --verbose
+~~~
+
+脚本只输出公网 IPv4/IPv6，不会把本机局域网地址或虚拟网卡地址误当成白名单地址。
+如果交易进程和 Git Bash 使用不同的 `HTTPS_PROXY`/`ALL_PROXY`，应在交易进程相同的网络环境中查询。
+
+~~~bash
+./.venv/Scripts/python.exe -m gribuki_trade binance-live-balance \
+  --asset USDT --confirm "ENABLE LIVE TRADING"
+./.venv/Scripts/python.exe -m gribuki_trade binance-live-futures-balance \
+  --confirm "ENABLE LIVE TRADING"
+~~~
+
+Spot 的 `free` 为可用余额、`locked` 为冻结余额；合约的 `walletBalance` 为钱包余额，
+`availableBalance` 为可用余额，`unrealizedProfit` 为未实现盈亏。合约账户汇总的单位取决于
+单资产或多资产模式，应结合逐币种余额解读，不将不同币种直接相加。
+
 前两条分别只读或使用 Binance `order/test`；后两条会进入 Testnet 撮合或虚拟成交。历史本机验证
 记录见 [Binance 模拟交易验收快照](BINANCE_SIMULATION_STATUS.md)。
 
@@ -54,18 +108,49 @@ Spot Testnet：
 `binance-shadow-run` 用公开行情驱动本地 PAPER/OMS，水印固定为 `NO_REMOTE_ORDERS`。
 SHADOW 选择 `--environment LIVE` 只代表生产公共行情，不会打开远端订单提交。
 
-### Futures
+### USDⓈ-M Futures LIVE 用户入口
 
-USDⓈ-M/COIN-M 当前只有 Demo public status、签名 account/position 与 `order/test` 验证能力，
-没有 place-order 方法或 durable Futures OMS。Spot Testnet key 不会复用为 Futures Demo key；
-不支持的 Margin/Portfolio Margin 阶段不会回退到 LIVE。
+Futures REST 客户端现在支持签名账户、持仓、挂单、历史成交查询、订单提交、单笔撤单和撤销
+全部挂单；`BinanceFuturesExecutionService` 在 LIVE 下强制 `allow_live=True` 与
+`LiveTradingGuard`，并提供启动对账。Spot Testnet key 不会复用为 Futures Demo key；不支持的
+Margin/Portfolio Margin 阶段不会回退到 LIVE。
+
+先运行只读状态和 `order/test`：
+
+~~~bash
+./.venv/Scripts/python.exe -m gribuki_trade binance-live-futures-status \
+  --symbol BTCUSDT --confirm "ENABLE LIVE TRADING"
+./.venv/Scripts/python.exe -m gribuki_trade binance-live-futures-order-test \
+  --symbol BTCUSDT --side BUY --quantity 0.001 --confirm "ENABLE LIVE TRADING"
+~~~
+
+状态结果中的 `position_mode` 会是 `ONE_WAY` 或 `HEDGE`。单向持仓使用
+`--position-side BOTH`（省略时客户端也会安全地补成 `BOTH`）；双向持仓必须显式传
+`--position-side LONG` 或 `--position-side SHORT`，系统不会根据 BUY/SELL 猜测，也不会
+自动修改账户持仓模式。`time_sync_rtt_ms` 是同步请求耗时；`clock_offset_ms` 若持续达到
+数万毫秒，先同步本机系统时钟再进行交易。
+
+真实 Futures 提交/撤单必须显式指定 `submit` 或 `cancel`，并继续通过相同的 LIVE 守卫：
+
+~~~bash
+./.venv/Scripts/python.exe -m gribuki_trade binance-live-futures-order submit \
+  --symbol BTCUSDT --side BUY --position-side BOTH --order-type LIMIT --quantity 0.001 --price 50000 \
+  --confirm "ENABLE LIVE TRADING"
+./.venv/Scripts/python.exe -m gribuki_trade binance-live-futures-order cancel \
+  --symbol BTCUSDT --client-order-id <client-order-id> \
+  --confirm "ENABLE LIVE TRADING"
+~~~
+
+`order-test` 不进入撮合；`submit` 会创建真实订单。当前 Futures 服务提供远端对账数据，尚未
+把 Futures 订单接入 Spot 使用的 SQLite durable OMS；Futures 提交结果仍应通过交易所订单号和
+查询接口对账，不能把网络异常后的结果当成已成交。
 
 ### 仍未完成
 
-- 没有面向用户的 Binance 生产 LIVE CLI、durable service 或运维 runbook；
-- `LiveTradingGuard` / `GuardedBrokerAdapter` 是可复用安全构件，但当前没有成为所有 gateway
-  调用的不可绕过外壳；
-- Testnet/SHADOW 仍缺长期 soak、系统化故障注入、完整速率与订单计数阻断、组合级风险、
+- Spot LIVE 与 USDⓈ-M Futures LIVE 均已提供受保护的用户 CLI；两者不能复用交易端点，均只从
+  `binance.live.api_key`/`binance.live.secret_key` 读取凭据。
+- LiveTradingGuard / GuardedBrokerAdapter 是可复用安全构件；Spot LIVE CLI 的每次
+  连接、查询、提交和撤单都在调用网关前进行进程内确认、账户白名单和交易所白名单校验；
   kill switch 和 GUI 生产接线；
 - 本地 PAPER/回测成交模型不复制真实队列、深度、延迟和市场冲击。
 

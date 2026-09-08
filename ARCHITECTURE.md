@@ -53,7 +53,8 @@ tests named `test_cli.py`, `test_ashare_*`, `test_paper_*`, and
 `test_live_*` provide the executable coverage map.
 
 Binance code is split between `adapters/binance` and services for execution,
-PAPER and SHADOW. The CLI labels execution entry points TESTNET-only. Schwab
+PAPER and SHADOW. The CLI separates TESTNET/DEMO from guarded LIVE Spot and
+USD-M Futures entries, including read-only balance queries. Schwab
 code is an adapter layer with offline transport/OAuth tests; the README and
 `docs/BINANCE_SCHWAB_INTEGRATION.md` record that production/user-facing
 workflow is not verified here.

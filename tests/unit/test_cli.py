@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 import gribuki_trade.cli as cli
+from gribuki_trade.adapters.binance.models import BinanceBalance
 from gribuki_trade.cli import (
     _ashare_candidates,
     _ashare_intraday_scan_once,
@@ -47,6 +48,12 @@ from gribuki_trade.reporting.contracts import (
     render_stable_markdown_report,
     validate_text_report_contract,
 )
+from gribuki_trade.runtime import (
+    LIVE_CONFIRMATION_PHRASE,
+    BrokerOperation,
+    LiveTradingNotConfirmed,
+    TradingMode,
+)
 
 
 def test_sqlite_runtime_status_parser_helper_and_main(
@@ -60,6 +67,211 @@ def test_sqlite_runtime_status_parser_helper_and_main(
     assert isinstance(expected["shared_wal_safe"], bool)
     assert cli.main(["sqlite-runtime-status"]) == 0
     assert json.loads(capsys.readouterr().out) == expected
+
+
+def test_binance_live_commands_require_explicit_confirmation() -> None:
+    parser = build_parser()
+    status = parser.parse_args(
+        ["binance-live-status", "--symbol", "BTCUSDT", "--confirm", LIVE_CONFIRMATION_PHRASE]
+    )
+    assert status.command == "binance-live-status"
+    assert status.confirm == LIVE_CONFIRMATION_PHRASE
+
+    order_test = parser.parse_args(
+        [
+            "binance-live-order-test",
+            "--symbol",
+            "BTCUSDT",
+            "--notional",
+            "25",
+            "--confirm",
+            LIVE_CONFIRMATION_PHRASE,
+        ]
+    )
+    assert order_test.command == "binance-live-order-test"
+    futures_status = parser.parse_args(
+        [
+            "binance-live-futures-status",
+            "--symbol",
+            "BTCUSDT",
+            "--confirm",
+            LIVE_CONFIRMATION_PHRASE,
+        ]
+    )
+    assert futures_status.command == "binance-live-futures-status"
+    futures_test = parser.parse_args(
+        [
+            "binance-live-futures-order-test",
+            "--quantity",
+            "0.001",
+            "--position-side",
+            "LONG",
+            "--confirm",
+            LIVE_CONFIRMATION_PHRASE,
+        ]
+    )
+    assert futures_test.command == "binance-live-futures-order-test"
+    assert futures_test.position_side == "LONG"
+    with pytest.raises(SystemExit):
+        parser.parse_args(["binance-live-status", "--confirm", "TESTNET"])
+
+
+def test_live_guard_is_live_and_allowlisted() -> None:
+    guard = cli._live_guard()
+    assert guard.mode is TradingMode.LIVE
+    assert guard.allowed_accounts == frozenset({cli.DEFAULT_LIVE_ACCOUNT})
+    assert guard.allowed_exchanges == frozenset({"BINANCE"})
+    with pytest.raises(LiveTradingNotConfirmed):
+        guard.assert_broker_operation("BINANCE", cli.DEFAULT_LIVE_ACCOUNT, BrokerOperation.QUERY)
+
+
+@pytest.mark.parametrize("command", ["binance-live-balance", "binance-live-futures-balance"])
+def test_binance_live_balance_commands_require_confirmation(command: str) -> None:
+    parser = build_parser()
+    for confirmation in ([], ["--confirm", "TESTNET"]):
+        with pytest.raises(SystemExit):
+            parser.parse_args([command, *confirmation])
+    parsed = parser.parse_args([
+        command, "--asset", "USDT", "--asset", "BTC", "--include-zero",
+        "--confirm", LIVE_CONFIRMATION_PHRASE,
+    ])
+    assert parsed.asset == ["USDT", "BTC"]
+    assert parsed.include_zero is True
+
+
+@pytest.mark.parametrize("arguments,expected_assets", [
+    ([], ["BTC"]),
+    (["--asset", "usdt"], ["USDT"]),
+    (["--include-zero"], ["USDT", "BTC"]),
+    (["--asset", "UNKNOWN"], []),
+])
+def test_binance_live_balance_queries_only_and_preserves_precision(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    arguments: list[str],
+    expected_assets: list[str],
+) -> None:
+    calls: list[str] = []
+
+    class Gateway:
+        environment = SimpleNamespace(value="LIVE")
+        base_url = "https://api.binance.com"
+        server_time_offset_ms = 42
+        last_time_sync_rtt_ms = 80
+
+        async def connect(self) -> None:
+            calls.append("connect")
+
+        async def synchronize_time(self) -> None:
+            calls.append("time")
+
+        async def account(self) -> cli.BinanceAccount:
+            calls.append("account")
+            return cli.BinanceAccount(
+                can_trade=True, can_deposit=True, can_withdraw=True, account_type="SPOT",
+                balances=(
+                    BinanceBalance("USDT", Decimal("0.00000000"), Decimal("0.00000000")),
+                    BinanceBalance("BTC", Decimal("0.00000001"), Decimal("0.00123456")),
+                ), update_time_ms=1234,
+            )
+
+        async def disconnect(self) -> None:
+            calls.append("disconnect")
+
+    monkeypatch.setattr(cli, "_live_gateway", Gateway)
+    assert cli.main([
+        "binance-live-balance", *arguments, "--confirm", LIVE_CONFIRMATION_PHRASE,
+    ]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert calls == ["connect", "time", "account", "disconnect"]
+    assert [row["asset"] for row in result["balances"]] == expected_assets
+    assert result["nonzero_asset_count"] == 1
+    assert result["asset_count"] == 2
+    assert result["missing_assets"] == (["UNKNOWN"] if arguments == ["--asset", "UNKNOWN"] else [])
+    if "BTC" in expected_assets:
+        btc = next(row for row in result["balances"] if row["asset"] == "BTC")
+        assert btc == {
+            "asset": "BTC", "free": "0.00000001", "locked": "0.00123456",
+            "total": "0.00123457",
+        }
+
+
+def test_binance_live_balance_rejects_invalid_confirmation_before_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden_gateway() -> None:
+        raise AssertionError("client must not be constructed")
+
+    monkeypatch.setattr(cli, "_live_gateway", forbidden_gateway)
+    with pytest.raises(LiveTradingNotConfirmed):
+        asyncio.run(cli._binance_live_balance([], False, "TESTNET"))
+
+
+@pytest.mark.parametrize("arguments,expected_assets", [
+    ([], ["USDT", "BTC"]),
+    (["--asset", "fdusd"], ["FDUSD"]),
+    (["--include-zero"], ["USDT", "BTC", "FDUSD"]),
+])
+def test_binance_live_futures_balance_queries_only_and_preserves_account_totals(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    arguments: list[str],
+    expected_assets: list[str],
+) -> None:
+    calls: list[str] = []
+    guard = cli._live_guard()
+
+    class Service:
+        client = SimpleNamespace(
+            base_url="https://fapi.binance.com", stage=SimpleNamespace(value="LIVE"),
+            product=SimpleNamespace(value="USDS_FUTURES"), last_time_sync_rtt_ms=80,
+        )
+
+        async def connect(self) -> int:
+            guard.assert_broker_operation(
+                "BINANCE", cli.DEFAULT_LIVE_ACCOUNT, BrokerOperation.CONNECT
+            )
+            calls.append("connect")
+            return 42
+
+        async def account(self) -> dict[str, object]:
+            calls.append("account")
+            return {
+                "totalWalletBalance": "15.12345678", "availableBalance": "10.12345678",
+                "apiKey": "must-not-appear", "positions": [{"symbol": "BTCUSDT"}],
+                "assets": [
+                    {
+                        "asset": "USDT", "walletBalance": "15.12345678",
+                        "availableBalance": "10.12345678", "signature": "hidden",
+                    },
+                    {"asset": "BTC", "walletBalance": "0", "unrealizedProfit": "-0.00000001"},
+                    {"asset": "FDUSD", "walletBalance": "0.00000000"},
+                ],
+            }
+
+        async def disconnect(self) -> None:
+            calls.append("disconnect")
+
+    monkeypatch.setattr(cli, "_live_futures_service", lambda: (guard, Service()))
+    assert cli.main([
+        "binance-live-futures-balance", *arguments, "--confirm", LIVE_CONFIRMATION_PHRASE,
+    ]) == 0
+    output = capsys.readouterr().out
+    result = json.loads(output)
+    assert calls == ["connect", "account", "disconnect"]
+    assert [row["asset"] for row in result["assets"]] == expected_assets
+    assert result["totals"] == {
+        "totalWalletBalance": "15.12345678", "availableBalance": "10.12345678",
+    }
+    assert result["nonzero_asset_count"] == 2
+    assert "canTrade" not in result
+    assert "signature" not in output and "apiKey" not in output and "positions" not in output
+
+
+@pytest.mark.parametrize("value", [None, "invalid", "NaN", "Infinity"])
+def test_binance_balance_rejects_invalid_values(value: object) -> None:
+    with pytest.raises(cli.BinanceProtocolError):
+        cli._binance_balance_decimal(value, "walletBalance")
 
 
 def test_temp_root_cli_supports_status_prepare_and_explicit_override(

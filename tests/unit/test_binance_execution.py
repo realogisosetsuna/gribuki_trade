@@ -375,6 +375,27 @@ class BinanceExecutionTests(IsolatedAsyncioTestCase):
         self.assertEqual(self.gateway.calls.count("submit:testnet-btc-1"), 1)
         self.assertIs(self.store.commands()[0].status, TradingCommandStatus.UNKNOWN)
 
+    async def test_broker_rejection_preserves_exchange_code_and_reason(self) -> None:
+        await self.service.start()
+        order = make_order("rejected-order")
+
+        async def rejected_submit(intent: OrderIntent) -> None:
+            self.gateway.calls.append(f"submit:{intent.client_order_id}")
+            self.gateway.updates[intent.client_order_id] = BinanceOrderUpdate(
+                order=intent,
+                status=OrderStatus.BROKER_REJECTED,
+                reason="Binance API error (HTTP 400, code -2010): insufficient balance",
+                error_code=-2010,
+                occurred_at=NOW + timedelta(seconds=1),
+            )
+
+        self.gateway.submit_order = rejected_submit  # type: ignore[assignment]
+        snapshot = await self.service.submit(order)
+
+        self.assertIs(snapshot.status, OrderStatus.BROKER_REJECTED)
+        self.assertEqual(snapshot.broker_error_code, -2010)
+        self.assertIn("insufficient balance", snapshot.reason or "")
+
     async def test_submit_claims_only_its_exact_command(self) -> None:
         await self.service.start()
         older = make_order("older-pending")

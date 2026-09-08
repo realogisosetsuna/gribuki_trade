@@ -415,6 +415,7 @@ class BinanceGatewayTests(IsolatedAsyncioTestCase):
 
         self.assertTrue(account.can_trade)
         self.assertEqual(gateway.server_time_offset_ms, 9_850)
+        self.assertEqual(gateway.last_time_sync_rtt_ms, 100)
         first_signed = parse_qs(urlsplit(transport.requests[0].url).query)
         retried_signed = parse_qs(urlsplit(transport.requests[2].url).query)
         self.assertEqual(first_signed["timestamp"], ["1700000000000"])
@@ -496,6 +497,24 @@ class BinanceGatewayTests(IsolatedAsyncioTestCase):
         self.assertIs(event.payload.status, OrderStatus.LOCAL_REJECTED)
         self.assertEqual(len(transport.requests), 1)
         self.assertEqual(urlsplit(transport.requests[0].url).path, "/api/v3/exchangeInfo")
+
+    async def test_api_rejection_preserves_sanitized_code_and_reason(self) -> None:
+        transport = FakeTransport(
+            response(200, exchange_info()),
+            response(400, {"code": -2010, "msg": "Account has insufficient balance."}),
+        )
+        gateway = BinanceSpotGateway(
+            credentials=BinanceCredentials("offline-api-placeholder", "offline-secret-placeholder"),
+            transport=transport,
+        )
+        await gateway.connect()
+
+        await gateway.submit_order(make_order())
+        event = await anext(gateway.events())
+
+        self.assertIs(event.payload.status, OrderStatus.BROKER_REJECTED)
+        self.assertEqual(event.payload.error_code, -2010)
+        self.assertIn("insufficient balance", event.payload.reason or "")
 
     async def test_5xx_is_unknown_and_duplicate_is_never_resent(self) -> None:
         transport = FakeTransport(response(200, exchange_info()), response(503, {"msg": "busy"}))

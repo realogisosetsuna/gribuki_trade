@@ -2,6 +2,9 @@
 
 ## Read this first
 
+在本仓库的操作说明、验证命令和排障流程中，默认使用 Git Bash；除非用户
+明确要求 PowerShell，否则不要把 PowerShell 作为主要命令格式。
+
 For every task, read in this order: `AGENTS.md` → `ARCHITECTURE.md` → the
 relevant file in `docs/architecture/` → the task's module and its tests. Do not
 read the whole repository unless the task crosses those boundaries.

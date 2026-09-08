@@ -157,6 +157,7 @@ class BinanceSpotGateway:
         self._timeout_seconds = timeout_seconds
         self._clock_ms = clock_ms if clock_ms is not None else lambda: time.time_ns() // 1_000_000
         self._server_time_offset_ms = 0
+        self._last_time_sync_rtt_ms: int | None = None
         self._connected = False
         self._events: asyncio.Queue[BrokerEvent] = asyncio.Queue()
         self._orders: dict[str, _TrackedOrder] = {}
@@ -233,6 +234,12 @@ class BinanceSpotGateway:
 
         return self._server_time_offset_ms
 
+    @property
+    def last_time_sync_rtt_ms(self) -> int | None:
+        """最近一次服务器时钟采样的往返延迟，单位为毫秒。"""
+
+        return self._last_time_sync_rtt_ms
+
     async def synchronize_time(self) -> int:
         """使用本地请求中点测量 Binance 时钟偏移。
 
@@ -243,6 +250,7 @@ class BinanceSpotGateway:
         started_ms = self._clock_ms()
         exchange_ms = await self.server_time()
         finished_ms = self._clock_ms()
+        self._last_time_sync_rtt_ms = max(0, finished_ms - started_ms)
         local_midpoint_ms = started_ms + (finished_ms - started_ms) // 2
         self._server_time_offset_ms = exchange_ms - local_midpoint_ms
         return self._server_time_offset_ms
@@ -481,6 +489,7 @@ class BinanceSpotGateway:
                         order=order,
                         status=OrderStatus.BROKER_REJECTED,
                         reason=str(exc),
+                        error_code=exc.code,
                     ),
                 )
                 return
@@ -1357,6 +1366,7 @@ class BinanceSpotGateway:
             exchange_order_id=update.exchange_order_id,
             executed_quantity=update.executed_quantity,
             reason=update.reason,
+            error_code=update.error_code,
             occurred_at=occurred_at,
         )
         tracked = self._orders.get(update.order.client_order_id)

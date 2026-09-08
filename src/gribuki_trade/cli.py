@@ -16,7 +16,7 @@ from datetime import UTC, date, datetime, timedelta
 from datetime import time as datetime_time
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal, InvalidOperation
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -30,8 +30,10 @@ from gribuki_trade.adapters.binance import (
     BINANCE_USDS_FUTURES_DEMO_API_KEY_SECRET,
     BINANCE_USDS_FUTURES_DEMO_SECRET_KEY_SECRET,
     BinanceAccount,
+    BinanceAPIError,
     BinanceEnvironment,
     BinanceExecutionReport,
+    BinanceProtocolError,
     BinanceSpotGateway,
     BinanceSpotUserDataStream,
     BinanceTransportError,
@@ -60,6 +62,12 @@ from gribuki_trade.domain.orders import OrderIntent, OrderStatus, Side
 from gribuki_trade.features import CloseInstrumentType
 from gribuki_trade.napcat_setup import NAPCAT_WEBUI_TOKEN_SECRET
 from gribuki_trade.ports.news import NewsSource
+from gribuki_trade.runtime import (
+    LIVE_CONFIRMATION_PHRASE,
+    BrokerOperation,
+    LiveTradingGuard,
+    TradingMode,
+)
 from gribuki_trade.runtime.integration_settings import (
     IntegrationSettingsError,
     load_integration_settings,
@@ -73,6 +81,7 @@ from gribuki_trade.security.post_close_urls import (
     validate_post_close_searxng_url,
 )
 from gribuki_trade.services.binance_execution import (
+    BinanceSpotExecutionService,
     BinanceSpotTestnetExecutionService,
     BinanceStartupReconciliation,
 )
@@ -100,6 +109,7 @@ if TYPE_CHECKING:
     from gribuki_trade.strategy_lab.discovery import FactorCandidateInventory
 
 DEFAULT_TESTNET_ACCOUNT = "binance-testnet"
+DEFAULT_LIVE_ACCOUNT = "binance-live"
 DEFAULT_ASHARE_WATCHLIST = "config/ashare_research_watchlist.toml"
 TAVILY_API_KEY_SECRET = "search.tavily.api_key"
 SEARXNG_BEARER_TOKEN_SECRET = "search.searxng.bearer_token"
@@ -173,6 +183,123 @@ def build_parser() -> argparse.ArgumentParser:
         help="perform authenticated read-only Spot Testnet checks",
     )
     status.add_argument("--symbol", default="BTCUSDT")
+
+    live_status = commands.add_parser(
+        "binance-live-status",
+        help="perform guarded authenticated read-only Spot LIVE checks",
+    )
+    live_status.add_argument("--symbol", default="BTCUSDT")
+    live_status.add_argument(
+        "--confirm",
+        required=True,
+        choices=(LIVE_CONFIRMATION_PHRASE,),
+        help="must be exactly ENABLE LIVE TRADING; no order is submitted",
+    )
+
+    for balance_command, description in (
+        ("binance-live-balance", "查询现货 LIVE 账户的可用和冻结余额"),
+        ("binance-live-futures-balance", "查询 USD-M Futures LIVE 账户余额和保证金"),
+    ):
+        live_balance = commands.add_parser(balance_command, help=description)
+        live_balance.add_argument(
+            "--asset", action="append", default=[], help="仅显示指定资产，可重复；包含零余额"
+        )
+        live_balance.add_argument(
+            "--include-zero", action="store_true", help="同时显示零余额资产"
+        )
+        live_balance.add_argument(
+            "--confirm", required=True, choices=(LIVE_CONFIRMATION_PHRASE,),
+            help="进程内 LIVE 确认；此命令只查询余额，不提交订单",
+        )
+
+    live_order_test = commands.add_parser(
+        "binance-live-order-test",
+        help="validate a Spot LIVE order through /order/test without creating an order",
+    )
+    _add_order_arguments(live_order_test)
+    live_order_test.add_argument(
+        "--confirm",
+        required=True,
+        choices=(LIVE_CONFIRMATION_PHRASE,),
+        help="must be exactly ENABLE LIVE TRADING; /order/test never enters the matching engine",
+    )
+
+    live_order = commands.add_parser(
+        "binance-live-order",
+        help="submit or cancel one guarded Spot LIVE order (explicit confirmation required)",
+    )
+    live_order.add_argument("action", choices=("submit", "cancel"))
+    live_order.add_argument("--symbol", default="BTCUSDT")
+    live_order.add_argument("--notional", type=_positive_decimal, default=Decimal("20"))
+    live_order.add_argument("--client-order-id")
+    live_order.add_argument(
+        "--database",
+        default="runtime/binance/live-oms.sqlite3",
+        help="durable SQLite OMS database",
+    )
+    live_order.add_argument(
+        "--confirm",
+        required=True,
+        choices=(LIVE_CONFIRMATION_PHRASE,),
+        help="must be exactly ENABLE LIVE TRADING",
+    )
+
+    futures_live_status = commands.add_parser(
+        "binance-live-futures-status",
+        help="perform guarded authenticated read-only USD-M Futures LIVE checks",
+    )
+    futures_live_status.add_argument("--symbol", default="BTCUSDT")
+    futures_live_status.add_argument(
+        "--confirm",
+        required=True,
+        choices=(LIVE_CONFIRMATION_PHRASE,),
+        help="must be exactly ENABLE LIVE TRADING; no order is submitted",
+    )
+
+    futures_live_test = commands.add_parser(
+        "binance-live-futures-order-test",
+        help="validate a USD-M Futures LIVE order through /order/test",
+    )
+    futures_live_test.add_argument("--symbol", default="BTCUSDT")
+    futures_live_test.add_argument("--side", choices=("BUY", "SELL"), default="BUY")
+    futures_live_test.add_argument(
+        "--position-side",
+        choices=("BOTH", "LONG", "SHORT"),
+        help="持仓方向；单向持仓使用 BOTH，双向持仓必须明确 LONG 或 SHORT",
+    )
+    futures_live_test.add_argument("--quantity", type=_positive_decimal, default=Decimal("0.001"))
+    futures_live_test.add_argument("--order-type", choices=("MARKET", "LIMIT"), default="MARKET")
+    futures_live_test.add_argument("--price", type=_positive_decimal)
+    futures_live_test.add_argument(
+        "--confirm",
+        required=True,
+        choices=(LIVE_CONFIRMATION_PHRASE,),
+        help="must be exactly ENABLE LIVE TRADING; no order is submitted",
+    )
+
+    futures_live_order = commands.add_parser(
+        "binance-live-futures-order",
+        help="submit or cancel one guarded USD-M Futures LIVE order",
+    )
+    futures_live_order.add_argument("action", choices=("submit", "cancel"))
+    futures_live_order.add_argument("--symbol", default="BTCUSDT")
+    futures_live_order.add_argument("--side", choices=("BUY", "SELL"), default="BUY")
+    futures_live_order.add_argument(
+        "--position-side",
+        choices=("BOTH", "LONG", "SHORT"),
+        help="持仓方向；单向持仓使用 BOTH，双向持仓必须明确 LONG 或 SHORT",
+    )
+    futures_live_order.add_argument("--quantity", type=_positive_decimal, default=Decimal("0.001"))
+    futures_live_order.add_argument("--order-type", choices=("MARKET", "LIMIT"), default="MARKET")
+    futures_live_order.add_argument("--price", type=_positive_decimal)
+    futures_live_order.add_argument("--order-id")
+    futures_live_order.add_argument("--client-order-id")
+    futures_live_order.add_argument(
+        "--confirm",
+        required=True,
+        choices=(LIVE_CONFIRMATION_PHRASE,),
+        help="must be exactly ENABLE LIVE TRADING",
+    )
 
     order_test = commands.add_parser(
         "binance-testnet-order-test",
@@ -1516,6 +1643,7 @@ def _apply_integration_runtime_defaults(args: argparse.Namespace) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    _configure_terminal_encoding()
     parser = build_parser()
     args = parser.parse_args(argv)
     command = args.command or "gui"
@@ -1553,6 +1681,56 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = _temp_root(args.action, args.temp_dir)
     elif command == "binance-testnet-status":
         result = asyncio.run(_binance_testnet_status(args.symbol))
+    elif command == "binance-live-status":
+        result = asyncio.run(_binance_live_status(args.symbol, args.confirm))
+    elif command == "binance-live-balance":
+        result = asyncio.run(_binance_live_balance(args.asset, args.include_zero, args.confirm))
+    elif command == "binance-live-futures-balance":
+        result = asyncio.run(
+            _binance_live_futures_balance(args.asset, args.include_zero, args.confirm)
+        )
+    elif command == "binance-live-order-test":
+        result = asyncio.run(_binance_live_order_test(args.symbol, args.notional, args.confirm))
+    elif command == "binance-live-order":
+        result = asyncio.run(
+            _binance_live_order(
+                args.action,
+                args.symbol,
+                args.notional,
+                args.client_order_id,
+                args.database,
+                args.confirm,
+            )
+        )
+    elif command == "binance-live-futures-status":
+        result = asyncio.run(_binance_live_futures_status(args.symbol, args.confirm))
+    elif command == "binance-live-futures-order-test":
+        result = asyncio.run(
+            _binance_live_futures_order_test(
+                args.symbol,
+                args.side,
+                args.position_side,
+                args.quantity,
+                args.order_type,
+                args.price,
+                args.confirm,
+            )
+        )
+    elif command == "binance-live-futures-order":
+        result = asyncio.run(
+            _binance_live_futures_order(
+                args.action,
+                args.symbol,
+                args.side,
+                args.position_side,
+                args.quantity,
+                args.order_type,
+                args.price,
+                args.order_id,
+                args.client_order_id,
+                args.confirm,
+            )
+        )
     elif command == "binance-testnet-order-test":
         result = asyncio.run(_binance_testnet_order_test(args.symbol, args.notional))
     elif command == "binance-testnet-cycle":
@@ -1986,6 +2164,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     ):
         return 1
     return 0
+
+
+def _configure_terminal_encoding() -> None:
+    """在 Windows 旧版控制台代码页下保持中文命令行输出可读。"""
+
+    if os.name != "nt":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        if not hasattr(stream, "reconfigure"):
+            continue
+        stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 def _set_secret(name: str) -> None:
@@ -9663,6 +9852,505 @@ def _testnet_gateway() -> BinanceSpotGateway:
         environment=BinanceEnvironment.TESTNET,
         credentials=credentials,
     )
+
+
+def _live_guard() -> LiveTradingGuard:
+    """创建 Binance 账户别名对应的进程内 LIVE 守卫。"""
+
+    return LiveTradingGuard(
+        TradingMode.LIVE,
+        allowed_accounts=(DEFAULT_LIVE_ACCOUNT,),
+        allowed_exchanges=("BINANCE",),
+    )
+
+
+def _live_gateway() -> BinanceSpotGateway:
+    """显式加载 LIVE 凭据，绝不回退到测试网凭据名。"""
+
+    credentials = load_binance_credentials(
+        KeyringSecretProvider(),
+        BinanceEnvironment.LIVE,
+    )
+    return BinanceSpotGateway(
+        environment=BinanceEnvironment.LIVE,
+        credentials=credentials,
+        allow_live=True,
+    )
+
+
+async def _binance_live_status(symbol: str, confirmation: str) -> dict[str, object]:
+    """解锁进程内守卫后执行签名 LIVE 检查。"""
+
+    guard = _live_guard()
+    guard.confirm_live_trading(confirmation)
+    guard.assert_broker_operation("BINANCE", DEFAULT_LIVE_ACCOUNT, BrokerOperation.CONNECT)
+    gateway = _live_gateway()
+    await gateway.connect()
+    try:
+        guard.assert_broker_operation("BINANCE", DEFAULT_LIVE_ACCOUNT, BrokerOperation.QUERY)
+        await gateway.ping()
+        await gateway.synchronize_time()
+        account = await gateway.account()
+        ticker = await gateway.ticker_price(symbol)
+        rules = await gateway.symbol_rules(symbol)
+        nonzero_assets = sum(
+            balance.free != 0 or balance.locked != 0 for balance in account.balances
+        )
+        return {
+            "account_type": account.account_type,
+            "can_deposit": account.can_deposit,
+            "can_trade": account.can_trade,
+            "can_withdraw": account.can_withdraw,
+            "clock_offset_ms": gateway.server_time_offset_ms,
+            "time_sync_rtt_ms": gateway.last_time_sync_rtt_ms,
+            "endpoint": gateway.base_url,
+            "environment": gateway.environment.value,
+            "nonzero_asset_count": nonzero_assets,
+            "permissions": list(account.permissions),
+            "ping": "ok",
+            "symbol": rules.symbol,
+            "ticker_price": format(ticker.price, "f"),
+        }
+    finally:
+        await gateway.disconnect()
+
+
+async def _binance_live_balance(
+    assets: Sequence[str], include_zero: bool, confirmation: str,
+) -> dict[str, object]:
+    """只读查询现货余额，使用十进制字符串保留币种精度。"""
+
+    selected = {asset.strip().upper() for asset in assets}
+    guard = _live_guard()
+    guard.confirm_live_trading(confirmation)
+    guard.assert_broker_operation("BINANCE", DEFAULT_LIVE_ACCOUNT, BrokerOperation.CONNECT)
+    gateway = _live_gateway()
+    try:
+        await gateway.connect()
+        guard.assert_broker_operation("BINANCE", DEFAULT_LIVE_ACCOUNT, BrokerOperation.QUERY)
+        await gateway.synchronize_time()
+        account = await gateway.account()
+        rows = [
+            {
+                "asset": balance.asset,
+                "free": format(balance.free, "f"),
+                "locked": format(balance.locked, "f"),
+                "total": format(balance.free + balance.locked, "f"),
+            }
+            for balance in account.balances
+            if (not selected or balance.asset.upper() in selected)
+            and (selected or include_zero or balance.free != 0 or balance.locked != 0)
+        ]
+        returned_assets = {balance.asset.upper() for balance in account.balances}
+        return {
+            "account_type": account.account_type,
+            "environment": gateway.environment.value,
+            "endpoint": gateway.base_url,
+            "observed_at": datetime.now(UTC).isoformat(),
+            "update_time_ms": account.update_time_ms,
+            "clock_offset_ms": gateway.server_time_offset_ms,
+            "time_sync_rtt_ms": gateway.last_time_sync_rtt_ms,
+            "asset_count": len(account.balances),
+            "nonzero_asset_count": sum(
+                balance.free != 0 or balance.locked != 0 for balance in account.balances
+            ),
+            "balances": rows,
+            "missing_assets": sorted(selected - returned_assets),
+        }
+    finally:
+        await gateway.disconnect()
+
+
+async def _binance_live_order_test(
+    symbol: str,
+    target_notional: Decimal,
+    confirmation: str,
+) -> dict[str, object]:
+    """通过币安不进入撮合的接口校验 LIVE 订单。"""
+
+    guard = _live_guard()
+    guard.confirm_live_trading(confirmation)
+    guard.assert_broker_operation("BINANCE", DEFAULT_LIVE_ACCOUNT, BrokerOperation.CONNECT)
+    gateway = _live_gateway()
+    await gateway.connect()
+    try:
+        guard.assert_broker_operation("BINANCE", DEFAULT_LIVE_ACCOUNT, BrokerOperation.QUERY)
+        await gateway.synchronize_time()
+        order = await _build_live_order(gateway, symbol, target_notional)
+        await gateway.validate_order_on_exchange(order)
+        return {
+            "endpoint": gateway.base_url,
+            "entered_matching_engine": False,
+            "environment": gateway.environment.value,
+            "order_test": "accepted",
+            "symbol": order.symbol,
+        }
+    finally:
+        await gateway.disconnect()
+
+
+async def _build_live_order(
+    gateway: BinanceSpotGateway,
+    symbol: str,
+    target_notional: Decimal,
+) -> OrderIntent:
+    rules = await gateway.symbol_rules(symbol)
+    raw_price = (await gateway.ticker_price(symbol)).price
+    price = (raw_price / rules.tick_size).to_integral_value(rounding=ROUND_FLOOR) * rules.tick_size
+    notional = max(target_notional, (rules.min_notional or Decimal("0")) * Decimal("2"))
+    quantity = (notional / price / rules.step_size).to_integral_value(rounding=ROUND_CEILING)
+    quantity *= rules.step_size
+    return OrderIntent(
+        client_order_id=f"gri-live-{time.time_ns():x}-{uuid4().hex[:8]}",
+        account_id=DEFAULT_LIVE_ACCOUNT,
+        strategy_id="live-cli",
+        symbol=rules.symbol,
+        side=Side.BUY,
+        quantity=quantity,
+        limit_price=price,
+        created_at=datetime.now(UTC),
+    )
+
+
+async def _binance_live_order(
+    action: str,
+    symbol: str,
+    target_notional: Decimal,
+    client_order_id: str | None,
+    database: str,
+    confirmation: str,
+) -> dict[str, object]:
+    """显式解锁后通过持久化 LIVE 服务提交或撤销订单。"""
+
+    guard = _live_guard()
+    guard.confirm_live_trading(confirmation)
+    gateway = _live_gateway()
+    database_path = Path(database).expanduser().resolve()
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    store = SQLiteOrderManagementStore(database_path)
+    service = BinanceSpotExecutionService(
+        gateway,
+        store,
+        account_id=DEFAULT_LIVE_ACCOUNT,
+        symbols=(symbol.upper(),),
+        guard=guard,
+    )
+    try:
+        startup = await service.start()
+        if action == "submit":
+            order = await _build_live_order(gateway, symbol, target_notional)
+            guard.assert_broker_operation(
+                "BINANCE", DEFAULT_LIVE_ACCOUNT, BrokerOperation.SUBMIT_ORDER
+            )
+            snapshot = await service.submit(order)
+        else:
+            if not client_order_id:
+                raise ValueError("--client-order-id is required for cancel")
+            guard.assert_broker_operation(
+                "BINANCE", DEFAULT_LIVE_ACCOUNT, BrokerOperation.CANCEL_ORDER
+            )
+            snapshot = await service.cancel(client_order_id)
+        return {
+            "action": action,
+            "client_order_id": snapshot.order.client_order_id,
+            "database": str(database_path),
+            "environment": gateway.environment.value,
+            "status": snapshot.status.value,
+            "reason": snapshot.reason,
+            "broker_error_code": snapshot.broker_error_code,
+            "startup_reconciliation": startup.reconciled_orders,
+            "symbol": snapshot.order.symbol,
+        }
+    finally:
+        if service.started:
+            await service.stop()
+        store.close()
+
+
+def _live_futures_service() -> tuple[LiveTradingGuard, Any]:
+    """构造受 LIVE 守卫保护的 USD-M Futures 客户端和服务。"""
+
+    from gribuki_trade.adapters.binance import (
+        BinanceFuturesRestClient,
+        BinanceProduct,
+        BinanceStage,
+    )
+    from gribuki_trade.services import BinanceFuturesExecutionService
+
+    credentials = load_binance_credentials(
+        KeyringSecretProvider(),
+        BinanceEnvironment.LIVE,
+    )
+    client = BinanceFuturesRestClient(
+        product=BinanceProduct.USDS_FUTURES,
+        stage=BinanceStage.LIVE,
+        credentials=credentials,
+        allow_live=True,
+    )
+    guard = _live_guard()
+    service = BinanceFuturesExecutionService(
+        client,
+        account_id=DEFAULT_LIVE_ACCOUNT,
+        guard=guard,
+    )
+    return guard, service
+
+
+async def _binance_live_futures_status(symbol: str, confirmation: str) -> dict[str, object]:
+    """执行 USD-M Futures LIVE 的签名只读检查。"""
+
+    guard, service = _live_futures_service()
+    guard.confirm_live_trading(confirmation)
+    clock_offset_ms = await service.connect()
+    try:
+        account = await service.account()
+        positions = await service.position_risk(symbol)
+        hedge_mode = await service.position_side_mode()
+        ticker = await service.ticker_price(symbol)
+        exchange_info = await service.exchange_info()
+        assets = account.get("assets")
+        declared_positions = account.get("positions")
+        symbols = exchange_info.get("symbols")
+        return {
+            "account": {
+                "asset_count": len(assets) if isinstance(assets, list) else None,
+                "can_trade": account.get("canTrade"),
+                "declared_position_count": (
+                    len(declared_positions) if isinstance(declared_positions, list) else None
+                ),
+            },
+            "base_url": service.client.base_url,
+            "clock_offset_ms": clock_offset_ms,
+            "time_sync_rtt_ms": service.client.last_time_sync_rtt_ms,
+            "environment": service.client.stage.value,
+            "exchange_info_symbol_count": len(symbols) if isinstance(symbols, list) else None,
+            "ping": "ok",
+            "position_risk_count": len(positions),
+            "position_mode": "HEDGE" if hedge_mode else "ONE_WAY",
+            "dual_side_position": hedge_mode,
+            "product": service.client.product.value,
+            "symbol": ticker.symbol,
+            "ticker_price": format(ticker.price, "f"),
+        }
+    finally:
+        await service.disconnect()
+
+
+async def _binance_live_futures_balance(
+    assets: Sequence[str], include_zero: bool, confirmation: str,
+) -> dict[str, object]:
+    """只读展示合约账户汇总和分币种余额，不对不同币种求和。"""
+
+    selected = {asset.strip().upper() for asset in assets}
+    guard, service = _live_futures_service()
+    guard.confirm_live_trading(confirmation)
+    try:
+        clock_offset_ms = await service.connect()
+        account = await service.account()
+        asset_values = account.get("assets")
+        if not isinstance(asset_values, list):
+            raise BinanceProtocolError("Binance Futures account assets are malformed")
+        amount_fields = (
+            "walletBalance", "unrealizedProfit", "marginBalance", "maintMargin",
+            "initialMargin", "positionInitialMargin", "openOrderInitialMargin",
+            "crossWalletBalance", "crossUnPnl", "availableBalance", "maxWithdrawAmount",
+        )
+        rows: list[dict[str, object]] = []
+        returned_assets: set[str] = set()
+        nonzero_assets = 0
+        wallet_nonzero_assets = 0
+        for item in asset_values:
+            if not isinstance(item, Mapping) or not isinstance(item.get("asset"), str):
+                raise BinanceProtocolError("Binance Futures account asset is malformed")
+            asset = item["asset"]
+            returned_assets.add(asset.upper())
+            row: dict[str, object] = {"asset": asset}
+            nonzero = False
+            wallet_value: Decimal | None = None
+            for field in amount_fields:
+                if field not in item:
+                    continue
+                value = _binance_balance_decimal(item[field], field)
+                row[field] = format(value, "f")
+                nonzero = nonzero or value != 0
+                if field == "walletBalance":
+                    wallet_value = value
+            if "updateTime" in item:
+                row["updateTime"] = item["updateTime"]
+            nonzero_assets += int(nonzero)
+            wallet_nonzero_assets += int(wallet_value is not None and wallet_value != 0)
+            if (not selected or asset.upper() in selected) and (
+                selected or include_zero or nonzero
+            ):
+                rows.append(row)
+        total_fields = (
+            "totalInitialMargin", "totalMaintMargin", "totalWalletBalance",
+            "totalUnrealizedProfit", "totalMarginBalance", "totalPositionInitialMargin",
+            "totalOpenOrderInitialMargin", "totalCrossWalletBalance", "totalCrossUnPnl",
+            "availableBalance", "maxWithdrawAmount",
+        )
+        totals = {
+            field: format(_binance_balance_decimal(account[field], field), "f")
+            for field in total_fields if field in account
+        }
+        return {
+            "base_url": service.client.base_url,
+            "environment": service.client.stage.value,
+            "product": service.client.product.value,
+            "observed_at": datetime.now(UTC).isoformat(),
+            "clock_offset_ms": clock_offset_ms,
+            "time_sync_rtt_ms": service.client.last_time_sync_rtt_ms,
+            "asset_count": len(asset_values),
+            "nonzero_asset_count": nonzero_assets,
+            "wallet_nonzero_asset_count": wallet_nonzero_assets,
+            "nonzero_asset_definition": "any reported margin or PnL field is non-zero",
+            "totals": totals,
+            "totals_scope": "account",
+            "assets": rows,
+            "missing_assets": sorted(selected - returned_assets),
+        }
+    finally:
+        await service.disconnect()
+
+
+def _binance_balance_decimal(value: object, field: str) -> Decimal:
+    """拒绝无效余额，避免把缺失、非有限数或协议变化当作零。"""
+
+    try:
+        number = Decimal(str(value))
+    except InvalidOperation:
+        raise BinanceProtocolError(f"Binance Futures balance field {field} is malformed") from None
+    if not number.is_finite():
+        raise BinanceProtocolError(f"Binance Futures balance field {field} is not finite")
+    return number
+
+
+async def _binance_live_futures_order_test(
+    symbol: str,
+    side: str,
+    position_side: str | None,
+    quantity: Decimal,
+    order_type: str,
+    price: Decimal | None,
+    confirmation: str,
+) -> dict[str, object]:
+    """调用 USD-M Futures order/test；该接口不会创建真实订单。"""
+
+    if order_type == "LIMIT" and price is None:
+        raise ValueError("--price is required for LIMIT order tests")
+    guard, service = _live_futures_service()
+    guard.confirm_live_trading(confirmation)
+    await service.connect()
+    try:
+        result = await service.validate_order(
+            symbol=symbol,
+            side=side,
+            order_type=order_type,
+            quantity=quantity,
+            price=price,
+            time_in_force="GTC" if order_type == "LIMIT" else None,
+            position_side=position_side,
+        )
+        return {
+            "base_url": service.client.base_url,
+            "environment": service.client.stage.value,
+            "order_test": "accepted",
+            "creates_order": False,
+            "response_fields": sorted(result),
+            "symbol": symbol.upper(),
+        }
+    except BinanceAPIError as exc:
+        return {
+            "base_url": service.client.base_url,
+            "environment": service.client.stage.value,
+            "order_test": "rejected",
+            "creates_order": False,
+            "error_code": exc.code,
+            "reason": str(exc),
+            "symbol": symbol.upper(),
+        }
+    except ValueError as exc:
+        return {
+            "base_url": service.client.base_url,
+            "environment": service.client.stage.value,
+            "order_test": "rejected",
+            "creates_order": False,
+            "reason": str(exc),
+            "symbol": symbol.upper(),
+        }
+    finally:
+        await service.disconnect()
+
+
+async def _binance_live_futures_order(
+    action: str,
+    symbol: str,
+    side: str,
+    position_side: str | None,
+    quantity: Decimal,
+    order_type: str,
+    price: Decimal | None,
+    order_id: str | None,
+    client_order_id: str | None,
+    confirmation: str,
+) -> dict[str, object]:
+    """提交或撤销一笔 USD-M Futures LIVE 订单。"""
+
+    if action == "submit" and order_type == "LIMIT" and price is None:
+        raise ValueError("--price is required for LIMIT submissions")
+    if action == "cancel" and (order_id is None) == (client_order_id is None):
+        raise ValueError("cancel requires exactly one of --order-id or --client-order-id")
+    guard, service = _live_futures_service()
+    guard.confirm_live_trading(confirmation)
+    await service.connect()
+    try:
+        if action == "submit":
+            result = await service.submit_order(
+                symbol=symbol,
+                side=side,
+                type=order_type,
+                quantity=quantity,
+                price=price,
+                time_in_force="GTC" if order_type == "LIMIT" else None,
+                position_side=position_side,
+            )
+        else:
+            result = await service.cancel_order(
+                symbol,
+                order_id=order_id,
+                client_order_id=client_order_id,
+            )
+        return {
+            "action": action,
+            "base_url": service.client.base_url,
+            "environment": service.client.stage.value,
+            "product": service.client.product.value,
+            "symbol": symbol.upper(),
+            "result": result,
+        }
+    except BinanceAPIError as exc:
+        return {
+            "action": action,
+            "base_url": service.client.base_url,
+            "environment": service.client.stage.value,
+            "product": service.client.product.value,
+            "symbol": symbol.upper(),
+            "status": "BROKER_REJECTED",
+            "error_code": exc.code,
+            "reason": str(exc),
+        }
+    except ValueError as exc:
+        return {
+            "action": action,
+            "base_url": service.client.base_url,
+            "environment": service.client.stage.value,
+            "product": service.client.product.value,
+            "symbol": symbol.upper(),
+            "status": "LOCAL_REJECTED",
+            "reason": str(exc),
+        }
+    finally:
+        await service.disconnect()
 
 
 async def _binance_history_sync(

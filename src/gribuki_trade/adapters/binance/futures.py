@@ -39,6 +39,9 @@ from .http import (
 from .models import BinanceCredentials
 
 _SYMBOL = re.compile(r"^[A-Z0-9_]{1,30}$")
+_SENSITIVE_ASSIGNMENT = re.compile(
+    r"(?i)\b(api[-_ ]?key|secret(?:[-_ ]?key)?|signature)\b\s*[:=]\s*[^\s,;&]+"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +98,7 @@ class BinanceFuturesRestClient:
         self._timeout_seconds = timeout_seconds
         self._clock_ms = clock_ms if clock_ms is not None else lambda: time.time_ns() // 1_000_000
         self._server_time_offset_ms = 0
+        self._last_time_sync_rtt_ms: int | None = None
 
     def __repr__(self) -> str:
         return (
@@ -124,6 +128,12 @@ class BinanceFuturesRestClient:
         return self._server_time_offset_ms
 
     @property
+    def last_time_sync_rtt_ms(self) -> int | None:
+        """最近一次服务器时钟采样的往返延迟，单位为毫秒。"""
+
+        return self._last_time_sync_rtt_ms
+
+    @property
     def _api_prefix(self) -> str:
         return self._profile.api_prefix
 
@@ -146,6 +156,7 @@ class BinanceFuturesRestClient:
         started_ms = self._clock_ms()
         exchange_ms = await self.server_time()
         finished_ms = self._clock_ms()
+        self._last_time_sync_rtt_ms = max(0, finished_ms - started_ms)
         midpoint_ms = started_ms + (finished_ms - started_ms) // 2
         self._server_time_offset_ms = exchange_ms - midpoint_ms
         return self._server_time_offset_ms
@@ -232,6 +243,149 @@ class BinanceFuturesRestClient:
             raise BinanceProtocolError("Binance Futures position response must be a list")
         return tuple(dict(item) for item in payload)
 
+    async def position_side_mode(self) -> bool:
+        """返回账户是否启用双向持仓模式。
+
+        ``True`` 表示 Hedge Mode，``False`` 表示 One-way Mode。该查询使用
+        账户签名接口；响应缺失或类型不符合官方布尔字段时直接失败，避免在
+        下单前猜测账户模式。
+        """
+
+        payload = await self._request_json(
+            "GET", self._v1("positionSide/dual"), signed=True
+        )
+        mapping = self._require_mapping(payload, "position side mode")
+        value = mapping.get("dualSidePosition")
+        if not isinstance(value, bool):
+            raise BinanceProtocolError(
+                "Binance Futures position side mode response is malformed"
+            )
+        return value
+
+    async def position_mode(self) -> bool:
+        """``position_side_mode`` 的简短兼容别名。"""
+
+        return await self.position_side_mode()
+
+    async def open_orders(self, symbol: str | None = None) -> tuple[dict[str, Any], ...]:
+        """返回当前未完成的 USD-M/COIN-M 合约订单。"""
+
+        path = self._order_path("openOrders")
+        params: tuple[tuple[str, object], ...] = ()
+        if symbol is not None:
+            params = (("symbol", self._normalize_symbol(symbol)),)
+        payload = await self._request_json("GET", path, params=params, signed=True)
+        if not isinstance(payload, list) or any(not isinstance(item, Mapping) for item in payload):
+            raise BinanceProtocolError("Binance Futures open orders response must be a list")
+        return tuple(dict(item) for item in payload)
+
+    async def get_order(
+        self,
+        symbol: str,
+        *,
+        order_id: int | str | None = None,
+        client_order_id: str | None = None,
+    ) -> dict[str, Any]:
+        """按交易所订单号或客户端订单号查询单笔订单。"""
+
+        if (order_id is None) == (client_order_id is None):
+            raise ValueError("provide exactly one of order_id or client_order_id")
+        params: list[tuple[str, object]] = [("symbol", self._normalize_symbol(symbol))]
+        if order_id is not None:
+            params.append(("orderId", order_id))
+        else:
+            params.append(("origClientOrderId", client_order_id))
+        payload = await self._request_json(
+            "GET", self._order_path("order"), params=params, signed=True
+        )
+        return dict(self._require_mapping(payload, "order"))
+
+    async def all_orders(
+        self, symbol: str, *, limit: int = 500, order_id: int | str | None = None
+    ) -> tuple[dict[str, Any], ...]:
+        """返回指定合约的历史订单，用于启动对账。"""
+
+        if not 1 <= limit <= 1_000:
+            raise ValueError("limit must be between 1 and 1000")
+        params: list[tuple[str, object]] = [
+            ("symbol", self._normalize_symbol(symbol)),
+            ("limit", limit),
+        ]
+        if order_id is not None:
+            params.append(("orderId", order_id))
+        payload = await self._request_json(
+            "GET", self._order_path("allOrders"), params=params, signed=True
+        )
+        if not isinstance(payload, list) or any(not isinstance(item, Mapping) for item in payload):
+            raise BinanceProtocolError("Binance Futures all orders response must be a list")
+        return tuple(dict(item) for item in payload)
+
+    async def account_trades(
+        self, symbol: str, *, limit: int = 500, from_id: int | str | None = None
+    ) -> tuple[dict[str, Any], ...]:
+        """返回账户成交，用于填充和校验本地成交记录。"""
+
+        if not 1 <= limit <= 1_000:
+            raise ValueError("limit must be between 1 and 1000")
+        params: list[tuple[str, object]] = [
+            ("symbol", self._normalize_symbol(symbol)),
+            ("limit", limit),
+        ]
+        if from_id is not None:
+            params.append(("fromId", from_id))
+        payload = await self._request_json(
+            "GET", self._account_trades_path(), params=params, signed=True
+        )
+        if not isinstance(payload, list) or any(not isinstance(item, Mapping) for item in payload):
+            raise BinanceProtocolError("Binance Futures account trades response must be a list")
+        return tuple(dict(item) for item in payload)
+
+    async def submit_order(self, **kwargs: object) -> dict[str, Any]:
+        """提交真实订单；调用方必须先通过运行时交易守卫。"""
+
+        values = dict(kwargs)
+        values["position_side"] = await self._checked_position_side(
+            values.get("position_side"),
+            values.get("reduce_only"),
+        )
+        params = self._order_params(values)
+        payload = await self._request_json(
+            "POST", self._order_path("order"), params=params, signed=True
+        )
+        return dict(self._require_mapping(payload, "order"))
+
+    async def cancel_order(
+        self,
+        symbol: str,
+        *,
+        order_id: int | str | None = None,
+        client_order_id: str | None = None,
+    ) -> dict[str, Any]:
+        """撤销一笔订单；必须提供交易所订单号或客户端订单号之一。"""
+
+        if (order_id is None) == (client_order_id is None):
+            raise ValueError("provide exactly one of order_id or client_order_id")
+        params: list[tuple[str, object]] = [("symbol", self._normalize_symbol(symbol))]
+        if order_id is not None:
+            params.append(("orderId", order_id))
+        else:
+            params.append(("origClientOrderId", client_order_id))
+        payload = await self._request_json(
+            "DELETE", self._order_path("order"), params=params, signed=True
+        )
+        return dict(self._require_mapping(payload, "cancel order"))
+
+    async def cancel_all_orders(self, symbol: str) -> dict[str, Any]:
+        """撤销指定合约的全部未完成订单。"""
+
+        payload = await self._request_json(
+            "DELETE",
+            self._order_path("allOpenOrders"),
+            params=(("symbol", self._normalize_symbol(symbol)),),
+            signed=True,
+        )
+        return dict(self._require_mapping(payload, "cancel all orders"))
+
     async def validate_order(
         self,
         *,
@@ -249,6 +403,10 @@ class BinanceFuturesRestClient:
     ) -> dict[str, Any]:
         """调用官方合约测试订单端点，但不实际创建订单。"""
 
+        normalized_position_side = await self._checked_position_side(
+            position_side, reduce_only
+        )
+
         params: list[tuple[str, object]] = [
             ("symbol", self._normalize_symbol(symbol)),
             ("side", self._enum_value(side, "side")),
@@ -265,9 +423,7 @@ class BinanceFuturesRestClient:
             ),
             (
                 "positionSide",
-                None
-                if position_side is None
-                else self._enum_value(position_side, "position_side"),
+                normalized_position_side,
             ),
             ("reduceOnly", None if reduce_only is None else str(reduce_only).lower()),
             ("stopPrice", stop_price),
@@ -280,8 +436,76 @@ class BinanceFuturesRestClient:
         )
         return dict(self._require_mapping(payload, "test order"))
 
+    async def _checked_position_side(
+        self,
+        position_side: object,
+        reduce_only: object,
+    ) -> str:
+        """在任何订单请求前核验账户模式并返回规范化持仓方向。"""
+
+        hedge_mode = await self.position_side_mode()
+        if hedge_mode:
+            if position_side is None:
+                raise ValueError(
+                    "position_side must be LONG or SHORT in Hedge Mode"
+                )
+            normalized = self._enum_value(str(position_side), "position_side")
+            if normalized not in {"LONG", "SHORT"}:
+                raise ValueError(
+                    "position_side must be LONG or SHORT in Hedge Mode"
+                )
+            if reduce_only is not None:
+                raise ValueError("reduce_only is not allowed in Hedge Mode")
+            return normalized
+
+        if position_side is None:
+            return "BOTH"
+        normalized = self._enum_value(str(position_side), "position_side")
+        if normalized != "BOTH":
+            raise ValueError("position_side must be BOTH in One-way Mode")
+        return normalized
+
     def _v1(self, suffix: str) -> str:
         return f"/{self._api_prefix}/v1/{suffix}"
+
+    def _order_path(self, suffix: str) -> str:
+        return self._v1(suffix)
+
+    def _account_trades_path(self) -> str:
+        return self._v1("userTrades")
+
+    def _order_params(self, values: Mapping[str, object]) -> list[tuple[str, object]]:
+        order_type = values.get("type", values.get("order_type"))
+        if "symbol" not in values or "side" not in values or order_type is None:
+            raise ValueError("submit_order requires symbol, side and type")
+        params: list[tuple[str, object]] = [
+            ("symbol", self._normalize_symbol(str(values["symbol"]))),
+            ("side", self._enum_value(str(values["side"]), "side")),
+            ("type", self._enum_value(str(order_type), "order_type")),
+        ]
+        aliases = {
+            "quantity": "quantity",
+            "price": "price",
+            "time_in_force": "timeInForce",
+            "position_side": "positionSide",
+            "reduce_only": "reduceOnly",
+            "stop_price": "stopPrice",
+            "close_position": "closePosition",
+            "client_order_id": "newClientOrderId",
+            "new_client_order_id": "newClientOrderId",
+            "working_type": "workingType",
+            "price_protect": "priceProtect",
+        }
+        for key, api_name in aliases.items():
+            value = values.get(key)
+            if value is None:
+                continue
+            if key in {"time_in_force", "position_side", "working_type"}:
+                value = self._enum_value(str(value), key)
+            elif key in {"reduce_only", "close_position", "price_protect"}:
+                value = str(value).lower()
+            params.append((api_name, value))
+        return params
 
     async def _request_json(
         self,
@@ -353,6 +577,9 @@ class BinanceFuturesRestClient:
         if self._credentials is not None:
             text = text.replace(self._credentials.api_key, "<redacted>")
             text = text.replace(self._credentials.secret_key, "<redacted>")
+        text = _SENSITIVE_ASSIGNMENT.sub(
+            lambda match: f"{match.group(1)}=<redacted>", text
+        )
         return text[:500] or "request rejected"
 
     @staticmethod

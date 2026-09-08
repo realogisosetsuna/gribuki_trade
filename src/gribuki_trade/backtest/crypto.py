@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from typing import Protocol, overload
@@ -350,6 +350,7 @@ class CryptoBacktestConfig:
     fees: CryptoFeeConfig = field(default_factory=CryptoFeeConfig)
     market_slippage_rate: Decimal = Decimal("0")
     max_bar_volume_fraction: Decimal = Decimal("1")
+    order_submission_latency: timedelta = timedelta(0)
 
     def __post_init__(self) -> None:
         symbol = self.symbol.strip().upper()
@@ -367,6 +368,10 @@ class CryptoBacktestConfig:
         _require_decimal("max_bar_volume_fraction", self.max_bar_volume_fraction)
         if not Decimal("0") < self.max_bar_volume_fraction <= Decimal("1"):
             raise ValueError("max_bar_volume_fraction must be in (0, 1]")
+        if not isinstance(self.order_submission_latency, timedelta):
+            raise TypeError("order_submission_latency must be a timedelta")
+        if self.order_submission_latency < timedelta(0):
+            raise ValueError("order_submission_latency must be non-negative")
         object.__setattr__(self, "symbol", symbol)
         object.__setattr__(self, "base_asset", base)
         object.__setattr__(self, "quote_asset", quote)
@@ -487,7 +492,9 @@ class CryptoBacktestEngine:
                 seen_order_ids.add(request.order_id)
                 working = _WorkingOrder(
                     request=request,
-                    submitted_at=event.decision_time,
+                    submitted_at=(
+                        event.decision_time + self._config.order_submission_latency
+                    ),
                     remaining=request.quantity,
                 )
                 pending.append(working)

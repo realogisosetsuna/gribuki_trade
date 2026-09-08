@@ -1,6 +1,6 @@
 # Gribuki Trade
 
-Gribuki Trade 是一个面向个人研究的 Python 交易工作台，当前以 **A 股全市场发现、证据化深度研究、PAPER 仿真和受控通知** 为主线，同时维护 Binance Spot Testnet 与 Charles Schwab API 的隔离适配层。
+Gribuki Trade 是一个面向个人研究的 Python 交易工作台，当前以 **A 股全市场发现、证据化深度研究、PAPER 仿真和受控通知** 为主线，同时维护 Binance Spot/Futures 的隔离适配层与 Charles Schwab API 适配层。
 
 项目版本为 `0.1.0`，采用仓库根目录 [MIT License](LICENSE)。它不是已经投入生产的自动交易机器人，也不提供投资收益承诺：研究结论、LLM 评分、人工复核和 PAPER 成交都不等于真实委托授权。
 
@@ -41,7 +41,7 @@ Gribuki Trade 是一个面向个人研究的 Python 交易工作台，当前以 
 | 实盘成交观察账本 | `live-sync ingest/status/cycle` 已实现两阶段确认、原子账本、持久工作项、保护分析和单轮行情跟踪 | 只记录用户已在券商完成的成交；OneBot 常驻入站和循环生命周期由后续应用运行框架调用这些入口 |
 | 策略实验与因子发现 | 成本感知 evaluator、purge/embargo walk-forward、holdout 与不可自动晋升 trial registry 已实现 | 仍不是全市场组合回测器，研究结果不会自动发布到线上参数 |
 | PySide6 GUI | NapCat/LLM 集成管理已驱动生产默认值；交易页仍为演示 | 可显式启动/登录/监看 NapCat，保存 OneBot token，配置 DeepSeek/OpenAI keyring、provider 与模型；不连接券商 |
-| Binance Spot Testnet | durable OMS、历史回放和 SHADOW 已实现 | 只有 Testnet/本地仿真入口；无生产 LIVE 编排 |
+| Binance Spot/Futures LIVE | Spot LIVE durable OMS、USDⓈ-M Futures LIVE 受守卫执行入口已实现 | 必须显式 LIVE 确认、账户/IP/交易权限和真实网络验证；Futures 尚未接入 Spot SQLite durable OMS |
 | Schwab | 适配代码与离线测试已实现 | 尚未用真实 Developer App 联调，无用户侧 CLI、streaming 和 durable 执行编排 |
 
 “核心已实现”表示领域逻辑、持久化或 CLI 已存在并有测试，不表示已经完成连续运行、实盘或统计有效性验收。
@@ -271,7 +271,7 @@ ports 契约                  evidence / revision / source health
 - `runtime`、`security`：PAPER/SHADOW/LIVE 守卫与 OS 凭据；
 - `reporting`、`gui`：报告产物和桌面展示。
 
-策略、LLM、GUI 和复核服务都不能直接导入券商 SDK。`PAPER` 禁止访问真实 broker；`SHADOW` 只允许连接、查询和订阅；`LIVE` 守卫需要当前进程内精确确认短语、账户白名单和交易所白名单。该守卫只是安全原语，当前没有已经验收的用户侧 LIVE 工作流。
+策略、LLM、GUI 和复核服务都不能直接导入券商 SDK。`PAPER` 禁止访问真实 broker；`SHADOW` 只允许连接、查询和订阅；`LIVE` 守卫需要当前进程内精确确认短语、账户白名单和交易所白名单。Binance Spot/Futures 的用户侧 LIVE 入口已接入，但仍需操作者完成本机时钟、IP 白名单、余额和权限检查。
 
 ## 环境与安装
 
@@ -282,22 +282,22 @@ ports 契约                  evidence / revision / source health
 py -3.12 -m venv .venv
 
 # 不必激活环境，直接用固定解释器安装
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+./.venv/Scripts/python.exe -m pip install --upgrade pip
+./.venv/Scripts/python.exe -m pip install -e ".[dev]"
 
 # 查看完整命令面
-.\.venv\Scripts\python.exe -m gribuki_trade --help
+./.venv/Scripts/python.exe -m gribuki_trade --help
 
 # 动态检查 SQLite shared-WAL 运行库安全性
-.\.venv\Scripts\python.exe -m gribuki_trade sqlite-runtime-status
+./.venv/Scripts/python.exe -m gribuki_trade sqlite-runtime-status
 
 # 运行质量门槛
-.\.venv\Scripts\python.exe -m ruff check conftest.py src tests
-.\.venv\Scripts\python.exe -m mypy src
-.\.venv\Scripts\python.exe -m pytest --temp-dir runtime/tmp -q
+./.venv/Scripts/python.exe -m ruff check conftest.py src tests
+./.venv/Scripts/python.exe -m mypy src
+./.venv/Scripts/python.exe -m pytest --temp-dir runtime/tmp -q
 
 # 启动桌面 GUI；集成管理页可用，交易展示页仍为演示
-.\.venv\Scripts\python.exe -m gribuki_trade gui
+./.venv/Scripts/python.exe -m gribuki_trade gui
 ```
 
 依赖和版本区间以 [pyproject.toml](pyproject.toml) 为准。
@@ -310,39 +310,39 @@ py -3.12 -m venv .venv
 
 ```powershell
 # 静态研究覆盖池：45 个标的（36 股 + 9 ETF），不是持仓或买入名单
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-watchlist
+./.venv/Scripts/python.exe -m gribuki_trade ashare-watchlist
 
 # 15:05 后执行当前交易日股票三层筛选；默认同时写候选和运行档案
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-market-screen-once `
+./.venv/Scripts/python.exe -m gribuki_trade ashare-market-screen-once `
   --top-n 30 --factor-budget 300 `
   --candidate-db runtime/research/candidates.sqlite3 `
   --run-db runtime/research/runs.sqlite3 `
   --output runtime/screening/latest.json
 
 # 开市时段运行一次异常发现
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-intraday-scan-once `
+./.venv/Scripts/python.exe -m gribuki_trade ashare-intraday-scan-once `
   --candidate-db runtime/research/candidates.sqlite3 `
   --run-db runtime/research/runs.sqlite3 `
   --output runtime/surveillance/latest.json
 
 # 查看或维护候选
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-candidates list
+./.venv/Scripts/python.exe -m gribuki_trade ashare-candidates list
 
 # 只跟踪 ACTIVE 候选一个有限周期
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-research-watch `
+./.venv/Scripts/python.exe -m gribuki_trade ashare-research-watch `
   --candidate-db runtime/research/candidates.sqlite3 `
   --candidates-only --cycles 1
 
 # 单标的收盘深研，并导出 Markdown + PNG
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-close-research-once `
+./.venv/Scripts/python.exe -m gribuki_trade ashare-close-research-once `
   --symbol 510300.SH --report-dir runtime/reports
 
 # 有界批量深研 ACTIVE 候选
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-close-research-batch `
+./.venv/Scripts/python.exe -m gribuki_trade ashare-close-research-batch `
   --candidate-db runtime/research/candidates.sqlite3 --limit 10
 
 # 查看不可变筛选/扫描输出与 lineage
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-research-runs list
+./.venv/Scripts/python.exe -m gribuki_trade ashare-research-runs list
 ```
 
 ### DeepSeek
@@ -350,8 +350,8 @@ py -3.12 -m venv .venv
 API key 通过无回显提示写入 Windows Credential Manager/macOS Keychain，不写入仓库或命令历史。
 
 ```powershell
-.\.venv\Scripts\python.exe -m gribuki_trade deepseek-configure
-.\.venv\Scripts\python.exe -m gribuki_trade deepseek-status
+./.venv/Scripts/python.exe -m gribuki_trade deepseek-configure
+./.venv/Scripts/python.exe -m gribuki_trade deepseek-status
 ```
 
 默认模型是 `deepseek-v4-flash`。也可在收盘命令中显式指定 `--macro-provider openai`，但两种模型都受同一 EvidencePack 与推荐门禁约束。
@@ -366,18 +366,18 @@ GUI 的“集成管理”页提供 loopback OneBot token 保存、QQ 登录态�
 
 ```powershell
 # 启动和登录请在 GUI“集成管理”页显式完成；CLI 仅做只读检查
-.\.venv\Scripts\python.exe -m gribuki_trade napcat-status
+./.venv/Scripts/python.exe -m gribuki_trade napcat-status
 
 # 显式发送一条固定测试消息
-.\.venv\Scripts\python.exe -m gribuki_trade napcat-send-test `
+./.venv/Scripts/python.exe -m gribuki_trade napcat-send-test `
   --target-kind private --target-id <YOUR_QQ_ID> --confirm SEND_TEST
 
 # 派发 durable outbox 中已入队的分段报告
-.\.venv\Scripts\python.exe -m gribuki_trade napcat-dispatch `
+./.venv/Scripts/python.exe -m gribuki_trade napcat-dispatch `
   --target-kind private --target-id <YOUR_QQ_ID> --cycles 1
 
 # 校验报告契约后，耐久上传本地报告根内的 Markdown
-.\.venv\Scripts\python.exe -m gribuki_trade napcat-send-artifact `
+./.venv/Scripts/python.exe -m gribuki_trade napcat-send-artifact `
   --target-kind private --target-id "YOUR_QQ_ID" `
   --artifact-kind file --report-kind INSTRUMENT_RESEARCH `
   --artifact-root runtime/reports `
@@ -411,18 +411,18 @@ live lease generation 的 worker 才能原子切换 `plan_stream_id` 生产指�
 
 ```powershell
 # event.json 是 OneBot v11 私聊事件；也可用 --event-json - 从标准输入读取
-.\.venv\Scripts\python.exe -m gribuki_trade live-sync ingest `
+./.venv/Scripts/python.exe -m gribuki_trade live-sync ingest `
   --ledger-db runtime/live/observed-live.sqlite3 `
   --exit-plan-db runtime/live/exit-plans.sqlite3 `
   --outbox-path runtime/live/outbox.sqlite3 `
   --allowed-sender "YOUR_QQ_ID" --event-json .\event.json `
   --quick-timeout-seconds 45
 
-.\.venv\Scripts\python.exe -m gribuki_trade live-sync status `
+./.venv/Scripts/python.exe -m gribuki_trade live-sync status `
   --ledger-db runtime/live/observed-live.sqlite3 --account live-main
 
 # 单次、有限、可由后续应用运行框架重复调用；绝不创建订单
-.\.venv\Scripts\python.exe -m gribuki_trade live-sync cycle `
+./.venv/Scripts/python.exe -m gribuki_trade live-sync cycle `
   --ledger-db runtime/live/observed-live.sqlite3 `
   --exit-plan-db runtime/live/exit-plans.sqlite3 `
   --outbox-path runtime/live/outbox.sqlite3 `
@@ -444,10 +444,10 @@ live lease generation 的 worker 才能原子切换 `plan_stream_id` 生产指�
 ### 推荐复核
 
 ```powershell
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-review open `
+./.venv/Scripts/python.exe -m gribuki_trade ashare-review open `
   --recommendation-id <RECOMMENDATION_ID>
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-review list
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-review confirm `
+./.venv/Scripts/python.exe -m gribuki_trade ashare-review list
+./.venv/Scripts/python.exe -m gribuki_trade ashare-review confirm `
   --case-id <CASE_ID> --reason MANUAL_EVIDENCE_REVIEWED `
   --confirm RESEARCH_ONLY
 ```
@@ -457,16 +457,16 @@ live lease generation 的 worker 才能原子切换 `plan_stream_id` 生产指�
 `ashare-paper` 只记录显式账本动作，不会自动抓行情或撮合：
 
 ```powershell
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-paper open `
+./.venv/Scripts/python.exe -m gribuki_trade ashare-paper open `
   --account personal-paper --initial-cash 100000 `
   --session-date 2026-08-14
 
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-paper fill `
+./.venv/Scripts/python.exe -m gribuki_trade ashare-paper fill `
   --account personal-paper --fill-id manual-20260814-001 `
   --symbol 600000.SH --side BUY --quantity 100 --price 10.00 `
   --instrument STOCK --source MANUAL --session-date 2026-08-14
 
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-paper snapshot `
+./.venv/Scripts/python.exe -m gribuki_trade ashare-paper snapshot `
   --account personal-paper
 ```
 
@@ -476,9 +476,9 @@ live lease generation 的 worker 才能原子切换 `plan_stream_id` 生产指�
 $tradeDate = (Get-Date).ToString('yyyy-MM-dd')
 
 # 查看 run/status/report/summary 及当前完整参数面
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-paper-day --help
+./.venv/Scripts/python.exe -m gribuki_trade ashare-paper-day --help
 
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-paper-day run `
+./.venv/Scripts/python.exe -m gribuki_trade ashare-paper-day run `
   --session-date $tradeDate --initial-cash 200000 `
   --target-kind private --target-id "YOUR_QQ_ID" `
   --intraday-llm --intraday-llm-review-top-n 6 `
@@ -488,11 +488,11 @@ $tradeDate = (Get-Date).ToString('yyyy-MM-dd')
   --confirm PAPER_DAY
 
 # 以下三个动作只读按日 sidecar；summary 会原子写出增强 Markdown 摘要
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-paper-day status `
+./.venv/Scripts/python.exe -m gribuki_trade ashare-paper-day status `
   --session-date $tradeDate
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-paper-day report `
+./.venv/Scripts/python.exe -m gribuki_trade ashare-paper-day report `
   --session-date $tradeDate
-.\.venv\Scripts\python.exe -m gribuki_trade ashare-paper-day summary `
+./.venv/Scripts/python.exe -m gribuki_trade ashare-paper-day summary `
   --session-date $tradeDate
 ```
 
@@ -525,11 +525,11 @@ durable **日线**委托撮合仍只提供 Python API；PAPER-day **盘中**编�
 
 ```powershell
 # 只扩展版本化、安全、有限的因子 grammar；不访问行情或 holdout
-.\.venv\Scripts\python.exe -m gribuki_trade strategy-factor-discover `
+./.venv/Scripts/python.exe -m gribuki_trade strategy-factor-discover `
   --max-trials 100 --output runtime/strategy/factor-inventory.json
 
 # 对冻结逐笔样本执行完整退出策略 walk-forward + holdout；结果只用于研究
-.\.venv\Scripts\python.exe -m gribuki_trade strategy-exit-evaluate `
+./.venv/Scripts/python.exe -m gribuki_trade strategy-exit-evaluate `
   --dataset runtime/strategy/exit-dataset.json `
   --specification runtime/strategy/exit-experiment-spec.json `
   --output runtime/strategy/exit-trial-registry.json `
@@ -540,17 +540,35 @@ durable **日线**委托撮合仍只提供 Python API；PAPER-day **盘中**编�
 
 ### Binance 与 Schwab
 
-Binance Spot Testnet 已有 status、order test、普通虚拟 cycle、durable OMS cycle/fill、公开历史归档、回测和本地 SHADOW。带 `cycle/fill` 的命令会改变远端 Testnet 状态，必须使用显式确认哨兵；它们不会使用 Live key。
+Binance Spot Testnet 已有 status、order test、普通虚拟 cycle、durable OMS cycle/fill、公开历史归档、回测和本地 SHADOW。Spot LIVE 与 USDⓈ-M Futures LIVE 也提供受 `LiveTradingGuard` 保护的状态、`order/test`、下单和撤单入口。带 `cycle/fill` 的命令会改变远端 Testnet 状态，LIVE 的 `submit` 会创建真实订单；两者都必须使用显式确认短语。
 
-```powershell
-.\.venv\Scripts\python.exe -m gribuki_trade binance-testnet-status
-.\.venv\Scripts\python.exe -m gribuki_trade binance-testnet-order-test
-.\.venv\Scripts\python.exe -m gribuki_trade binance-testnet-oms-cycle --confirm TESTNET
-.\.venv\Scripts\python.exe -m gribuki_trade binance-testnet-oms-fill --confirm TESTNET_FILL
-.\.venv\Scripts\python.exe -m gribuki_trade binance-history-sync --help
-.\.venv\Scripts\python.exe -m gribuki_trade binance-backtest --help
-.\.venv\Scripts\python.exe -m gribuki_trade binance-shadow-run --help
+```bash
+./.venv/Scripts/python.exe -m gribuki_trade binance-testnet-status
+./.venv/Scripts/python.exe -m gribuki_trade binance-testnet-order-test
+./.venv/Scripts/python.exe -m gribuki_trade binance-testnet-oms-cycle --confirm TESTNET
+./.venv/Scripts/python.exe -m gribuki_trade binance-testnet-oms-fill --confirm TESTNET_FILL
+./.venv/Scripts/python.exe -m gribuki_trade binance-live-status --confirm "ENABLE LIVE TRADING"
+./.venv/Scripts/python.exe -m gribuki_trade binance-live-futures-status --confirm "ENABLE LIVE TRADING"
+./.venv/Scripts/python.exe -m gribuki_trade binance-live-balance --asset USDT --confirm "ENABLE LIVE TRADING"
+./.venv/Scripts/python.exe -m gribuki_trade binance-live-futures-balance --confirm "ENABLE LIVE TRADING"
+./.venv/Scripts/python.exe -m gribuki_trade binance-history-sync --help
+./.venv/Scripts/python.exe -m gribuki_trade binance-backtest --help
+./.venv/Scripts/python.exe -m gribuki_trade binance-shadow-run --help
 ```
+
+查询当前 Git Bash 网络代理的公网 IPv4（输出可直接复制到币安 API 白名单）：
+
+```bash
+bash ./scripts/current_ip.sh
+bash ./scripts/current_ip.sh --verbose
+```
+
+该地址是本次 `curl` 请求的出口地址，不是 `192.168.*`、`10.*`、`198.18.*` 等本机或虚拟网卡地址。
+如果交易进程和 Git Bash 使用了不同的 `HTTPS_PROXY`/`ALL_PROXY`，两者出口可能不同，应在同一网络环境下查询。
+
+USDⓈ-M Futures 状态会返回 `position_mode`。单向持仓下单传
+`--position-side BOTH`；双向持仓传 `--position-side LONG` 或 `SHORT`。客户端会在
+order/test 和真实提交前查询账户模式，不会根据买卖方向猜测或自动修改账户设置。
 
 Schwab 当前没有 CLI 或真实生产联调。OAuth、Market Data、Trader REST 和简单限价接口只完成了代码与离线 transport 测试；获得 Developer App 后，应先做真实网络下的只读授权、entitlement、限频和账户对账。当前接口边界见 [Binance/Schwab 接入说明](docs/BINANCE_SCHWAB_INTEGRATION.md)，2026-08-13 的本机 Testnet/SHADOW 数据见 [Binance 验收快照](docs/BINANCE_SIMULATION_STATUS.md)。
 
@@ -587,27 +605,27 @@ Schwab 当前没有 CLI 或真实生产联调。OAuth、Market Data、Trader RES
 
 ```powershell
 # 只解析并报告来源，不创建目录
-.\.venv\Scripts\python.exe -m gribuki_trade temp-root status
+./.venv/Scripts/python.exe -m gribuki_trade temp-root status
 
 # 查看 status/prepare 与 --temp-dir 的当前帮助
-.\.venv\Scripts\python.exe -m gribuki_trade temp-root --help
+./.venv/Scripts/python.exe -m gribuki_trade temp-root --help
 
 # 显式准备一个集中目录
-.\.venv\Scripts\python.exe -m gribuki_trade temp-root prepare `
+./.venv/Scripts/python.exe -m gribuki_trade temp-root prepare `
   --temp-dir runtime/tmp
 
 # 根目录 conftest.py 会把 pytest 与标准库临时文件集中到进程隔离的子目录
-.\.venv\Scripts\python.exe -m pytest --temp-dir runtime/tmp -q
+./.venv/Scripts/python.exe -m pytest --temp-dir runtime/tmp -q
 ```
 
 历史仓库根临时树只能先由 [归档清单工具](scripts/archive_root_temps.py) 建立并校验证据清单，再由 [受控清理脚本](scripts/cleanup_root_temps.ps1) 按完全一致的清单处理；脚本会拒绝目标集合漂移、reparse point 和未验证归档。这里不记录任何本机个人路径或具体清理目标。
 
 ```powershell
 # 只盘点仓库根 .tmp*，不归档、不删除
-.\.venv\Scripts\python.exe .\scripts\archive_root_temps.py
+./.venv/Scripts/python.exe .\scripts\archive_root_temps.py
 
 # 查看归档、唯一证据保留与 manifest finalize 参数
-.\.venv\Scripts\python.exe .\scripts\archive_root_temps.py --help
+./.venv/Scripts/python.exe .\scripts\archive_root_temps.py --help
 ```
 
 ## 数据、时间与安全不变量
@@ -626,7 +644,7 @@ Schwab 当前没有 CLI 或真实生产联调。OAuth、Market Data、Trader RES
 项目多个持久化组件使用 SQLite WAL。每次部署先运行：
 
 ```powershell
-.\.venv\Scripts\python.exe -m gribuki_trade sqlite-runtime-status
+./.venv/Scripts/python.exe -m gribuki_trade sqlite-runtime-status
 ```
 
 当前安全策略只认可官方已修复线：`3.44.6`、`3.50.7` 和 `>=3.51.3`。若命令返回 `SQLITE_WAL_RESET_RUNTIME_UNSAFE`，单连接、本地、单 Store 流程仍可临时使用，但同一个数据库路径不得被两个 CLI、worker 或 Store 实例并发打开；常驻或多进程部署必须失败关闭。业务 writer lease 不能修复 SQLite checkpointer/writer 竞争。背景见 [SQLite WAL-reset 说明](https://www.sqlite.org/wal.html#walresetbug)。
@@ -636,9 +654,9 @@ Schwab 当前没有 CLI 或真实生产联调。OAuth、Market Data、Trader RES
 [quality.yml](.github/workflows/quality.yml) 在 Windows、Python 3.11/3.12 上运行：
 
 ```powershell
-.\.venv\Scripts\python.exe -m ruff check conftest.py src tests
-.\.venv\Scripts\python.exe -m mypy src
-.\.venv\Scripts\python.exe -m pytest --temp-dir runtime/tmp -q
+./.venv/Scripts/python.exe -m ruff check conftest.py src tests
+./.venv/Scripts/python.exe -m mypy src
+./.venv/Scripts/python.exe -m pytest --temp-dir runtime/tmp -q
 ```
 
 测试覆盖 provider schema/超时/降级、PIT 与 revision、筛选/候选、技术/宏观门禁、LLM 证据引用、通知 outbox、PAPER/OMS 恢复、策略实验、CLI 和 GUI smoke。网络集成与长时间 soak 不由离线单元测试替代。

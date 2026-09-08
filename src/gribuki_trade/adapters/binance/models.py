@@ -180,4 +180,5 @@ class BinanceOrderUpdate:
     exchange_order_id: int | None = None
     executed_quantity: Decimal = Decimal("0")
     reason: str | None = None
+    error_code: int | None = None
     occurred_at: datetime | None = None

@@ -142,10 +142,18 @@ from gribuki_trade.services.ashare_surveillance import (
 )
 from gribuki_trade.services.binance_execution import (
     BinanceSpotExecutionGateway,
+    BinanceSpotExecutionService,
     BinanceSpotTestnetExecutionService,
     BinanceStartupReconciliation,
     BinanceTestnetOnlyError,
     BinanceUserDataSource,
+)
+from gribuki_trade.services.binance_futures_execution import (
+    BinanceFuturesExecutionService,
+)
+from gribuki_trade.services.binance_monitor import (
+    BinanceMarketMonitor,
+    BinanceMonitorSnapshot,
 )
 from gribuki_trade.services.binance_paper import (
     BinanceMarketSource,
@@ -317,10 +325,14 @@ __all__ = [
     "BinanceMarketSource",
     "BinancePaperEngine",
     "BinanceSpotExecutionGateway",
+    "BinanceFuturesExecutionService",
+    "BinanceSpotExecutionService",
     "BinanceSpotTestnetExecutionService",
     "BinanceStartupReconciliation",
     "BinanceTestnetOnlyError",
     "BinanceUserDataSource",
+    "BinanceMarketMonitor",
+    "BinanceMonitorSnapshot",
     "BinanceShadowConfig",
     "BinanceShadowSession",
     "BinanceShadowStatistics",

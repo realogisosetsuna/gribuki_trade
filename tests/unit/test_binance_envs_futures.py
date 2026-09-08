@@ -8,7 +8,11 @@ from urllib.parse import parse_qs, urlsplit
 
 from gribuki_trade.adapters.binance.envs import BinanceProduct, BinanceStage
 from gribuki_trade.adapters.binance.futures import BinanceFuturesRestClient
-from gribuki_trade.adapters.binance.gateway import BinanceConfigurationError
+from gribuki_trade.adapters.binance.gateway import (
+    BinanceAPIError,
+    BinanceConfigurationError,
+    BinanceProtocolError,
+)
 from gribuki_trade.adapters.binance.http import HttpRequest, HttpResponse
 from gribuki_trade.adapters.binance.models import BinanceCredentials
 
@@ -125,9 +129,26 @@ class BinanceFuturesClientTests(IsolatedAsyncioTestCase):
         self.assertEqual(parse_qs(query)["recvWindow"], ["5000"])
         self.assertEqual(parse_qs(query)["timestamp"], ["1700000000123"])
 
+    async def test_time_synchronization_exposes_round_trip_latency(self) -> None:
+        credentials = BinanceCredentials(api_key="offline-key", secret_key="offline-secret")
+        transport = FakeTransport(response(200, {"serverTime": 1_700_000_010_000}))
+        clock_values = iter((1_700_000_000_000, 1_700_000_000_120))
+        client = BinanceFuturesRestClient(
+            credentials=credentials,
+            transport=transport,
+            clock_ms=lambda: next(clock_values),
+        )
+
+        offset = await client.synchronize_time()
+
+        self.assertEqual(offset, 9_940)
+        self.assertEqual(client.last_time_sync_rtt_ms, 120)
+
     async def test_validate_order_calls_only_test_order_endpoint(self) -> None:
         credentials = BinanceCredentials(api_key="offline-key", secret_key="offline-secret")
-        transport = FakeTransport(response(200, {}))
+        transport = FakeTransport(
+            response(200, {"dualSidePosition": False}), response(200, {})
+        )
         client = BinanceFuturesRestClient(
             credentials=credentials,
             transport=transport,
@@ -145,9 +166,130 @@ class BinanceFuturesClientTests(IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result, {})
-        request = transport.requests[0]
+        self.assertEqual(urlsplit(transport.requests[0].url).path, "/fapi/v1/positionSide/dual")
+        request = transport.requests[1]
         self.assertEqual(request.method, "POST")
         self.assertEqual(urlsplit(request.url).path, "/fapi/v1/order/test")
         query = parse_qs(urlsplit(request.url).query)
         self.assertEqual(query["type"], ["LIMIT"])
         self.assertEqual(query["reduceOnly"], ["false"])
+        self.assertEqual(query["positionSide"], ["BOTH"])
+
+    async def test_position_side_mode_is_signed_and_rejects_malformed_payload(self) -> None:
+        credentials = BinanceCredentials(api_key="offline-key", secret_key="offline-secret")
+        transport = FakeTransport(response(200, {"dualSidePosition": True}))
+        client = BinanceFuturesRestClient(
+            credentials=credentials,
+            transport=transport,
+            clock_ms=lambda: 1_700_000_000_000,
+        )
+
+        self.assertTrue(await client.position_side_mode())
+        self.assertEqual(urlsplit(transport.requests[0].url).path, "/fapi/v1/positionSide/dual")
+        self.assertIn("signature=", transport.requests[0].url)
+
+        malformed = BinanceFuturesRestClient(
+            credentials=credentials,
+            transport=FakeTransport(response(200, {"dualSidePosition": "true"})),
+        )
+        with self.assertRaisesRegex(
+            BinanceProtocolError, "position side mode response is malformed"
+        ):
+            await malformed.position_side_mode()
+
+    async def test_order_mode_preflight_requires_explicit_hedge_side_and_rejects_reduce_only(
+        self,
+    ) -> None:
+        credentials = BinanceCredentials(api_key="offline-key", secret_key="offline-secret")
+        missing_side = BinanceFuturesRestClient(
+            credentials=credentials,
+            transport=FakeTransport(response(200, {"dualSidePosition": True})),
+        )
+        with self.assertRaisesRegex(ValueError, "LONG or SHORT"):
+            await missing_side.submit_order(symbol="BTCUSDT", side="BUY", type="MARKET")
+
+        reduce_only = BinanceFuturesRestClient(
+            credentials=credentials,
+            transport=FakeTransport(response(200, {"dualSidePosition": True})),
+        )
+        with self.assertRaisesRegex(ValueError, "reduce_only is not allowed"):
+            await reduce_only.validate_order(
+                symbol="BTCUSDT",
+                side="BUY",
+                order_type="MARKET",
+                quantity="0.001",
+                position_side="LONG",
+                reduce_only=False,
+            )
+
+    async def test_one_way_rejects_hedge_side_before_order_write(self) -> None:
+        credentials = BinanceCredentials(api_key="offline-key", secret_key="offline-secret")
+        transport = FakeTransport(response(200, {"dualSidePosition": False}))
+        client = BinanceFuturesRestClient(credentials=credentials, transport=transport)
+        with self.assertRaisesRegex(ValueError, "BOTH in One-way"):
+            await client.submit_order(
+                symbol="BTCUSDT", side="BUY", type="MARKET", position_side="LONG"
+            )
+        self.assertEqual(len(transport.requests), 1)
+
+    async def test_api_error_redacts_credentials_and_signature_assignments(self) -> None:
+        credentials = BinanceCredentials(
+            api_key="offline-api-key", secret_key="offline-secret-key"
+        )
+        client = BinanceFuturesRestClient(
+            credentials=credentials,
+            transport=FakeTransport(
+                response(
+                    400,
+                    {
+                        "code": -1100,
+                        "msg": "apiKey=offline-api-key signature=private-signature",
+                    },
+                )
+            ),
+        )
+        with self.assertRaises(BinanceAPIError) as context:
+            await client.position_side_mode()
+        rendered = str(context.exception)
+        self.assertNotIn("offline-api-key", rendered)
+        self.assertNotIn("offline-secret-key", rendered)
+        self.assertNotIn("private-signature", rendered)
+        self.assertIn("apiKey=<redacted>", rendered)
+
+    async def test_live_order_cancel_and_reconciliation_routes_are_signed(self) -> None:
+        credentials = BinanceCredentials(api_key="offline-key", secret_key="offline-secret")
+        transport = FakeTransport(
+            response(200, {"dualSidePosition": False}),
+            response(200, {"orderId": 7, "status": "NEW"}),
+            response(200, {"orderId": 7, "status": "NEW"}),
+            response(200, [{"orderId": 7}]),
+            response(200, [{"id": 9}]),
+            response(200, {"orderId": 7, "status": "CANCELED"}),
+        )
+        client = BinanceFuturesRestClient(
+            stage=BinanceStage.LIVE,
+            credentials=credentials,
+            allow_live=True,
+            transport=transport,
+            clock_ms=lambda: 1_700_000_000_000,
+        )
+
+        await client.submit_order(
+            symbol="BTCUSDT",
+            side="BUY",
+            type="LIMIT",
+            quantity="0.001",
+            price="60000",
+            time_in_force="GTC",
+            client_order_id="local-1",
+        )
+        await client.get_order("BTCUSDT", order_id=7)
+        await client.all_orders("BTCUSDT")
+        await client.account_trades("BTCUSDT")
+        await client.cancel_order("BTCUSDT", client_order_id="local-1")
+
+        self.assertEqual(transport.requests[0].method, "GET")
+        self.assertEqual(urlsplit(transport.requests[0].url).path, "/fapi/v1/positionSide/dual")
+        self.assertEqual(transport.requests[1].method, "POST")
+        self.assertEqual(transport.requests[5].method, "DELETE")
+        self.assertTrue(all("signature=" in request.url for request in transport.requests))

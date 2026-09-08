@@ -42,6 +42,7 @@ class OrderSnapshot:
     exchange_order_id: str | None
     reason: str | None
     updated_at: datetime
+    broker_error_code: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
