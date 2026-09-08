@@ -28,7 +28,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 
 | Original facade | New cohesive module | Responsibility |
 |---|---|---|
-| `cli.py` | `cli_commands/parsers/`, `cli_commands/handlers/binance.py`, `cli_parsing.py`, `cli_output.py` | Command-family registration, Binance workflow handlers, argparse converters, Decimal formatting, and atomic JSON output |
+| `cli.py` | `cli_commands/parsers/`, `cli_commands/handlers/binance.py`, `cli_commands/handlers/ashare.py`, `cli_parsing.py`, `cli_output.py` | Command-family registration, Binance and read-only A-share workflow handlers, argparse converters, Decimal formatting, and atomic JSON output |
 | `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py`, `adapters/binance/spot_order_params.py` | Spot wire parsing, scalar validation, signing/redaction, and pure Spot/OCO/OTO/OTOCO parameter encoding |
 | `trading/futures_oms.py` | `trading/futures_oms_codec.py` | Futures SQLite codecs, JSON/Decimal/time conversion, event identity |
 | `trading/oms.py` | `trading/oms_codec.py` | Broker-neutral OMS SQLite row codecs, JSON/Decimal/time conversion, identifiers, and status projection |
@@ -104,8 +104,8 @@ Provider implementations are now organized under
 module paths are compatibility aliases that point at the implementation module,
 so private monkeypatch and import behavior used by existing integrations stays
 stable. The CLI parser is split into eleven command-family modules under
-`src/gribuki_trade/cli_commands/parsers/`; Binance command workflows are
-extracted to `src/gribuki_trade/cli_commands/handlers/binance.py`.
+`src/gribuki_trade/cli_commands/parsers/`; Binance workflows and read-only A-share
+market/research handlers are extracted to `cli_commands/handlers/`.
 
 Representative routing tests include `tests/unit/test_akshare_market_data.py`,
 `tests/unit/test_ashare_paper_day.py`, `tests/unit/test_binance_execution.py`,

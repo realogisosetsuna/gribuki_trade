@@ -28,7 +28,7 @@ first increment is:
 
 | Facade | Extracted responsibility | Boundary |
 |---|---|---|
-| `cli.py` | `cli_commands/parsers/` owns command registration; `cli_commands/handlers/binance.py` owns Binance command workflows; `cli_parsing.py` and `cli_output.py` own pure helpers | `cli.py` remains the stable facade and compatibility surface; handlers resolve runtime dependencies through the facade so existing monkeypatch and import contracts remain valid |
+| `cli.py` | `cli_commands/parsers/` owns command registration; `cli_commands/handlers/binance.py` and `cli_commands/handlers/ashare.py` own provider workflows; `cli_parsing.py` and `cli_output.py` own pure helpers | `cli.py` remains the stable facade and compatibility surface; handlers resolve runtime dependencies through the facade so existing monkeypatch and import contracts remain valid |
 | `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py` owns Spot wire parsing and scalar validation; `adapters/binance/spot_order_params.py` owns Spot order/OCO/OTO/OTOCO parameter validation and encoding | Pure protocol functions have no network, credential, or gateway state; gateway retains transport and compatibility wrappers |
 | `trading/futures_oms.py` | `trading/futures_oms_codec.py` owns SQLite row codecs, JSON/Decimal conversion, timestamps, and event identities | No transactions or broker imports |
 | `trading/oms.py` | `trading/oms_codec.py` owns broker-neutral SQLite row codecs, JSON/Decimal/time conversion, identifiers, and order status projection rules | No connections, transactions, or broker imports; `oms.py` remains the transaction facade |
@@ -89,5 +89,6 @@ The CLI command tree is assembled in `src/gribuki_trade/cli_commands/parser.py`.
 Each command family has a registration module under
 `src/gribuki_trade/cli_commands/parsers/`; Binance execution, balance, stream,
 backtest, shadow, and testnet OMS handlers live in
-`src/gribuki_trade/cli_commands/handlers/binance.py`. `cli.py` remains the
-stable process entry point and compatibility facade.
+`src/gribuki_trade/cli_commands/handlers/binance.py` and
+`src/gribuki_trade/cli_commands/handlers/ashare.py`. `cli.py` remains the stable
+process entry point and compatibility facade.

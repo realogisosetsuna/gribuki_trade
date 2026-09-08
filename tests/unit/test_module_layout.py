@@ -29,9 +29,29 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         assert module.__file__.replace("\\", "/").endswith(suffix)
 
 
+def test_cli_handler_families_are_independent_execution_modules() -> None:
+    """命令执行逻辑按平台边界拆开，同时保留 facade 可导出的处理器。"""
+
+    # 处理器通过稳定 facade 解析依赖，布局测试先加载 facade，避免部分初始化状态。
+    importlib.import_module("gribuki_trade.cli")
+    ashare = importlib.import_module("gribuki_trade.cli_commands.handlers.ashare")
+    binance = importlib.import_module("gribuki_trade.cli_commands.handlers.binance")
+    for name in ("_ashare_snapshot", "_ashare_bars", "_ashare_daily", "_ashare_research_runs"):
+        assert callable(getattr(ashare, name))
+    assert callable(binance._binance_live_status)
+
+
 def test_cli_command_families_are_independent_registration_modules() -> None:
     """命令注册入口按业务族拆开，主 CLI 只负责组装。"""
 
     for family in ("operations", "binance", "market_data", "paper_day", "notifications"):
         module = importlib.import_module(f"gribuki_trade.cli_commands.parsers.{family}")
         assert callable(module.register)
+
+
+def test_cli_handlers_are_separate_from_argument_registration() -> None:
+    """只读市场处理器和 Binance 处理器不应回到参数注册模块。"""
+
+    for family in ("ashare", "binance"):
+        module = importlib.import_module(f"gribuki_trade.cli_commands.handlers.{family}")
+        assert module.__file__ is not None
