@@ -37,6 +37,16 @@ from gribuki_trade.adapters.market_data.akshare_daily_parsing import (
     _validate_and_sort_bars,
     _validate_request,
 )
+from gribuki_trade.adapters.market_data.akshare_daily_stitch import (
+    HistoricalDailyTailStitchDiagnostics,
+    HistoricalDailyTailStitchPolicy,
+)
+from gribuki_trade.adapters.market_data.akshare_daily_stitch import (
+    controlled_tail_stitch as _controlled_tail_stitch_impl,
+)
+from gribuki_trade.adapters.market_data.akshare_daily_stitch import (
+    validate_stitch_input as _validate_stitch_input_impl,
+)
 from gribuki_trade.domain.market import DailyBar, PriceAdjustment
 from gribuki_trade.ports.market_data import (
     AsyncHistoricalDailyData,
@@ -101,45 +111,6 @@ class HistoricalDailyRouteResult:
     selected_source_failures: tuple[str, ...] = ()
     tail_stitch: HistoricalDailyTailStitchDiagnostics | None = None
     warnings: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class HistoricalDailyTailStitchPolicy:
-    """将延迟的长历史与新鲜尾部连接的明确选择加入策略。
-
-    请求的 ``end`` 日期被视为 ``latest_completed_session``。只有主来源包含该
-    精确日期时，才允许产生拼接结果。
-    """
-
-    minimum_overlap_sessions: int = 20
-
-    def __post_init__(self) -> None:
-        if self.minimum_overlap_sessions < 20:
-            raise ValueError("minimum_overlap_sessions must be at least 20")
-
-
-@dataclass(frozen=True, slots=True)
-class HistoricalDailyTailStitchDiagnostics:
-    """拼接结果的可审计证明与非阻塞单元诊断。"""
-
-    base_source: str
-    tail_source: str
-    required_latest_session: date
-    base_latest_session: date
-    overlap_start_session: date
-    overlap_end_session: date
-    overlap_sessions_validated: int
-    stitched_tail_sessions: int
-    volume_mismatch_sessions: int
-    amount_mismatch_sessions: int
-
-    def __post_init__(self) -> None:
-        if self.overlap_sessions_validated < 20:
-            raise ValueError("overlap_sessions_validated must be at least 20")
-        if self.stitched_tail_sessions < 1:
-            raise ValueError("stitched_tail_sessions must be positive")
-        if self.base_latest_session >= self.required_latest_session:
-            raise ValueError("base source must lag required_latest_session")
 
 
 @dataclass(frozen=True, slots=True)
@@ -813,120 +784,18 @@ def _controlled_tail_stitch(
     tail_source: str,
     required_latest_session: date,
     minimum_overlap_sessions: int,
-) -> tuple[
-    tuple[DailyBar, ...],
-    HistoricalDailyTailStitchDiagnostics,
-]:
-    """只把经过严格证明的新鲜尾部连接到较长的延迟历史。"""
+) -> tuple[tuple[DailyBar, ...], HistoricalDailyTailStitchDiagnostics]:
+    """适配器错误层的兼容包装；算法位于纯 stitch 模块。"""
 
-    _validate_stitch_input(base_bars, source=base_source)
-    _validate_stitch_input(tail_bars, source=tail_source)
-    if base_bars[0].symbol != tail_bars[0].symbol:
-        raise HistoricalDailyTailStitchError(
-            "tail stitch sources contain different symbols"
-        )
-    if base_bars[-1].trade_date >= required_latest_session:
-        raise HistoricalDailyTailStitchError(
-            "tail stitch base is not delayed relative to required latest session"
-        )
-    tail_by_date = {bar.trade_date: bar for bar in tail_bars}
-    if required_latest_session not in tail_by_date:
-        raise HistoricalDailyTailStitchError(
-            "tail source does not contain required latest_completed_session "
-            f"{required_latest_session.isoformat()}"
-        )
-
-    overlap_base = tuple(
-        bar
-        for bar in base_bars
-        if bar.trade_date <= base_bars[-1].trade_date and bar.is_trading
-    )[-minimum_overlap_sessions:]
-    if len(overlap_base) < minimum_overlap_sessions:
-        raise HistoricalDailyTailStitchError(
-            "insufficient base history for tail-stitch overlap validation: "
-            f"required={minimum_overlap_sessions}, available={len(overlap_base)}"
-        )
-    overlap_start = overlap_base[0].trade_date
-    overlap_end = overlap_base[-1].trade_date
-    overlap_tail = tuple(
-        bar
-        for bar in tail_bars
-        if overlap_start <= bar.trade_date <= overlap_end
-    )
-    base_dates = tuple(bar.trade_date for bar in overlap_base)
-    tail_dates = tuple(bar.trade_date for bar in overlap_tail)
-    if tail_dates != base_dates:
-        missing_from_tail = sorted(set(base_dates).difference(tail_dates))
-        extra_in_tail = sorted(set(tail_dates).difference(base_dates))
-        raise HistoricalDailyOverlapMismatchError(
-            "tail-stitch overlap dates differ: "
-            f"missing_from_tail={[item.isoformat() for item in missing_from_tail]}, "
-            f"extra_in_tail={[item.isoformat() for item in extra_in_tail]}"
-        )
-
-    volume_mismatches = 0
-    amount_mismatches = 0
-    for base_bar, tail_bar in zip(overlap_base, overlap_tail, strict=True):
-        if not tail_bar.is_trading:
-            raise HistoricalDailyOverlapMismatchError(
-                "tail-stitch common date is not trading in tail source: "
-                f"{tail_bar.trade_date.isoformat()}"
-            )
-        base_ohlc = (base_bar.open, base_bar.high, base_bar.low, base_bar.close)
-        tail_ohlc = (tail_bar.open, tail_bar.high, tail_bar.low, tail_bar.close)
-        if base_ohlc != tail_ohlc:
-            field_names = ("open", "high", "low", "close")
-            differences = [
-                f"{field}:base={base_value},tail={tail_value}"
-                for field, base_value, tail_value in zip(
-                    field_names,
-                    base_ohlc,
-                    tail_ohlc,
-                    strict=True,
-                )
-                if base_value != tail_value
-            ]
-            raise HistoricalDailyOverlapMismatchError(
-                "tail-stitch OHLC mismatch on "
-                f"{base_bar.trade_date.isoformat()}: {', '.join(differences)}"
-            )
-        volume_mismatches += base_bar.volume != tail_bar.volume
-        amount_mismatches += base_bar.amount != tail_bar.amount
-
-    base_latest = base_bars[-1].trade_date
-    fresh_tail = tuple(
-        bar
-        for bar in tail_bars
-        if base_latest < bar.trade_date <= required_latest_session
-    )
-    if not fresh_tail or fresh_tail[-1].trade_date != required_latest_session:
-        raise HistoricalDailyTailStitchError(
-            "tail source cannot extend base through required latest session"
-        )
-    stitched = (*base_bars, *fresh_tail)
-    stitched_dates = tuple(bar.trade_date for bar in stitched)
-    if stitched_dates != tuple(sorted(stitched_dates)):
-        raise HistoricalDailyTailStitchError(
-            "stitched dates are not strictly ordered"
-        )
-    if len(stitched_dates) != len(set(stitched_dates)):
-        raise HistoricalDailyTailStitchError(
-            "stitched result contains duplicate dates"
-        )
-    return (
-        stitched,
-        HistoricalDailyTailStitchDiagnostics(
-            base_source=base_source,
-            tail_source=tail_source,
-            required_latest_session=required_latest_session,
-            base_latest_session=base_latest,
-            overlap_start_session=overlap_start,
-            overlap_end_session=overlap_end,
-            overlap_sessions_validated=len(overlap_base),
-            stitched_tail_sessions=len(fresh_tail),
-            volume_mismatch_sessions=volume_mismatches,
-            amount_mismatch_sessions=amount_mismatches,
-        ),
+    return _controlled_tail_stitch_impl(
+        base_bars=base_bars,
+        base_source=base_source,
+        tail_bars=tail_bars,
+        tail_source=tail_source,
+        required_latest_session=required_latest_session,
+        minimum_overlap_sessions=minimum_overlap_sessions,
+        tail_error=HistoricalDailyTailStitchError,
+        overlap_error=HistoricalDailyOverlapMismatchError,
     )
 
 
@@ -935,25 +804,13 @@ def _validate_stitch_input(
     *,
     source: str,
 ) -> None:
-    if not bars:
-        raise HistoricalDailyTailStitchError(
-            f"tail stitch source {source} returned no bars"
-        )
-    dates = tuple(bar.trade_date for bar in bars)
-    if dates != tuple(sorted(dates)) or len(dates) != len(set(dates)):
-        raise HistoricalDailyTailStitchError(
-            f"tail stitch source {source} dates must be ordered and unique"
-        )
-    symbol = bars[0].symbol
-    if any(bar.symbol != symbol for bar in bars):
-        raise HistoricalDailyTailStitchError(
-            f"tail stitch source {source} contains mixed symbols"
-        )
-    if any(bar.adjustment is not PriceAdjustment.NONE for bar in bars):
-        raise HistoricalDailyTailStitchError(
-            f"tail stitch source {source} contains adjusted prices"
-        )
+    """兼容历史私有 helper 名称，实际校验位于纯 stitch 模块。"""
 
+    _validate_stitch_input_impl(
+        bars,
+        source=source,
+        error=HistoricalDailyTailStitchError,
+    )
 
 def _fetch_provider_sync(
     provider: HistoricalDailyProvider,

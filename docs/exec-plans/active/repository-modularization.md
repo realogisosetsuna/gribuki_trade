@@ -163,6 +163,10 @@ policy projections, and Futures OMS schema DDL. Their facades retain compatibili
 names while provider calls, transaction boundaries, and durable state transitions
 remain at the original boundaries.
 
+This increment also adds AKShare delayed-history stitching, intraday LLM audit
+serialization, and NapCat process lifecycle boundaries. Provider access, LLM
+execution, and GUI settings remain in their original facades.
+
 Validation evidence for this increment: CLI and parser tests 195 passed; the
 Binance Spot, cross-market, reporting, adversarial macro, exit simulation, A-share
 quantity/configuration, and close-analysis suites passed together (398 focused
@@ -176,6 +180,11 @@ The current follow-up focused route passed 101 tests, including the Chinese-sour
 check, module-layout checks, Binance gateway/request-builder tests, live-record
 schema/model/store tests, and PAPER-day schedule/runner tests. Full quality gates
 remain required after this follow-up is staged.
+
+The current provider/UI follow-up passed 106 focused tests, then the full suite
+passed 1718 tests with five environment-skipped tests and 41 subtests. Ruff,
+mypy (322 source files), readiness, compileall, and the Chinese-source check all
+passed after the final compatibility fixes.
 
 The next focused route passed 212 behavioral tests before the final Chinese-source
 comment cleanup; the full route will be rerun before staging this increment.
