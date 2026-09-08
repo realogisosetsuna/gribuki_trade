@@ -112,6 +112,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "gribuki_trade.adapters.ashare.screening_payload",
             "adapters/ashare/screening_payload.py",
         ),
+        (
+            "gribuki_trade.services.adversarial_macro_boundaries",
+            "services/adversarial_macro_boundaries.py",
+        ),
     )
     for name, suffix in modules:
         module = importlib.import_module(name)

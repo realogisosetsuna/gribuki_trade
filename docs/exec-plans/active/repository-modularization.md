@@ -232,6 +232,11 @@ adapters, the full repository gate passed again: readiness, Ruff, mypy (337
 source files), compileall, and 1765 tests passed, with five environment skips
 and 41 subtests.
 
+The adversarial macro boundary slice now isolates role-request construction,
+failure-safe ``ABSTAIN`` analysis, and sanitized failed-call audit documents;
+provider concurrency, session budgets, and conservative aggregation remain in
+the service facade.
+
 The current provider/UI follow-up passed 106 focused tests, then the full suite
 passed 1718 tests with five environment-skipped tests and 41 subtests. Ruff,
 mypy (322 source files), readiness, compileall, and the Chinese-source check all
