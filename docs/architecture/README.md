@@ -12,6 +12,8 @@ page that matches the task:
   implementation and regression tests.
 - [`verification-map.md`](verification-map.md): quality gates, test families
   and known verification gaps.
+- [`binance-spot-order-api.md`](binance-spot-order-api.md): structured Spot
+  conditional-order and dynamic-protection interfaces.
 
 If a task changes a boundary or durable invariant, update the matching page and
 its tests in the same change.

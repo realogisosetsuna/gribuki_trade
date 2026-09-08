@@ -7,7 +7,10 @@ from decimal import Decimal
 from typing import Any
 
 from gribuki_trade.adapters.binance.envs import BinanceStage
-from gribuki_trade.adapters.binance.futures import BinanceFuturesRestClient
+from gribuki_trade.adapters.binance.futures import (
+    BinanceFuturesProtectionOrder,
+    BinanceFuturesRestClient,
+)
 from gribuki_trade.adapters.binance.gateway import BinanceConfigurationError
 from gribuki_trade.runtime.guard import BrokerOperation, LiveTradingGuard
 
@@ -112,6 +115,26 @@ class BinanceFuturesExecutionService:
 
         return await self.position_side_mode()
 
+    async def set_position_mode(self, dual_side_position: bool) -> dict[str, Any]:
+        self._assert(BrokerOperation.CHANGE_RISK)
+        return await self._client.set_position_mode(dual_side_position)
+
+    async def set_leverage(self, symbol: str, leverage: int) -> dict[str, Any]:
+        self._assert(BrokerOperation.CHANGE_RISK)
+        return await self._client.set_leverage(symbol, leverage)
+
+    async def set_margin_type(self, symbol: str, margin_type: str) -> dict[str, Any]:
+        self._assert(BrokerOperation.CHANGE_RISK)
+        return await self._client.set_margin_type(symbol, margin_type)
+
+    async def multi_assets_mode(self) -> bool:
+        self._assert(BrokerOperation.QUERY)
+        return await self._client.multi_assets_mode()
+
+    async def set_multi_assets_mode(self, multi_assets_margin: bool) -> dict[str, Any]:
+        self._assert(BrokerOperation.CHANGE_RISK)
+        return await self._client.set_multi_assets_mode(multi_assets_margin)
+
     async def open_orders(self, symbol: str | None = None) -> tuple[dict[str, Any], ...]:
         self._assert(BrokerOperation.QUERY)
         return await self._client.open_orders(symbol)
@@ -131,6 +154,97 @@ class BinanceFuturesExecutionService:
     async def submit_order(self, **kwargs: object) -> dict[str, Any]:
         self._assert(BrokerOperation.SUBMIT_ORDER)
         return await self._client.submit_order(**kwargs)
+
+    async def submit_stop_loss(self, **kwargs: object) -> dict[str, Any]:
+        self._assert(BrokerOperation.SUBMIT_ORDER)
+        return await self._client.submit_stop_loss(**kwargs)  # type: ignore[arg-type]
+
+    async def submit_take_profit(self, **kwargs: object) -> dict[str, Any]:
+        self._assert(BrokerOperation.SUBMIT_ORDER)
+        return await self._client.submit_take_profit(**kwargs)  # type: ignore[arg-type]
+
+    async def submit_trailing_stop(self, **kwargs: object) -> dict[str, Any]:
+        self._assert(BrokerOperation.SUBMIT_ORDER)
+        return await self._client.submit_trailing_stop(**kwargs)  # type: ignore[arg-type]
+
+    async def submit_protection_order(
+        self, request: BinanceFuturesProtectionOrder
+    ) -> dict[str, Any]:
+        self._assert(BrokerOperation.SUBMIT_ORDER)
+        return await self._client.submit_protection_order(request)
+
+    async def submit_algo_order(self, **kwargs: object) -> dict[str, Any]:
+        self._assert(BrokerOperation.SUBMIT_ORDER)
+        return await self._client.submit_algo_order(**kwargs)
+
+    async def submit_algo_trailing_stop(self, **kwargs: object) -> dict[str, Any]:
+        self._assert(BrokerOperation.SUBMIT_ORDER)
+        return await self._client.submit_algo_trailing_stop(**kwargs)  # type: ignore[arg-type]
+
+    async def get_algo_order(
+        self,
+        symbol: str,
+        *,
+        algo_id: int | str | None = None,
+        client_algo_id: str | None = None,
+    ) -> dict[str, Any]:
+        self._assert(BrokerOperation.QUERY)
+        return await self._client.get_algo_order(
+            symbol, algo_id=algo_id, client_algo_id=client_algo_id
+        )
+
+    async def open_algo_orders(self, symbol: str | None = None) -> tuple[dict[str, Any], ...]:
+        self._assert(BrokerOperation.QUERY)
+        return await self._client.open_algo_orders(symbol)
+
+    async def cancel_algo_order(
+        self,
+        symbol: str,
+        *,
+        algo_id: int | str | None = None,
+        client_algo_id: str | None = None,
+    ) -> dict[str, Any]:
+        self._assert(BrokerOperation.CANCEL_ORDER)
+        return await self._client.cancel_algo_order(
+            symbol, algo_id=algo_id, client_algo_id=client_algo_id
+        )
+
+    async def cancel_all_algo_orders(self, symbol: str) -> dict[str, Any]:
+        self._assert(BrokerOperation.CANCEL_ORDER)
+        return await self._client.cancel_all_algo_orders(symbol)
+
+    async def replace_protection_order(
+        self,
+        symbol: str,
+        *,
+        order_id: int | str | None = None,
+        client_order_id: str | None = None,
+        protection: str,
+        **kwargs: object,
+    ) -> dict[str, Any]:
+        """撤销旧保护单并创建新保护单，返回可审计的旧/新订单结果。
+
+        条件单没有通用的原地修改接口；策略层应在成交/取消事件后调用此方法，
+        并在调用失败时立即重新对账。
+        """
+
+        self._assert(BrokerOperation.REPLACE_ORDER)
+        old_order = await self._client.cancel_order(
+            symbol, order_id=order_id, client_order_id=client_order_id
+        )
+        methods = {
+            "stop_loss": self._client.submit_stop_loss,
+            "take_profit": self._client.submit_take_profit,
+            "trailing_stop": self._client.submit_trailing_stop,
+        }
+        try:
+            submit = methods[protection]
+        except KeyError:
+            raise ValueError(
+                "protection must be stop_loss, take_profit, or trailing_stop"
+            ) from None
+        new_order = await submit(**kwargs)  # type: ignore[operator]
+        return {"canceled_order": old_order, "new_order": new_order}
 
     async def cancel_order(
         self,

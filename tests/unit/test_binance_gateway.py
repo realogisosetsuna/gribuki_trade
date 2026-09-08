@@ -12,10 +12,15 @@ from gribuki_trade.adapters.binance import (
     LIVE_REST_BASE_URL,
     TESTNET_REST_BASE_URL,
     BinanceAPIError,
+    BinanceCancelReplaceResult,
     BinanceConfigurationError,
     BinanceCredentials,
     BinanceEnvironment,
     BinanceSpotGateway,
+    BinanceSpotOcoRequest,
+    BinanceSpotOrderLeg,
+    BinanceSpotOtocoRequest,
+    BinanceSpotOtoRequest,
     HttpRequest,
     HttpResponse,
     SymbolRules,
@@ -113,9 +118,7 @@ class BinanceValueTests(TestCase):
         payload = "symbol=BTCUSDT&quantity=0.01000000&timestamp=123"
         placeholder = "offline-placeholder-not-a-credential"
 
-        expected = hmac.new(
-            placeholder.encode(), payload.encode(), hashlib.sha256
-        ).hexdigest()
+        expected = hmac.new(placeholder.encode(), payload.encode(), hashlib.sha256).hexdigest()
 
         self.assertEqual(sign_hmac_sha256(placeholder, payload), expected)
         self.assertEqual(decimal_to_fixed(Decimal("1E-8")), "0.00000001")
@@ -151,9 +154,7 @@ class BinanceValueTests(TestCase):
         rules = SymbolRules.from_exchange_info(exchange_info()["symbols"][0])  # type: ignore[index]
 
         with self.assertRaisesRegex(ValueError, "increment"):
-            rules.validate_limit_order(
-                quantity=Decimal("0.01000"), price=Decimal("50000.001")
-            )
+            rules.validate_limit_order(quantity=Decimal("0.01000"), price=Decimal("50000.001"))
         with self.assertRaisesRegex(ValueError, "notional"):
             rules.validate_limit_order(quantity=Decimal("0.00001"), price=Decimal("10.00"))
 
@@ -422,9 +423,7 @@ class BinanceGatewayTests(IsolatedAsyncioTestCase):
         self.assertEqual(retried_signed["timestamp"], ["1700000010150"])
 
     async def test_exchange_order_validation_does_not_track_or_place_order(self) -> None:
-        credentials = BinanceCredentials(
-            "offline-api-placeholder", "offline-secret-placeholder"
-        )
+        credentials = BinanceCredentials("offline-api-placeholder", "offline-secret-placeholder")
         transport = FakeTransport(
             response(200, exchange_info()),
             response(200, {}),
@@ -536,9 +535,7 @@ class BinanceGatewayTests(IsolatedAsyncioTestCase):
             await asyncio.wait_for(anext(gateway.events()), timeout=0.01)
 
     async def test_minus_1007_is_unknown_and_error_does_not_leak_credentials(self) -> None:
-        credentials = BinanceCredentials(
-            "offline-api-placeholder", "offline-secret-placeholder"
-        )
+        credentials = BinanceCredentials("offline-api-placeholder", "offline-secret-placeholder")
         transport = FakeTransport(
             response(200, exchange_info()),
             response(
@@ -733,3 +730,180 @@ class BinanceGatewayTests(IsolatedAsyncioTestCase):
             await gateway.submit_order(make_order(quantity=Decimal("0.02000000")))
 
         self.assertEqual(len(transport.requests), 2)
+
+    async def test_submit_spot_order_supports_trailing_stop_and_preserves_params(self) -> None:
+        transport = FakeTransport(
+            response(
+                200,
+                {
+                    "symbol": "BTCUSDT",
+                    "orderId": 11,
+                    "clientOrderId": "trail-1",
+                    "status": "NEW",
+                    "side": "SELL",
+                    "price": "0",
+                    "origQty": "0.010",
+                    "executedQty": "0",
+                    "transactTime": 12,
+                },
+            )
+        )
+        gateway = BinanceSpotGateway(
+            credentials=BinanceCredentials("offline-api-placeholder", "offline-secret-placeholder"),
+            transport=transport,
+        )
+        await gateway.connect()
+
+        snapshot = await gateway.submit_spot_order(
+            symbol="BTCUSDT",
+            side=Side.SELL,
+            order_type="STOP_LOSS",
+            quantity=Decimal("0.010"),
+            trailing_delta=125,
+            client_order_id="trail-1",
+        )
+
+        self.assertEqual(snapshot.client_order_id, "trail-1")
+        query = parse_qs(transport.requests[0].body.decode())
+        self.assertEqual(query["type"], ["STOP_LOSS"])
+        self.assertEqual(query["trailingDelta"], ["125"])
+        self.assertNotIn("stopPrice", query)
+
+    async def test_oco_oto_otoco_and_cancel_replace_use_official_routes(self) -> None:
+        list_payload = {
+            "orderListId": 8,
+            "contingencyType": "OCO",
+            "listStatusType": "EXEC_STARTED",
+            "listOrderStatus": "EXECUTING",
+            "listClientOrderId": "list-1",
+            "transactionTime": 12,
+            "symbol": "BTCUSDT",
+            "orderReports": [
+                {
+                    "symbol": "BTCUSDT",
+                    "orderId": 1,
+                    "clientOrderId": "leg-1",
+                    "status": "NEW",
+                    "side": "SELL",
+                    "price": "51000",
+                    "origQty": "0.01",
+                    "executedQty": "0",
+                }
+            ],
+        }
+        cancel_replace_payload = {
+            "cancelResult": "SUCCESS",
+            "newOrderResult": "SUCCESS",
+            "cancelResponse": {
+                "symbol": "BTCUSDT",
+                "orderId": 1,
+                "status": "CANCELED",
+                "side": "SELL",
+                "origQty": "0.01",
+                "executedQty": "0",
+            },
+            "newOrderResponse": {
+                "symbol": "BTCUSDT",
+                "orderId": 2,
+                "status": "NEW",
+                "side": "SELL",
+                "price": "52000",
+                "origQty": "0.01",
+                "executedQty": "0",
+            },
+        }
+        transport = FakeTransport(
+            response(200, list_payload),
+            response(200, {**list_payload, "contingencyType": "OTO"}),
+            response(200, {**list_payload, "contingencyType": "OTOCO"}),
+            response(200, cancel_replace_payload),
+            response(200, list_payload),
+        )
+        gateway = BinanceSpotGateway(
+            credentials=BinanceCredentials("offline-api-placeholder", "offline-secret-placeholder"),
+            transport=transport,
+        )
+        await gateway.connect()
+        quantity = Decimal("0.010")
+        sell_limit = BinanceSpotOrderLeg("LIMIT_MAKER", Side.SELL, quantity, price=Decimal("51000"))
+        sell_stop = BinanceSpotOrderLeg(
+            "STOP_LOSS", Side.SELL, quantity, stop_price=Decimal("49000")
+        )
+        oco = await gateway.submit_oco(
+            BinanceSpotOcoRequest("BTCUSDT", Side.SELL, quantity, sell_limit, sell_stop)
+        )
+        oto = await gateway.submit_oto(
+            BinanceSpotOtoRequest(
+                "BTCUSDT",
+                BinanceSpotOrderLeg(
+                    "LIMIT", Side.BUY, quantity, price=Decimal("48000"), time_in_force="GTC"
+                ),
+                sell_stop,
+            )
+        )
+        otoco = await gateway.submit_otoco(
+            BinanceSpotOtocoRequest("BTCUSDT", sell_limit, sell_limit, sell_stop)
+        )
+        replaced = await gateway.cancel_replace(
+            symbol="BTCUSDT",
+            cancel_order_id=1,
+            new_order=BinanceSpotOrderLeg(
+                "STOP_LOSS",
+                Side.SELL,
+                quantity,
+                stop_price=Decimal("50000"),
+                client_order_id="new-stop",
+            ),
+        )
+        canceled = await gateway.cancel_order_list("BTCUSDT", order_list_id=8)
+
+        self.assertEqual(
+            (oco.contingency_type, oto.contingency_type, otoco.contingency_type),
+            ("OCO", "OTO", "OTOCO"),
+        )
+        self.assertIsInstance(replaced, BinanceCancelReplaceResult)
+        self.assertEqual(replaced.new_order_response.order_id, 2)
+        self.assertEqual(canceled.order_list_id, 8)
+        self.assertEqual(
+            [urlsplit(request.url).path for request in transport.requests],
+            [
+                "/api/v3/orderList/oco",
+                "/api/v3/orderList/oto",
+                "/api/v3/orderList/otoco",
+                "/api/v3/order/cancelReplace",
+                "/api/v3/orderList",
+            ],
+        )
+
+    async def test_amend_keep_priority_reduces_quantity(self) -> None:
+        transport = FakeTransport(
+            response(
+                200,
+                {
+                    "amendedOrder": {
+                        "symbol": "BTCUSDT",
+                        "orderId": 1,
+                        "clientOrderId": "amended-1",
+                        "status": "NEW",
+                        "side": "SELL",
+                        "price": "51000",
+                        "origQty": "0.005",
+                        "executedQty": "0",
+                    }
+                },
+            )
+        )
+        gateway = BinanceSpotGateway(
+            credentials=BinanceCredentials("offline-api-placeholder", "offline-secret-placeholder"),
+            transport=transport,
+        )
+        await gateway.connect()
+        amended = await gateway.amend_order_keep_priority(
+            symbol="BTCUSDT",
+            order_id=1,
+            new_quantity=Decimal("0.005"),
+        )
+        self.assertEqual(amended.original_quantity, Decimal("0.005"))
+        self.assertEqual(
+            urlsplit(transport.requests[0].url).path, "/api/v3/order/amend/keepPriority"
+        )

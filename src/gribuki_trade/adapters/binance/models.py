@@ -102,6 +102,85 @@ class BinanceAccount:
 
 
 @dataclass(frozen=True, slots=True)
+class BinanceSpotOrderLeg:
+    """一条现货订单腿，可复用于单笔条件单、OCO、OTO 和 OTOCO。"""
+
+    order_type: str
+    side: Side
+    quantity: Decimal
+    price: Decimal | None = None
+    stop_price: Decimal | None = None
+    trailing_delta: int | None = None
+    time_in_force: str | None = None
+    quote_order_quantity: Decimal | None = None
+    iceberg_quantity: Decimal | None = None
+    client_order_id: str | None = None
+    strategy_id: int | None = None
+    strategy_type: int | None = None
+    self_trade_prevention_mode: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BinanceSpotOcoRequest:
+    """现货 OCO 请求；above/below 两腿共享数量。"""
+
+    symbol: str
+    side: Side
+    quantity: Decimal
+    above: BinanceSpotOrderLeg
+    below: BinanceSpotOrderLeg
+    list_client_order_id: str | None = None
+    response_type: str = "RESULT"
+
+
+@dataclass(frozen=True, slots=True)
+class BinanceSpotOtoRequest:
+    """现货 OTO 请求：working 完全成交后激活 pending。"""
+
+    symbol: str
+    working: BinanceSpotOrderLeg
+    pending: BinanceSpotOrderLeg
+    list_client_order_id: str | None = None
+    response_type: str = "RESULT"
+
+
+@dataclass(frozen=True, slots=True)
+class BinanceSpotOtocoRequest:
+    """现货 OTOCO 请求：working 完全成交后激活 pending OCO。"""
+
+    symbol: str
+    working: BinanceSpotOrderLeg
+    pending_above: BinanceSpotOrderLeg
+    pending_below: BinanceSpotOrderLeg
+    list_client_order_id: str | None = None
+    response_type: str = "RESULT"
+
+
+@dataclass(frozen=True, slots=True)
+class BinanceOrderListSnapshot:
+    """Binance 条件订单列表状态和其中的订单快照。"""
+
+    order_list_id: int | None
+    contingency_type: str | None
+    list_status_type: str | None
+    list_order_status: str | None
+    list_client_order_id: str | None
+    symbol: str
+    orders: tuple[BinanceOrderSnapshot, ...]
+    transaction_time_ms: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BinanceCancelReplaceResult:
+    """现货 cancel-replace 的两个独立结果，供动态止盈止损对账。"""
+
+    cancel_result: str | None
+    new_order_result: str | None
+    cancel_response: BinanceOrderSnapshot | None
+    new_order_response: BinanceOrderSnapshot | None
+
+
+@dataclass(frozen=True, slots=True)
 class BinanceOrderSnapshot:
     symbol: str
     client_order_id: str | None

@@ -32,6 +32,24 @@ cancel, while PAPER is rejected before any broker request. The adapter keeps
 the official product-specific `/fapi` and `/dapi` routes and never falls back
 from DEMO to LIVE.
 
+The Futures service also exposes guarded risk configuration and protection
+interfaces. `set_leverage` is per symbol; `set_margin_type` is `ISOLATED` or
+`CROSSED`; position mode and USD-M multi-assets mode are account settings and
+therefore use the `CHANGE_RISK` guard operation. Structured protection requests
+cover fixed `STOP_MARKET`/`TAKE_PROFIT_MARKET`, legacy
+`TRAILING_STOP_MARKET`, and the official `/fapi/v1/algoOrder` conditional-order
+family. Legacy trailing orders validate `callbackRate` at 0.1–5 percent while
+Algo trailing orders validate 0.1–10 percent. Dynamic strategy changes use
+cancel-and-recreate with an explicit result for reconciliation; the service
+does not claim an atomic amendment for conditional orders.
+
+Spot advanced trading is exposed by the gateway as structured
+`BinanceSpotOrderLeg` and order-list requests. The adapter supports native
+stop/take-profit orders, integer-BIPS `trailingDelta`, OCO, OTO, OTOCO,
+order-list cancellation, cancel-replace, and cancel-all-open-orders. Spot and
+Futures trailing parameters are deliberately separate types and are never
+converted implicitly.
+
 The LIVE balance CLI commands only connect, synchronize time, and query
 account data under the same guards. Spot reports per-asset free and locked
 balances; USD-M Futures reports selected account and asset balance fields.

@@ -174,6 +174,9 @@ from gribuki_trade.services.binance_shadow import (
     ShadowTermination,
     ShadowTrendDecisionAdapter,
 )
+from gribuki_trade.services.binance_spot_advanced import (
+    BinanceSpotAdvancedExecutionService,
+)
 from gribuki_trade.services.candidate_universe import (
     CandidateDiscovery,
     CandidateLifecycleError,
@@ -327,6 +330,7 @@ __all__ = [
     "BinanceSpotExecutionGateway",
     "BinanceFuturesExecutionService",
     "BinanceSpotExecutionService",
+    "BinanceSpotAdvancedExecutionService",
     "BinanceSpotTestnetExecutionService",
     "BinanceStartupReconciliation",
     "BinanceTestnetOnlyError",

@@ -1,6 +1,6 @@
 # Binance 与 Charles Schwab 接入边界
 
-更新日期：2026-08-15
+更新日期：2026-09-09
 
 本文按“底层适配器能力、已经接入的执行服务、尚未形成的用户工作流”区分现状。Testnet、PAPER、
 SHADOW 和离线 transport 只能验证工程行为，不代表真实成交质量、监管许可或策略收益。
@@ -153,6 +153,55 @@ Margin/Portfolio Margin 阶段不会回退到 LIVE。
   连接、查询、提交和撤单都在调用网关前进行进程内确认、账户白名单和交易所白名单校验；
   kill switch 和 GUI 生产接线；
 - 本地 PAPER/回测成交模型不复制真实队列、深度、延迟和市场冲击。
+
+### Spot 与 USDⓈ-M Futures API 对照及策略接口
+
+以下接口对应 Binance 官方文档的 Core Spot Trade 与 USDⓈ-M Futures Trade
+REST API。两类产品必须使用各自的基址、签名请求和订单参数，不能把现货的
+`trailingDelta` 传给合约，也不能把合约的 `callbackRate` 传给现货。
+
+| 能力 | Spot | USDⓈ-M Futures |
+|---|---|---|
+| REST 基址 | `https://api.binance.com/api/v3` | `https://fapi.binance.com/fapi/v1` |
+| 下单 | `POST /order` | `POST /order` |
+| 测试单 | `POST /order/test` | `POST /order/test` |
+| 查询/撤单 | `GET/DELETE /order` | `GET/DELETE /order` |
+| 保护组合 | `orderList/oco`、`orderList/oto`、`orderList/otoco` | 条件单或 `algoOrder` |
+| 移动止盈止损 | `trailingDelta`，整数 BIPS | `callbackRate`，百分比；普通单 0.1–5，Algo 0.1–10 |
+| 杠杆/保证金 | 不适用 | `leverage`、`marginType`、持仓模式、多资产模式 |
+| 持仓方向 | 现货资产余额 | 单向 `BOTH` 或 Hedge 的 `LONG/SHORT` |
+| 低延迟状态 | Spot User Data Stream 的订单/余额事件 | Futures User Data Stream 的订单/账户/持仓事件 |
+
+现货策略通过 `BinanceSpotGateway` 的结构化接口调用：
+`submit_spot_order` 支持原生止损、止盈和 trailingDelta；
+`submit_oco`、`submit_oto`、`submit_otoco` 创建条件订单列表；
+`cancel_replace` 用交易所的 cancel-replace 更新动态保护单；
+`cancel_order_list` 和 `cancel_all_open_orders` 用于撤销保护组合或标的全部挂单。
+请求对象是 `BinanceSpotOrderLeg`、`BinanceSpotOcoRequest`、
+`BinanceSpotOtoRequest` 和 `BinanceSpotOtocoRequest`，策略不需要拼接原始
+URL 或签名参数。
+
+合约策略通过 `BinanceFuturesExecutionService` 调用：
+
+- `set_leverage(symbol, leverage)` 设置单个合约杠杆。API 接受 1–125，实际可用上限仍受风险档位和名义价值限制；返回值中的 `maxNotionalValue` 必须保存并用于风险判断。
+- `set_margin_type(symbol, "ISOLATED"|"CROSSED")` 设置逐合约保证金模式。
+- `set_position_mode(True|False)` 设置全账户单向/双向持仓；有持仓或挂单时 Binance 可能拒绝切换。
+- `set_multi_assets_mode(True|False)` 设置 USDⓈ-M 多资产保证金模式。
+- `submit_protection_order(BinanceFuturesProtectionOrder(...))` 统一表达止损、止盈和移动止损。
+- `submit_algo_order`、`submit_algo_trailing_stop`、`get_algo_order`、`open_algo_orders`、`cancel_algo_order` 和 `cancel_all_algo_orders` 对应当前官方 `/fapi/v1/algoOrder` 生命周期。
+- `replace_protection_order` 执行撤销旧保护单后创建新保护单，并返回两次结果供对账；条件单没有被假设为可原地修改。
+
+在当前账户为 Hedge Mode 时，开多使用 `BUY + LONG`，保护多仓使用
+`SELL + LONG`；开空使用 `SELL + SHORT`，保护空仓使用 `BUY + SHORT`。
+Hedge Mode 下不能发送 `reduceOnly`，`closePosition=true` 不能和
+`quantity` 同时发送；移动止损必须提供数量且不能使用 `closePosition`。
+
+官方接口参考：
+
+- [Spot Trade REST API](https://developers.binance.com/en/docs/catalog/core-trading-spot-trading/api/rest-api/trade)
+- [USDⓈ-M Futures Trade REST API](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/trade)
+- [Spot User Data Stream](https://developers.binance.com/en/docs/catalog/core-trading-spot-trading/api/ws-api/user-data-stream)
+- [USDⓈ-M Futures User Data Streams](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-api/user-data-streams)
 
 因此，准确结论是“默认拒绝且无生产入口”，不是“底层代码技术上绝对无法访问 LIVE”。
 

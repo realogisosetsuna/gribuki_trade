@@ -7,7 +7,10 @@ from unittest import IsolatedAsyncioTestCase, TestCase
 from urllib.parse import parse_qs, urlsplit
 
 from gribuki_trade.adapters.binance.envs import BinanceProduct, BinanceStage
-from gribuki_trade.adapters.binance.futures import BinanceFuturesRestClient
+from gribuki_trade.adapters.binance.futures import (
+    BinanceFuturesProtectionOrder,
+    BinanceFuturesRestClient,
+)
 from gribuki_trade.adapters.binance.gateway import (
     BinanceAPIError,
     BinanceConfigurationError,
@@ -55,6 +58,91 @@ class BinanceFuturesValueTests(TestCase):
 
 
 class BinanceFuturesClientTests(IsolatedAsyncioTestCase):
+    async def test_risk_settings_use_signed_product_specific_endpoints(self) -> None:
+        credentials = BinanceCredentials(api_key="offline-key", secret_key="offline-secret")
+        transport = FakeTransport(
+            response(200, {"leverage": 10}),
+            response(200, {"code": 200}),
+            response(200, {"code": 200}),
+            response(200, {"multiAssetsMargin": False}),
+            response(200, {"code": 200}),
+        )
+        client = BinanceFuturesRestClient(credentials=credentials, transport=transport)
+        await client.set_leverage("BTCUSDT", 10)
+        await client.set_margin_type("BTCUSDT", "isolated")
+        await client.set_position_mode(True)
+        self.assertFalse(await client.multi_assets_mode())
+        await client.set_multi_assets_mode(False)
+        paths = [urlsplit(request.url).path for request in transport.requests]
+        self.assertEqual(
+            paths,
+            [
+                "/fapi/v1/leverage",
+                "/fapi/v1/marginType",
+                "/fapi/v1/positionSide/dual",
+                "/fapi/v1/multiAssetsMargin",
+                "/fapi/v1/multiAssetsMargin",
+            ],
+        )
+        self.assertTrue(all("signature=" in request.url for request in transport.requests))
+
+    async def test_structured_protection_order_maps_to_stop_market(self) -> None:
+        credentials = BinanceCredentials(api_key="offline-key", secret_key="offline-secret")
+        transport = FakeTransport(
+            response(200, {"dualSidePosition": True}),
+            response(200, {"orderId": 9, "type": "STOP_MARKET"}),
+        )
+        client = BinanceFuturesRestClient(credentials=credentials, transport=transport)
+        result = await client.submit_protection_order(
+            BinanceFuturesProtectionOrder(
+                kind="stop_loss",
+                symbol="BTCUSDT",
+                side="SELL",
+                position_side="LONG",
+                stop_price="60000",
+            )
+        )
+        self.assertEqual(result["orderId"], 9)
+        query = parse_qs(urlsplit(transport.requests[1].url).query)
+        self.assertEqual(query["type"], ["STOP_MARKET"])
+        self.assertEqual(query["stopPrice"], ["60000"])
+        self.assertEqual(query["closePosition"], ["true"])
+
+    async def test_legacy_trailing_rate_is_capped_at_five_percent(self) -> None:
+        credentials = BinanceCredentials(api_key="offline-key", secret_key="offline-secret")
+        client = BinanceFuturesRestClient(
+            credentials=credentials,
+            transport=FakeTransport(response(200, {"dualSidePosition": False})),
+        )
+        with self.assertRaisesRegex(ValueError, "0.1 and 5"):
+            await client.submit_trailing_stop(
+                symbol="BTCUSDT", side="SELL", callback_rate="5.1", quantity="0.001"
+            )
+
+    async def test_algo_order_family_uses_algo_routes_and_ten_percent_cap(self) -> None:
+        credentials = BinanceCredentials(api_key="offline-key", secret_key="offline-secret")
+        transport = FakeTransport(
+            response(200, {"algoId": 1}),
+            response(200, [{"algoId": 1}]),
+            response(200, {"algoId": 1}),
+            response(200, {"code": 200}),
+        )
+        client = BinanceFuturesRestClient(credentials=credentials, transport=transport)
+        await client.submit_algo_trailing_stop(
+            symbol="BTCUSDT", side="SELL", callback_rate="10", quantity="0.001"
+        )
+        await client.open_algo_orders("BTCUSDT")
+        await client.get_algo_order("BTCUSDT", algo_id=1)
+        await client.cancel_algo_order("BTCUSDT", algo_id=1)
+        self.assertEqual(
+            [urlsplit(item.url).path for item in transport.requests],
+            [
+                "/fapi/v1/algoOrder",
+                "/fapi/v1/openAlgoOrders",
+                "/fapi/v1/algoOrder",
+                "/fapi/v1/algoOrder",
+            ],
+        )
     async def test_public_usds_ticker_uses_demo_without_credentials(self) -> None:
         transport = FakeTransport(
             response(200, {"symbol": "BTCUSDT", "price": "64123.40", "time": 12})

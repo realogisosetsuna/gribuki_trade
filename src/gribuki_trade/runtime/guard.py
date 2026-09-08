@@ -25,6 +25,7 @@ class BrokerOperation(StrEnum):
     SUBMIT_ORDER = "submit_order"
     CANCEL_ORDER = "cancel_order"
     REPLACE_ORDER = "replace_order"
+    CHANGE_RISK = "change_risk"
 
     @property
     def changes_orders(self) -> bool:
@@ -32,6 +33,7 @@ class BrokerOperation(StrEnum):
             BrokerOperation.SUBMIT_ORDER,
             BrokerOperation.CANCEL_ORDER,
             BrokerOperation.REPLACE_ORDER,
+            BrokerOperation.CHANGE_RISK,
         }
 
 

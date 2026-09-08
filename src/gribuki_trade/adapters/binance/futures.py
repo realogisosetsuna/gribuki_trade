@@ -12,7 +12,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlencode
 
 from .envs import (
@@ -49,6 +49,32 @@ class BinanceFuturesTicker:
     symbol: str
     price: Decimal
     time_ms: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BinanceFuturesProtectionOrder:
+    """策略层使用的结构化保护单请求。"""
+
+    kind: Literal["stop_loss", "take_profit", "trailing_stop"]
+    symbol: str
+    side: str
+    position_side: str | None = None
+    quantity: Decimal | str | None = None
+    stop_price: Decimal | str | None = None
+    callback_rate: Decimal | str | None = None
+    activation_price: Decimal | str | None = None
+    close_position: bool = True
+    working_type: str = "MARK_PRICE"
+    price_protect: bool | None = None
+    client_order_id: str | None = None
+
+    def validate(self) -> None:
+        if self.kind in {"stop_loss", "take_profit"} and self.stop_price is None:
+            raise ValueError("stop_price is required for fixed protection orders")
+        if self.kind == "trailing_stop" and self.callback_rate is None:
+            raise ValueError("callback_rate is required for trailing_stop")
+        if self.kind == "trailing_stop" and self.close_position:
+            raise ValueError("trailing_stop requires quantity and cannot use close_position")
 
 
 class BinanceFuturesRestClient:
@@ -267,6 +293,86 @@ class BinanceFuturesRestClient:
 
         return await self.position_side_mode()
 
+    async def set_position_mode(self, dual_side_position: bool) -> dict[str, Any]:
+        """设置账户持仓模式（单向或双向）。
+
+        这是账户级别的风险设置，Binance 要求没有未平仓仓位和挂单时才可切换。
+        调用方必须通过运行时守卫授权；客户端不会在失败后重试。
+        """
+
+        if not isinstance(dual_side_position, bool):
+            raise TypeError("dual_side_position must be a bool")
+        payload = await self._request_json(
+            "POST",
+            self._v1("positionSide/dual"),
+            params=(("dualSidePosition", str(dual_side_position).lower()),),
+            signed=True,
+        )
+        return dict(self._require_mapping(payload, "position side mode update"))
+
+    async def set_leverage(self, symbol: str, leverage: int) -> dict[str, Any]:
+        """设置单个合约的杠杆倍数（交易所仍会按风险档位限制上限）。"""
+
+        if isinstance(leverage, bool) or not isinstance(leverage, int):
+            raise TypeError("leverage must be an integer")
+        if not 1 <= leverage <= 125:
+            raise ValueError("leverage must be between 1 and 125")
+        payload = await self._request_json(
+            "POST",
+            self._v1("leverage"),
+            params=(
+                ("symbol", self._normalize_symbol(symbol)),
+                ("leverage", leverage),
+            ),
+            signed=True,
+        )
+        return dict(self._require_mapping(payload, "leverage update"))
+
+    async def set_margin_type(self, symbol: str, margin_type: str) -> dict[str, Any]:
+        """设置单个合约的保证金模式（ISOLATED 或 CROSSED）。"""
+
+        normalized = self._enum_value(margin_type, "margin_type")
+        if normalized not in {"ISOLATED", "CROSSED"}:
+            raise ValueError("margin_type must be ISOLATED or CROSSED")
+        payload = await self._request_json(
+            "POST",
+            self._v1("marginType"),
+            params=(
+                ("symbol", self._normalize_symbol(symbol)),
+                ("marginType", normalized),
+            ),
+            signed=True,
+        )
+        return dict(self._require_mapping(payload, "margin type update"))
+
+    async def multi_assets_mode(self) -> bool:
+        """查询 USDⓈ-M 多资产保证金模式。COIN-M 不支持此账户设置。"""
+
+        if self.product is not BinanceProduct.USDS_FUTURES:
+            raise BinanceConfigurationError("multi-assets mode is only supported by USD-M Futures")
+        payload = await self._request_json(
+            "GET", self._v1("multiAssetsMargin"), signed=True
+        )
+        value = self._require_mapping(payload, "multi-assets mode").get("multiAssetsMargin")
+        if not isinstance(value, bool):
+            raise BinanceProtocolError("Binance Futures multi-assets mode response is malformed")
+        return value
+
+    async def set_multi_assets_mode(self, multi_assets_margin: bool) -> dict[str, Any]:
+        """设置 USDⓈ-M 多资产保证金模式。"""
+
+        if self.product is not BinanceProduct.USDS_FUTURES:
+            raise BinanceConfigurationError("multi-assets mode is only supported by USD-M Futures")
+        if not isinstance(multi_assets_margin, bool):
+            raise TypeError("multi_assets_margin must be a bool")
+        payload = await self._request_json(
+            "POST",
+            self._v1("multiAssetsMargin"),
+            params=(("multiAssetsMargin", str(multi_assets_margin).lower()),),
+            signed=True,
+        )
+        return dict(self._require_mapping(payload, "multi-assets mode update"))
+
     async def open_orders(self, symbol: str | None = None) -> tuple[dict[str, Any], ...]:
         """返回当前未完成的 USD-M/COIN-M 合约订单。"""
 
@@ -353,6 +459,276 @@ class BinanceFuturesRestClient:
             "POST", self._order_path("order"), params=params, signed=True
         )
         return dict(self._require_mapping(payload, "order"))
+
+    async def submit_stop_loss(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        stop_price: Decimal | str,
+        position_side: str | None = None,
+        quantity: Decimal | str | None = None,
+        close_position: bool = True,
+        working_type: str = "MARK_PRICE",
+        price_protect: bool | None = None,
+        client_order_id: str | None = None,
+    ) -> dict[str, Any]:
+        """提交止损保护单；默认 STOP_MARKET 全平对应方向仓位。"""
+
+        if close_position and quantity is not None:
+            raise ValueError("close_position cannot be combined with quantity")
+
+        return await self.submit_order(
+            symbol=symbol,
+            side=side,
+            type="STOP_MARKET",
+            quantity=quantity,
+            stop_price=stop_price,
+            position_side=position_side,
+            close_position=close_position,
+            working_type=working_type,
+            price_protect=price_protect,
+            client_order_id=client_order_id,
+        )
+
+    async def submit_take_profit(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        stop_price: Decimal | str,
+        position_side: str | None = None,
+        quantity: Decimal | str | None = None,
+        close_position: bool = True,
+        working_type: str = "MARK_PRICE",
+        price_protect: bool | None = None,
+        client_order_id: str | None = None,
+    ) -> dict[str, Any]:
+        """提交止盈保护单；默认 TAKE_PROFIT_MARKET 全平对应方向仓位。"""
+
+        if close_position and quantity is not None:
+            raise ValueError("close_position cannot be combined with quantity")
+
+        return await self.submit_order(
+            symbol=symbol,
+            side=side,
+            type="TAKE_PROFIT_MARKET",
+            quantity=quantity,
+            stop_price=stop_price,
+            position_side=position_side,
+            close_position=close_position,
+            working_type=working_type,
+            price_protect=price_protect,
+            client_order_id=client_order_id,
+        )
+
+    async def submit_trailing_stop(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        callback_rate: Decimal | str,
+        position_side: str | None = None,
+        quantity: Decimal | str | None = None,
+        activation_price: Decimal | str | None = None,
+        close_position: bool = False,
+        working_type: str | None = None,
+        client_order_id: str | None = None,
+    ) -> dict[str, Any]:
+        """提交移动止损单（TRAILING_STOP_MARKET）。"""
+
+        if close_position:
+            raise ValueError("TRAILING_STOP_MARKET requires quantity and cannot use close_position")
+        if quantity is None:
+            raise ValueError("TRAILING_STOP_MARKET requires quantity")
+        rate = Decimal(str(callback_rate))
+        if not Decimal("0.1") <= rate <= Decimal("5"):
+            raise ValueError("callback_rate must be between 0.1 and 5 percent")
+        return await self.submit_order(
+            symbol=symbol,
+            side=side,
+            type="TRAILING_STOP_MARKET",
+            quantity=quantity,
+            activation_price=activation_price,
+            callback_rate=rate,
+            position_side=position_side,
+            close_position=close_position,
+            working_type=working_type,
+            client_order_id=client_order_id,
+        )
+
+    async def submit_protection_order(
+        self, request: BinanceFuturesProtectionOrder
+    ) -> dict[str, Any]:
+        """按结构化保护单意图分派到官方条件单类型。"""
+
+        request.validate()
+        if request.kind == "stop_loss":
+            return await self.submit_stop_loss(
+                symbol=request.symbol,
+                side=request.side,
+                stop_price=request.stop_price,  # type: ignore[arg-type]
+                position_side=request.position_side,
+                quantity=request.quantity,
+                close_position=request.close_position,
+                working_type=request.working_type,
+                price_protect=request.price_protect,
+                client_order_id=request.client_order_id,
+            )
+        if request.kind == "take_profit":
+            return await self.submit_take_profit(
+                symbol=request.symbol,
+                side=request.side,
+                stop_price=request.stop_price,  # type: ignore[arg-type]
+                position_side=request.position_side,
+                quantity=request.quantity,
+                close_position=request.close_position,
+                working_type=request.working_type,
+                price_protect=request.price_protect,
+                client_order_id=request.client_order_id,
+            )
+        return await self.submit_trailing_stop(
+            symbol=request.symbol,
+            side=request.side,
+            callback_rate=request.callback_rate,  # type: ignore[arg-type]
+            position_side=request.position_side,
+            quantity=request.quantity,
+            activation_price=request.activation_price,
+            close_position=request.close_position,
+            working_type=request.working_type if request.working_type else None,
+            client_order_id=request.client_order_id,
+        )
+
+    async def submit_algo_order(self, **kwargs: object) -> dict[str, Any]:
+        """提交 Binance 条件算法订单（``/fapi/v1/algoOrder``）。"""
+
+        values = dict(kwargs)
+        if "symbol" not in values or "side" not in values:
+            raise ValueError("submit_algo_order requires symbol and side")
+        if values.get("trigger_price") is not None and values.get("stop_price") is not None:
+            raise ValueError("provide trigger_price or stop_price, not both")
+        params: list[tuple[str, object]] = []
+        aliases = {
+            "algo_type": "algoType",
+            "symbol": "symbol",
+            "side": "side",
+            "type": "type",
+            "quantity": "quantity",
+            "price": "price",
+            "trigger_price": "triggerPrice",
+            "stop_price": "triggerPrice",
+            "position_side": "positionSide",
+            "close_position": "closePosition",
+            "working_type": "workingType",
+            "price_protect": "priceProtect",
+            "callback_rate": "callbackRate",
+            "activation_price": "activationPrice",
+            "client_algo_id": "clientAlgoId",
+            "reduce_only": "reduceOnly",
+        }
+        for key, api_name in aliases.items():
+            value = values.get(key)
+            if value is None:
+                continue
+            if key in {"side", "type", "position_side", "working_type", "algo_type"}:
+                value = self._enum_value(str(value), key)
+            elif key in {"close_position", "price_protect", "reduce_only"}:
+                value = str(value).lower()
+            params.append((api_name, value))
+        if not any(name == "algoType" for name, _ in params):
+            params.append(("algoType", "CONDITIONAL"))
+        payload = await self._request_json(
+            "POST", self._v1("algoOrder"), params=params, signed=True
+        )
+        return dict(self._require_mapping(payload, "algo order"))
+
+    async def submit_algo_trailing_stop(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        callback_rate: Decimal | str,
+        position_side: str | None = None,
+        quantity: Decimal | str | None = None,
+        activation_price: Decimal | str | None = None,
+        close_position: bool = False,
+        client_algo_id: str | None = None,
+    ) -> dict[str, Any]:
+        """提交算法移动止盈止损；算法接口允许 callbackRate 0.1–10%。"""
+
+        rate = Decimal(str(callback_rate))
+        if not Decimal("0.1") <= rate <= Decimal("10"):
+            raise ValueError("callback_rate must be between 0.1 and 10 percent")
+        if close_position:
+            raise ValueError("algorithm trailing stop cannot use close_position")
+        if quantity is None:
+            raise ValueError("algorithm trailing stop requires quantity")
+        return await self.submit_algo_order(
+            algo_type="CONDITIONAL",
+            symbol=symbol,
+            side=side,
+            type="TRAILING_STOP_MARKET",
+            quantity=quantity,
+            callback_rate=rate,
+            activation_price=activation_price,
+            position_side=position_side,
+            close_position=close_position,
+            client_algo_id=client_algo_id,
+        )
+
+    async def get_algo_order(
+        self,
+        symbol: str,
+        *,
+        algo_id: int | str | None = None,
+        client_algo_id: str | None = None,
+    ) -> dict[str, Any]:
+        if (algo_id is None) == (client_algo_id is None):
+            raise ValueError("provide exactly one of algo_id or client_algo_id")
+        params: list[tuple[str, object]] = [("symbol", self._normalize_symbol(symbol))]
+        params.append(
+            ("algoId" if algo_id is not None else "clientAlgoId", algo_id or client_algo_id)
+        )
+        payload = await self._request_json(
+            "GET", self._v1("algoOrder"), params=params, signed=True
+        )
+        return dict(self._require_mapping(payload, "algo order"))
+
+    async def open_algo_orders(self, symbol: str | None = None) -> tuple[dict[str, Any], ...]:
+        params: tuple[tuple[str, object], ...] = ()
+        if symbol is not None:
+            params = (("symbol", self._normalize_symbol(symbol)),)
+        payload = await self._request_json(
+            "GET", self._v1("openAlgoOrders"), params=params, signed=True
+        )
+        if not isinstance(payload, list) or any(not isinstance(item, Mapping) for item in payload):
+            raise BinanceProtocolError("Binance Futures open algo orders response must be a list")
+        return tuple(dict(item) for item in payload)
+
+    async def cancel_algo_order(
+        self,
+        symbol: str,
+        *,
+        algo_id: int | str | None = None,
+        client_algo_id: str | None = None,
+    ) -> dict[str, Any]:
+        if (algo_id is None) == (client_algo_id is None):
+            raise ValueError("provide exactly one of algo_id or client_algo_id")
+        params: list[tuple[str, object]] = [("symbol", self._normalize_symbol(symbol))]
+        params.append(
+            ("algoId" if algo_id is not None else "clientAlgoId", algo_id or client_algo_id)
+        )
+        payload = await self._request_json(
+            "DELETE", self._v1("algoOrder"), params=params, signed=True
+        )
+        return dict(self._require_mapping(payload, "cancel algo order"))
+
+    async def cancel_all_algo_orders(self, symbol: str) -> dict[str, Any]:
+        payload = await self._request_json(
+            "DELETE", self._v1("algoOpenOrders"),
+            params=(("symbol", self._normalize_symbol(symbol)),), signed=True,
+        )
+        return dict(self._require_mapping(payload, "cancel all algo orders"))
 
     async def cancel_order(
         self,
@@ -495,6 +871,10 @@ class BinanceFuturesRestClient:
             "new_client_order_id": "newClientOrderId",
             "working_type": "workingType",
             "price_protect": "priceProtect",
+            "activation_price": "activationPrice",
+            "callback_rate": "callbackRate",
+            "price_match": "priceMatch",
+            "self_trade_prevention_mode": "selfTradePreventionMode",
         }
         for key, api_name in aliases.items():
             value = values.get(key)

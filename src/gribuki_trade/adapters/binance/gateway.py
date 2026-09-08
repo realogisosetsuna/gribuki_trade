@@ -28,14 +28,20 @@ from .models import (
     ORDER_STATUS_EVENT,
     BinanceAccount,
     BinanceBalance,
+    BinanceCancelReplaceResult,
     BinanceCommissionComponent,
     BinanceCommissionDiscount,
     BinanceCommissionRate,
     BinanceCredentials,
     BinanceEnvironment,
+    BinanceOrderListSnapshot,
     BinanceOrderSnapshot,
     BinanceOrderUpdate,
     BinanceRateLimitUsage,
+    BinanceSpotOcoRequest,
+    BinanceSpotOrderLeg,
+    BinanceSpotOtocoRequest,
+    BinanceSpotOtoRequest,
     BinanceTrade,
     Kline,
     OrderBookLevel,
@@ -82,6 +88,18 @@ class BinanceUncertainResultError(BinanceAPIError):
 
 
 _CLIENT_ORDER_ID = re.compile(r"^[A-Za-z0-9._:/-]{1,36}$")
+_SPOT_ORDER_TYPES = frozenset(
+    {
+        "MARKET",
+        "LIMIT",
+        "STOP_LOSS",
+        "STOP_LOSS_LIMIT",
+        "TAKE_PROFIT",
+        "TAKE_PROFIT_LIMIT",
+        "LIMIT_MAKER",
+    }
+)
+_ORDER_RESPONSE_TYPES = frozenset({"ACK", "RESULT", "FULL"})
 _SENSITIVE_ASSIGNMENT = re.compile(
     r"(?i)\b(api[-_ ]?key|secret(?:[-_ ]?key)?|signature)\b\s*[:=]\s*[^\s,;&]+"
 )
@@ -379,9 +397,7 @@ class BinanceSpotGateway:
             raise ConnectionError("Binance gateway is not connected")
         self._require_credentials()
         if not _CLIENT_ORDER_ID.fullmatch(order.client_order_id):
-            raise BinanceValidationError(
-                "client_order_id must be 1-36 Binance-safe characters"
-            )
+            raise BinanceValidationError("client_order_id must be 1-36 Binance-safe characters")
         rules = await self.symbol_rules(order.symbol)
         rules.validate_limit_order(quantity=order.quantity, price=order.limit_price)
         await self._request_json(
@@ -402,6 +418,328 @@ class BinanceSpotGateway:
         )
 
     test_order = validate_order_on_exchange
+
+    async def submit_spot_order(
+        self,
+        *,
+        symbol: str,
+        side: Side,
+        order_type: str,
+        quantity: Decimal | None = None,
+        quote_order_quantity: Decimal | None = None,
+        price: Decimal | None = None,
+        stop_price: Decimal | None = None,
+        trailing_delta: int | None = None,
+        time_in_force: str | None = None,
+        client_order_id: str | None = None,
+        iceberg_quantity: Decimal | None = None,
+        strategy_id: int | None = None,
+        strategy_type: int | None = None,
+        self_trade_prevention_mode: str | None = None,
+        response_type: str = "RESULT",
+    ) -> BinanceOrderSnapshot:
+        """提交任意 Binance Spot 单笔订单，包括止损、止盈和跟踪止盈。
+
+        该接口保留交易所的原生 ``STOP_LOSS``/``TAKE_PROFIT`` 与
+        ``trailingDelta`` 语义，策略层只需要构造结构化参数即可；返回值始终
+        归一化为 :class:`BinanceOrderSnapshot`，便于后续对账。
+        """
+
+        self._require_order_connection()
+        normalized = self._normalize_symbol(symbol)
+        params = self._spot_order_params(
+            symbol=normalized,
+            side=side,
+            order_type=order_type,
+            quantity=quantity,
+            quote_order_quantity=quote_order_quantity,
+            price=price,
+            stop_price=stop_price,
+            trailing_delta=trailing_delta,
+            time_in_force=time_in_force,
+            client_order_id=client_order_id,
+            iceberg_quantity=iceberg_quantity,
+            strategy_id=strategy_id,
+            strategy_type=strategy_type,
+            self_trade_prevention_mode=self_trade_prevention_mode,
+            response_type=response_type,
+        )
+        payload = await self._request_json(
+            "POST",
+            "/api/v3/order",
+            params=tuple(params),
+            signed=True,
+            execution_sensitive=True,
+        )
+        return self._snapshot_from_payload(payload, fallback_symbol=normalized)
+
+    async def submit_oco(self, request: BinanceSpotOcoRequest) -> BinanceOrderListSnapshot:
+        """提交 OCO（止盈/止损互斥）订单列表。"""
+
+        self._require_order_connection()
+        symbol = self._normalize_symbol(request.symbol)
+        self._validate_list_response_type(request.response_type)
+        quantity = self._positive_decimal(request.quantity, "quantity")
+        if request.above.side is not request.side or request.below.side is not request.side:
+            raise ValueError("OCO legs must use the request side")
+        params: list[tuple[str, object]] = [
+            ("symbol", symbol),
+            ("side", request.side.value),
+            ("quantity", decimal_to_fixed(quantity)),
+            ("aboveType", self._order_type(request.above.order_type)),
+            ("belowType", self._order_type(request.below.order_type)),
+        ]
+        params.extend(self._list_leg_params("above", request.above, quantity=quantity))
+        params.extend(self._list_leg_params("below", request.below, quantity=quantity))
+        self._append_optional(params, "listClientOrderId", request.list_client_order_id)
+        params.append(("newOrderRespType", request.response_type.upper()))
+        payload = await self._request_json(
+            "POST",
+            "/api/v3/orderList/oco",
+            params=tuple(params),
+            signed=True,
+            execution_sensitive=True,
+        )
+        return self._order_list_from_payload(payload, fallback_symbol=symbol)
+
+    async def submit_oto(self, request: BinanceSpotOtoRequest) -> BinanceOrderListSnapshot:
+        """提交 OTO：working 成交后自动激活 pending。"""
+
+        self._require_order_connection()
+        symbol = self._normalize_symbol(request.symbol)
+        self._validate_list_response_type(request.response_type)
+        params: list[tuple[str, object]] = [("symbol", symbol)]
+        params.extend(self._prefixed_leg_params("working", request.working, required=True))
+        params.extend(self._prefixed_leg_params("pending", request.pending, required=True))
+        self._append_optional(params, "listClientOrderId", request.list_client_order_id)
+        params.append(("newOrderRespType", request.response_type.upper()))
+        payload = await self._request_json(
+            "POST",
+            "/api/v3/orderList/oto",
+            params=tuple(params),
+            signed=True,
+            execution_sensitive=True,
+        )
+        return self._order_list_from_payload(payload, fallback_symbol=symbol)
+
+    async def submit_otoco(self, request: BinanceSpotOtocoRequest) -> BinanceOrderListSnapshot:
+        """提交 OTOCO：working 成交后自动激活一组 OCO 止盈/止损。"""
+
+        self._require_order_connection()
+        symbol = self._normalize_symbol(request.symbol)
+        self._validate_list_response_type(request.response_type)
+        if request.pending_above.side is not request.pending_below.side:
+            raise ValueError("OTOCO pending legs must use the same side")
+        params: list[tuple[str, object]] = [("symbol", symbol)]
+        params.extend(self._prefixed_leg_params("working", request.working, required=True))
+        if request.pending_above.side is not request.pending_below.side:
+            raise ValueError("OTOCO pending legs must use the same side")
+        if request.pending_above.quantity != request.pending_below.quantity:
+            raise ValueError("OTOCO pending legs must use the same quantity")
+        params.extend(
+            (
+                ("pendingSide", request.pending_above.side.value),
+                ("pendingQuantity", decimal_to_fixed(request.pending_above.quantity)),
+                ("pendingAboveType", self._order_type(request.pending_above.order_type)),
+                ("pendingBelowType", self._order_type(request.pending_below.order_type)),
+            )
+        )
+        params.extend(
+            self._prefixed_leg_params(
+                "pendingAbove",
+                request.pending_above,
+                required=False,
+                include_type=False,
+                include_side=False,
+                include_quantity=False,
+            )
+        )
+        params.extend(
+            self._prefixed_leg_params(
+                "pendingBelow",
+                request.pending_below,
+                required=False,
+                include_type=False,
+                include_side=False,
+                include_quantity=False,
+            )
+        )
+        self._append_optional(params, "listClientOrderId", request.list_client_order_id)
+        params.append(("newOrderRespType", request.response_type.upper()))
+        payload = await self._request_json(
+            "POST",
+            "/api/v3/orderList/otoco",
+            params=tuple(params),
+            signed=True,
+            execution_sensitive=True,
+        )
+        return self._order_list_from_payload(payload, fallback_symbol=symbol)
+
+    async def cancel_order_list(
+        self,
+        symbol: str,
+        *,
+        order_list_id: int | None = None,
+        list_client_order_id: str | None = None,
+        new_client_order_id: str | None = None,
+    ) -> BinanceOrderListSnapshot:
+        """取消整组现货 OCO/OTO/OTOCO 订单。"""
+
+        self._require_order_connection()
+        if (order_list_id is None) == (list_client_order_id is None):
+            raise ValueError("provide exactly one of order_list_id or list_client_order_id")
+        normalized = self._normalize_symbol(symbol)
+        params: list[tuple[str, object]] = [("symbol", normalized)]
+        if order_list_id is not None:
+            if order_list_id < 0:
+                raise ValueError("order_list_id must be non-negative")
+            params.append(("orderListId", order_list_id))
+        else:
+            self._require_client_order_id(list_client_order_id)
+            params.append(("listClientOrderId", list_client_order_id))
+        if new_client_order_id is not None:
+            self._require_client_order_id(new_client_order_id)
+        self._append_optional(params, "newClientOrderId", new_client_order_id)
+        payload = await self._request_json(
+            "DELETE",
+            "/api/v3/orderList",
+            params=tuple(params),
+            signed=True,
+            execution_sensitive=True,
+        )
+        return self._order_list_from_payload(payload, fallback_symbol=normalized)
+
+    async def cancel_all_open_orders(self, symbol: str) -> tuple[BinanceOrderSnapshot, ...]:
+        """取消标的全部未结订单（包括订单列表成员）。"""
+
+        self._require_order_connection()
+        normalized = self._normalize_symbol(symbol)
+        payload = await self._request_json(
+            "DELETE",
+            "/api/v3/openOrders",
+            params=(("symbol", normalized),),
+            signed=True,
+            execution_sensitive=True,
+        )
+        return self._parse_order_list(payload, fallback_symbol=normalized)
+
+    async def cancel_replace(
+        self,
+        *,
+        symbol: str,
+        cancel_order_id: int | None = None,
+        cancel_client_order_id: str | None = None,
+        new_order: BinanceSpotOrderLeg,
+        cancel_replace_mode: str = "STOP_ON_FAILURE",
+        cancel_restrictions: str | None = None,
+        response_type: str = "RESULT",
+    ) -> BinanceCancelReplaceResult:
+        """原子地撤销并替换订单，适合策略动态移动止盈/止损。"""
+
+        self._require_order_connection()
+        if (cancel_order_id is None) == (cancel_client_order_id is None):
+            raise ValueError("provide exactly one cancel_order_id or cancel_client_order_id")
+        if cancel_order_id is not None and cancel_order_id < 0:
+            raise ValueError("cancel_order_id must be non-negative")
+        if cancel_client_order_id is not None:
+            self._require_client_order_id(cancel_client_order_id)
+        mode = cancel_replace_mode.upper()
+        if mode not in {"STOP_ON_FAILURE", "ALLOW_FAILURE"}:
+            raise ValueError("cancel_replace_mode must be STOP_ON_FAILURE or ALLOW_FAILURE")
+        self._validate_list_response_type(response_type)
+        normalized = self._normalize_symbol(symbol)
+        params = self._spot_order_params(
+            symbol=normalized,
+            side=new_order.side,
+            order_type=new_order.order_type,
+            quantity=new_order.quantity,
+            quote_order_quantity=new_order.quote_order_quantity,
+            price=new_order.price,
+            stop_price=new_order.stop_price,
+            trailing_delta=new_order.trailing_delta,
+            time_in_force=new_order.time_in_force,
+            client_order_id=new_order.client_order_id,
+            iceberg_quantity=new_order.iceberg_quantity,
+            strategy_id=new_order.strategy_id,
+            strategy_type=new_order.strategy_type,
+            self_trade_prevention_mode=new_order.self_trade_prevention_mode,
+            response_type=response_type,
+        )
+        params.extend(
+            (
+                ("cancelReplaceMode", mode),
+                ("newOrderRespType", response_type.upper()),
+            )
+        )
+        if cancel_order_id is not None:
+            params.append(("cancelOrderId", cancel_order_id))
+        else:
+            params.append(("cancelOrigClientOrderId", cancel_client_order_id))
+        self._append_optional(params, "cancelRestrictions", cancel_restrictions)
+        payload = await self._request_json(
+            "POST",
+            "/api/v3/order/cancelReplace",
+            params=tuple(params),
+            signed=True,
+            execution_sensitive=True,
+        )
+        mapping = self._require_mapping(payload, "cancel-replace")
+        cancel_payload = mapping.get("cancelResponse")
+        new_payload = mapping.get("newOrderResponse")
+        return BinanceCancelReplaceResult(
+            cancel_result=self._optional_text(mapping.get("cancelResult")),
+            new_order_result=self._optional_text(mapping.get("newOrderResult")),
+            cancel_response=(
+                self._snapshot_from_payload(cancel_payload, fallback_symbol=normalized)
+                if isinstance(cancel_payload, Mapping)
+                else None
+            ),
+            new_order_response=(
+                self._snapshot_from_payload(new_payload, fallback_symbol=normalized)
+                if isinstance(new_payload, Mapping)
+                else None
+            ),
+        )
+
+    async def amend_order_keep_priority(
+        self,
+        *,
+        symbol: str,
+        new_quantity: Decimal,
+        order_id: int | None = None,
+        client_order_id: str | None = None,
+        new_client_order_id: str | None = None,
+    ) -> BinanceOrderSnapshot:
+        """仅减少未成交数量并保持订单队列优先级。"""
+
+        self._require_order_connection()
+        if (order_id is None) == (client_order_id is None):
+            raise ValueError("provide exactly one order_id or client_order_id")
+        if order_id is not None and order_id < 0:
+            raise ValueError("order_id must be non-negative")
+        if client_order_id is not None:
+            self._require_client_order_id(client_order_id)
+        normalized = self._normalize_symbol(symbol)
+        quantity = self._positive_decimal(new_quantity, "new_quantity")
+        params: list[tuple[str, object]] = [
+            ("symbol", normalized),
+            ("newQty", decimal_to_fixed(quantity)),
+        ]
+        self._append_optional(params, "orderId", order_id)
+        self._append_optional(params, "origClientOrderId", client_order_id)
+        if new_client_order_id is not None:
+            self._require_client_order_id(new_client_order_id)
+        self._append_optional(params, "newClientOrderId", new_client_order_id)
+        payload = await self._request_json(
+            "PUT",
+            "/api/v3/order/amend/keepPriority",
+            params=tuple(params),
+            signed=True,
+            execution_sensitive=True,
+        )
+        mapping = self._require_mapping(payload, "amended order")
+        amended = mapping.get("amendedOrder", mapping)
+        return self._snapshot_from_payload(amended, fallback_symbol=normalized)
 
     async def submit_order(self, order: OrderIntent) -> None:
         """验证并提交一笔幂等的撤销前有效限价单。"""
@@ -612,8 +950,7 @@ class BinanceSpotGateway:
             raise
 
         if snapshot.symbol != normalized or (
-            snapshot.client_order_id is not None
-            and snapshot.client_order_id != client_order_id
+            snapshot.client_order_id is not None and snapshot.client_order_id != client_order_id
         ):
             # DELETE 已经到达 Binance，因此身份不匹配或格式错误仍属于执行结果
             # 不确定。应像传输失败一样隔离，不能允许盲目发送第二次请求。
@@ -659,9 +996,7 @@ class BinanceSpotGateway:
         tracked = self._orders.get(client_order_id)
         if symbol is None:
             if tracked is None:
-                raise KeyError(
-                    "symbol is required when client_order_id is not locally tracked"
-                )
+                raise KeyError("symbol is required when client_order_id is not locally tracked")
             symbol = tracked.order.symbol
         return await self.get_order(symbol, client_order_id=client_order_id)
 
@@ -732,8 +1067,8 @@ class BinanceSpotGateway:
         if tracked is not None:
             self._record_snapshot(tracked, snapshot)
             if snapshot.status in {OrderStatus.ACCEPTED, OrderStatus.PARTIALLY_FILLED}:
-            # 查询成功证明此前 UNKNOWN 取消没有使订单进入终态，因此可以安全地
-            # 再明确发起一次取消。
+                # 查询成功证明此前 UNKNOWN 取消没有使订单进入终态，因此可以安全地
+                # 再明确发起一次取消。
                 tracked.cancellation_attempted = False
         return snapshot
 
@@ -786,11 +1121,7 @@ class BinanceSpotGateway:
             if end_time_ms < 0:
                 raise ValueError("end_time_ms must be non-negative")
             params.append(("endTime", end_time_ms))
-        if (
-            start_time_ms is not None
-            and end_time_ms is not None
-            and end_time_ms < start_time_ms
-        ):
+        if start_time_ms is not None and end_time_ms is not None and end_time_ms < start_time_ms:
             raise ValueError("end_time_ms must not precede start_time_ms")
         payload = await self._request_json(
             "GET",
@@ -828,11 +1159,7 @@ class BinanceSpotGateway:
                 if value < 0:
                     raise ValueError(f"{name} must be non-negative")
                 params.append((name, value))
-        if (
-            start_time_ms is not None
-            and end_time_ms is not None
-            and end_time_ms < start_time_ms
-        ):
+        if start_time_ms is not None and end_time_ms is not None and end_time_ms < start_time_ms:
             raise ValueError("end_time_ms must not precede start_time_ms")
         payload = await self._request_json(
             "GET",
@@ -943,6 +1270,231 @@ class BinanceSpotGateway:
 
     get_account = account
 
+    @staticmethod
+    def _positive_decimal(value: Decimal, label: str) -> Decimal:
+        number = Decimal(str(value))
+        if not number.is_finite() or number <= 0:
+            raise ValueError(f"{label} must be positive and finite")
+        return number
+
+    @staticmethod
+    def _order_type(value: str) -> str:
+        normalized = str(value).upper()
+        if normalized not in _SPOT_ORDER_TYPES:
+            raise ValueError(f"unsupported Spot order type: {value!r}")
+        return normalized
+
+    @staticmethod
+    def _validate_list_response_type(value: str) -> None:
+        if str(value).upper() not in _ORDER_RESPONSE_TYPES:
+            raise ValueError("response_type must be ACK, RESULT, or FULL")
+
+    @staticmethod
+    def _append_optional(params: list[tuple[str, object]], key: str, value: object | None) -> None:
+        if value is not None:
+            params.append((key, value))
+
+    @staticmethod
+    def _require_client_order_id(value: str | None) -> None:
+        if value is None or not _CLIENT_ORDER_ID.fullmatch(value):
+            raise ValueError("client order id must be 1-36 Binance-safe characters")
+
+    @staticmethod
+    def _optional_text(value: object) -> str | None:
+        return None if value is None else str(value)
+
+    def _validate_leg(self, leg: BinanceSpotOrderLeg, *, require_quantity: bool) -> None:
+        self._order_type(leg.order_type)
+        if not isinstance(leg.side, Side):
+            raise ValueError("order leg side must be BUY or SELL")
+        if require_quantity:
+            self._positive_decimal(leg.quantity, "quantity")
+        for name, value in (
+            ("price", leg.price),
+            ("stop_price", leg.stop_price),
+            ("quote_order_quantity", leg.quote_order_quantity),
+            ("iceberg_quantity", leg.iceberg_quantity),
+        ):
+            if value is not None:
+                self._positive_decimal(value, name)
+        if leg.trailing_delta is not None and (
+            isinstance(leg.trailing_delta, bool) or leg.trailing_delta <= 0
+        ):
+            raise ValueError("trailing_delta must be a positive integer BIPS")
+        if leg.client_order_id is not None:
+            self._require_client_order_id(leg.client_order_id)
+
+    def _spot_order_params(
+        self,
+        *,
+        symbol: str,
+        side: Side,
+        order_type: str,
+        quantity: Decimal | None,
+        quote_order_quantity: Decimal | None,
+        price: Decimal | None,
+        stop_price: Decimal | None,
+        trailing_delta: int | None,
+        time_in_force: str | None,
+        client_order_id: str | None,
+        iceberg_quantity: Decimal | None,
+        strategy_id: int | None,
+        strategy_type: int | None,
+        self_trade_prevention_mode: str | None,
+        response_type: str,
+    ) -> list[tuple[str, object]]:
+        kind = self._order_type(order_type)
+        if not isinstance(side, Side):
+            raise ValueError("side must be BUY or SELL")
+        if (quantity is None) == (quote_order_quantity is None):
+            raise ValueError("provide exactly one of quantity or quote_order_quantity")
+        if quantity is not None:
+            quantity = self._positive_decimal(quantity, "quantity")
+        if quote_order_quantity is not None:
+            quote_order_quantity = self._positive_decimal(
+                quote_order_quantity, "quote_order_quantity"
+            )
+        if price is not None:
+            price = self._positive_decimal(price, "price")
+        if stop_price is not None:
+            stop_price = self._positive_decimal(stop_price, "stop_price")
+        if trailing_delta is not None and (isinstance(trailing_delta, bool) or trailing_delta <= 0):
+            raise ValueError("trailing_delta must be a positive integer BIPS")
+        if (
+            kind in {"LIMIT", "LIMIT_MAKER", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"}
+            and price is None
+        ):
+            raise ValueError(f"price is required for {kind}")
+        if kind in {"LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"} and not time_in_force:
+            raise ValueError(f"time_in_force is required for {kind}")
+        if (
+            kind in {"STOP_LOSS", "STOP_LOSS_LIMIT", "TAKE_PROFIT", "TAKE_PROFIT_LIMIT"}
+            and stop_price is None
+            and trailing_delta is None
+        ):
+            raise ValueError(f"stop_price or trailing_delta is required for {kind}")
+        self._validate_list_response_type(response_type)
+        if client_order_id is not None:
+            self._require_client_order_id(client_order_id)
+        params: list[tuple[str, object]] = [
+            ("symbol", symbol),
+            ("side", side.value),
+            ("type", kind),
+        ]
+        self._append_optional(
+            params, "timeInForce", None if time_in_force is None else str(time_in_force).upper()
+        )
+        self._append_optional(
+            params, "quantity", None if quantity is None else decimal_to_fixed(quantity)
+        )
+        self._append_optional(
+            params,
+            "quoteOrderQty",
+            None if quote_order_quantity is None else decimal_to_fixed(quote_order_quantity),
+        )
+        self._append_optional(params, "price", None if price is None else decimal_to_fixed(price))
+        self._append_optional(
+            params, "stopPrice", None if stop_price is None else decimal_to_fixed(stop_price)
+        )
+        self._append_optional(params, "trailingDelta", trailing_delta)
+        self._append_optional(params, "newClientOrderId", client_order_id)
+        self._append_optional(
+            params,
+            "icebergQty",
+            None
+            if iceberg_quantity is None
+            else decimal_to_fixed(self._positive_decimal(iceberg_quantity, "iceberg_quantity")),
+        )
+        self._append_optional(params, "strategyId", strategy_id)
+        self._append_optional(params, "strategyType", strategy_type)
+        self._append_optional(params, "selfTradePreventionMode", self_trade_prevention_mode)
+        params.append(("newOrderRespType", str(response_type).upper()))
+        return params
+
+    def _list_leg_params(
+        self, prefix: str, leg: BinanceSpotOrderLeg, *, quantity: Decimal
+    ) -> list[tuple[str, object]]:
+        self._validate_leg(leg, require_quantity=False)
+        params: list[tuple[str, object]] = []
+        for key, value in (
+            (f"{prefix}Price", leg.price),
+            (f"{prefix}StopPrice", leg.stop_price),
+            (f"{prefix}TrailingDelta", leg.trailing_delta),
+            (
+                f"{prefix}TimeInForce",
+                None if leg.time_in_force is None else str(leg.time_in_force).upper(),
+            ),
+            (
+                f"{prefix}IcebergQty",
+                None if leg.iceberg_quantity is None else decimal_to_fixed(leg.iceberg_quantity),
+            ),
+            (f"{prefix}ClientOrderId", leg.client_order_id),
+        ):
+            if value is not None:
+                params.append(
+                    (key, decimal_to_fixed(value) if isinstance(value, Decimal) else value)
+                )
+        return params
+
+    def _prefixed_leg_params(
+        self,
+        prefix: str,
+        leg: BinanceSpotOrderLeg,
+        *,
+        required: bool,
+        include_type: bool = True,
+        include_side: bool = True,
+        include_quantity: bool = True,
+    ) -> list[tuple[str, object]]:
+        self._validate_leg(leg, require_quantity=required and include_quantity)
+        params: list[tuple[str, object]] = []
+        if include_type:
+            params.append((f"{prefix}Type", self._order_type(leg.order_type)))
+        if include_side:
+            params.append((f"{prefix}Side", leg.side.value))
+        if include_quantity:
+            params.append((f"{prefix}Quantity", decimal_to_fixed(leg.quantity)))
+        params.extend(self._list_leg_params(prefix, leg, quantity=leg.quantity))
+        return params
+
+    def _order_list_from_payload(
+        self, payload: object, *, fallback_symbol: str
+    ) -> BinanceOrderListSnapshot:
+        mapping = self._require_mapping(payload, "order list")
+        reports = mapping.get("orderReports", mapping.get("orders", []))
+        if not isinstance(reports, list):
+            raise BinanceProtocolError("Binance order-list reports are malformed")
+        orders = tuple(
+            self._snapshot_from_payload(item, fallback_symbol=fallback_symbol)
+            for item in reports
+            if isinstance(item, Mapping)
+        )
+        try:
+            list_id = None if mapping.get("orderListId") is None else int(mapping["orderListId"])
+            transaction = (
+                None if mapping.get("transactionTime") is None else int(mapping["transactionTime"])
+            )
+        except (TypeError, ValueError):
+            raise BinanceProtocolError("Binance order-list response is malformed") from None
+        return BinanceOrderListSnapshot(
+            order_list_id=list_id,
+            contingency_type=None
+            if mapping.get("contingencyType") is None
+            else str(mapping["contingencyType"]),
+            list_status_type=None
+            if mapping.get("listStatusType") is None
+            else str(mapping["listStatusType"]),
+            list_order_status=None
+            if mapping.get("listOrderStatus") is None
+            else str(mapping["listOrderStatus"]),
+            list_client_order_id=None
+            if mapping.get("listClientOrderId") is None
+            else str(mapping["listClientOrderId"]),
+            symbol=str(mapping.get("symbol", fallback_symbol)).upper(),
+            orders=orders,
+            transaction_time_ms=transaction,
+        )
+
     async def _request_json(
         self,
         method: str,
@@ -1028,9 +1580,7 @@ class BinanceSpotGateway:
                 retry_timestamp_rejection=False,
             )
 
-        uncertain = api_code == -1007 or (
-            execution_sensitive and response.status_code >= 500
-        )
+        uncertain = api_code == -1007 or (execution_sensitive and response.status_code >= 500)
         raise self._api_error(
             response.status_code,
             response_payload,
@@ -1077,6 +1627,10 @@ class BinanceSpotGateway:
                 "Binance credentials are required for this signed endpoint"
             )
         return self._credentials
+
+    def _require_order_connection(self) -> None:
+        if not self._connected:
+            raise ConnectionError("Binance gateway is not connected")
 
     @staticmethod
     def _parameter_text(value: object) -> str:
@@ -1263,9 +1817,7 @@ class BinanceSpotGateway:
             original_quantity = (
                 decimal_from_api(original_value, "origQty") if original_value is not None else None
             )
-            executed_quantity = decimal_from_api(
-                mapping.get("executedQty", "0"), "executedQty"
-            )
+            executed_quantity = decimal_from_api(mapping.get("executedQty", "0"), "executedQty")
             cumulative_value = mapping.get("cummulativeQuoteQty")
             cumulative_quote_quantity = (
                 decimal_from_api(cumulative_value, "cummulativeQuoteQty")
