@@ -49,8 +49,11 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_config.py` | Frozen schedule/risk configuration and policy manifest projections |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_renderer.py` | Pure Markdown rendering and audit sections from immutable projections |
 | `storage/live_records.py` | `storage/live_record_models.py` | Durable-row dataclasses and pure SQLite row-to-domain decoding |
+| `storage/live_records.py` | `storage/live_record_schema.py` | Live-record DDL, append-only triggers, and idempotent schema migration |
 | `trading/oms.py` | `trading/oms_schema.py` | SQLite DDL and idempotent schema migration, with connection ownership left to the OMS facade |
 | `adapters/ashare/screening.py` | `adapters/ashare/screening_factors.py` | Historical-bar model, raw factor calculations, and corporate-action guards |
+| `adapters/binance/gateway.py` | `adapters/binance/request_builder.py` | Deterministic REST query/form encoding and signed request assembly |
+| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_schedule.py` | Session timezone, phase boundaries, and scheduler sleep calculations |
 
 ## Next slices
 
@@ -59,7 +62,7 @@ The next large files are grouped by the responsibilities they mix:
 | Area | Large files | Extraction order |
 |---|---|---|
 | A-share execution | `services/ashare_paper_day.py`, remaining `services/ashare_intraday_paper.py` orchestration | projections/configuration → calendar/session logic → orchestration |
-| Durable state | `storage/live_records.py` | row models/codecs are split; lease helpers and transaction methods remain |
+| Durable state | `storage/live_records.py` | row models/schema/codecs are split; lease helpers and transaction methods remain |
 | Broker-neutral execution | `trading/oms.py` | schema/migration is split; command/outbox/fill transaction methods remain |
 | A-share screening | `adapters/ashare/screening.py` | pure factor calculations are split; provider calls and degradation policy remain |
 | Research | remaining `services/adversarial_macro.py` orchestration and other strategy/research facades | pure calculations → dataset/manifest IO → orchestration |

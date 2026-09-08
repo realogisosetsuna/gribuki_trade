@@ -28,7 +28,6 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Protocol, cast
-from zoneinfo import ZoneInfo
 
 from gribuki_trade.analysis.schemas import (
     MacroAnalysis,
@@ -141,6 +140,14 @@ from gribuki_trade.services.ashare.ashare_paper_day_config import (
     _risk_policy_manifest_binding,
     _runner_config_document,
 )
+from gribuki_trade.services.ashare.ashare_paper_day_schedule import (
+    SHANGHAI,
+    scheduler_sleep_seconds,
+    session_datetime,
+)
+from gribuki_trade.services.ashare.ashare_paper_day_schedule import (
+    phase_at as _phase_at,
+)
 from gribuki_trade.services.ashare.ashare_paper_day_serialization import (
     _append_and_sync_text,
     _atomic_write_text,
@@ -187,8 +194,6 @@ from gribuki_trade.storage.report_artifact_outbox import (
     ReportArtifactStatus,
     SQLiteReportArtifactOutbox,
 )
-
-SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 # 只有这个精确来源可以交叉验证降级的新浪分钟线，因为其 COMPLETE 契约会在
 # 候选排名前严格联结腾讯行情板块与腾讯批量报价端点，并逐标的校验 OHLC、
@@ -4442,9 +4447,10 @@ class ASharePaperDayRunner:
             self._raise_if_background_failed()
             await self._renew_lease()
             await self._sleep(
-                min(
+                scheduler_sleep_seconds(
+                    now,
+                    target,
                     self._config.scheduler_tick_seconds,
-                    max(0.05, (target - now).total_seconds()),
                 )
             )
 
@@ -4588,11 +4594,7 @@ class ASharePaperDayRunner:
         self._pending.clear()
 
     def _at(self, wall_time: time) -> datetime:
-        return datetime.combine(
-            self._manifest.session_date,
-            wall_time,
-            tzinfo=SHANGHAI,
-        ).astimezone(UTC)
+        return session_datetime(self._manifest.session_date, wall_time)
 
     def _now(self) -> datetime:
         return _aware_utc(self._clock(), "clock")
@@ -6650,35 +6652,6 @@ _MATCH_REASON_EXPLANATIONS: Mapping[str, str] = {
 
 def _match_reason_display(reason: str) -> str:
     return _MATCH_REASON_EXPLANATIONS.get(reason, "未满足单分钟 IOC 成交条件")
-
-
-
-
-
-
-def _phase_at(
-    value: datetime,
-    session_date: date,
-    config: ASharePaperDayConfig,
-) -> PaperDayPhase:
-    local = _aware_utc(value, "phase time").astimezone(SHANGHAI)
-    if local.date() < session_date:
-        return PaperDayPhase.BOOTSTRAP
-    if local.date() > session_date:
-        return PaperDayPhase.TERMINAL
-    current = local.timetz().replace(tzinfo=None)
-    if current < config.market_open:
-        return PaperDayPhase.PREOPEN
-    if current < config.morning_end:
-        return PaperDayPhase.MORNING
-    if current < config.afternoon_start:
-        return PaperDayPhase.LUNCH
-    if current < config.market_close:
-        return PaperDayPhase.AFTERNOON
-    if current < config.finalization_time:
-        return PaperDayPhase.POST_CLOSE
-    return PaperDayPhase.TERMINAL
-
 
 
 

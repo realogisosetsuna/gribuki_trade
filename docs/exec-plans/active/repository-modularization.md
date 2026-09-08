@@ -153,6 +153,11 @@ object so existing imports and monkeypatch-based operational tests retain their
 semantics. This grouping is structural; it does not alter broker permissions,
 order state transitions, or durable schemas.
 
+The next verified boundary slices extract Binance REST request encoding,
+live-record schema/migration DDL, and A-share PAPER-day session-time calculations.
+These modules remain pure or connection-scoped; transport, transaction, calendar
+I/O, and runner side effects stay in their original facades.
+
 Validation evidence for this increment: CLI and parser tests 195 passed; the
 Binance Spot, cross-market, reporting, adversarial macro, exit simulation, A-share
 quantity/configuration, and close-analysis suites passed together (398 focused
@@ -161,3 +166,8 @@ focused tests; Ruff, mypy (310 source files), readiness, compileall, and
 Chinese-source checks passed. The full suite passed 1682 tests, with five
 environment-skipped tests and 41 subtests. Full quality gates remain required after
 the next orchestration slice is merged.
+
+The current follow-up focused route passed 101 tests, including the Chinese-source
+check, module-layout checks, Binance gateway/request-builder tests, live-record
+schema/model/store tests, and PAPER-day schedule/runner tests. Full quality gates
+remain required after this follow-up is staged.

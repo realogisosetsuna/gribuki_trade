@@ -37,6 +37,12 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         ("gribuki_trade.trading.oms_schema", "trading/oms_schema.py"),
         ("gribuki_trade.storage.live_record_models", "storage/live_record_models.py"),
         ("gribuki_trade.adapters.ashare.screening_factors", "adapters/ashare/screening_factors.py"),
+        ("gribuki_trade.storage.live_record_schema", "storage/live_record_schema.py"),
+        ("gribuki_trade.adapters.binance.request_builder", "adapters/binance/request_builder.py"),
+        (
+            "gribuki_trade.services.ashare.ashare_paper_day_schedule",
+            "services/ashare/ashare_paper_day_schedule.py",
+        ),
     )
     for name, suffix in modules:
         module = importlib.import_module(name)

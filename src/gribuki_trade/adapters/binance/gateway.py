@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
-from urllib.parse import urlencode
 from uuid import uuid4
 
 from gribuki_trade.domain.orders import OrderIntent, OrderStatus, Side
@@ -45,6 +44,7 @@ from .models import (
     OrderBookSnapshot,
     TickerPrice,
 )
+from .request_builder import encode_request
 from .rules import (
     BinanceValidationError,
     SymbolRules,
@@ -1487,43 +1487,26 @@ class BinanceSpotGateway:
         execution_sensitive: bool = False,
         retry_timestamp_rejection: bool = True,
     ) -> Any:
-        headers = {"Accept": "application/json"}
-        encoded_params = list(params)
-        credentials: BinanceCredentials | None = None
-        signature = ""
-        if signed:
-            credentials = self._require_credentials()
-            encoded_params.extend(
-                (
-                    ("recvWindow", self._recv_window_ms),
-                    ("timestamp", self._clock_ms() + self._server_time_offset_ms),
-                )
-            )
-        payload = urlencode(
-            [(key, self._parameter_text(value)) for key, value in encoded_params],
-            encoding="utf-8",
-            safe="",
+        credentials = self._require_credentials() if signed else None
+        encoded = encode_request(
+            method=method,
+            base_url=self.base_url,
+            path=path,
+            params=params,
+            credentials=credentials,
+            recv_window_ms=self._recv_window_ms if signed else None,
+            timestamp_ms=(self._clock_ms() + self._server_time_offset_ms) if signed else None,
+            parameter_encoder=self._parameter_text,
+            signer=sign_hmac_sha256,
         )
-        if credentials is not None:
-            signature = sign_hmac_sha256(credentials.secret_key, payload)
-            payload = f"{payload}&signature={signature}" if payload else f"signature={signature}"
-            headers["X-MBX-APIKEY"] = credentials.api_key
-
-        url = f"{self.base_url}{path}"
-        body: bytes | None = None
-        if method in {"POST", "PUT", "DELETE"}:
-            body = payload.encode("utf-8") if payload else None
-            headers["Content-Type"] = "application/x-www-form-urlencoded"
-        elif payload:
-            url = f"{url}?{payload}"
-
         request = HttpRequest(
             method=method,
-            url=url,
-            headers=headers,
-            body=body,
+            url=encoded.url,
+            headers=encoded.headers,
+            body=encoded.body,
             timeout_seconds=self._timeout_seconds,
         )
+        signature = encoded.signature
         try:
             response = await self._transport.request(request)
         except Exception:
