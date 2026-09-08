@@ -40,8 +40,10 @@ changes resume. Raw events, fills, protection identities, command outcomes,
 owner leases, and fencing tokens are durable in SQLite; a transport timeout or
 process restart leaves a command `UNKNOWN` until REST evidence resolves it.
 The service also refuses order changes when the private stream is disconnected
-or degraded. Public market streams remain transport adapters until their REST
-depth snapshot is applied by a local-book service.
+or degraded. Public market streams feed `services/binance_orderbook.py`, which exposes only
+neutral `LocalOrderBookView` snapshots. A gap or reconnect moves the book to
+`DESYNCED`, clears unsafe levels, and requires a REST snapshot bridge before
+strategies can consume it.
 
 The Futures service also exposes guarded risk configuration and protection
 interfaces. `set_leverage` is per symbol; `set_margin_type` is `ISOLATED` or
@@ -60,6 +62,15 @@ stop/take-profit orders, integer-BIPS `trailingDelta`, OCO, OTO, OTOCO,
 order-list cancellation, cancel-replace, and cancel-all-open-orders. Spot and
 Futures trailing parameters are deliberately separate types and are never
 converted implicitly.
+
+Spot conditional order lists have a separate durable projection in
+`trading/spot_order_lists.py`. `SQLiteSpotOrderListStore` stores the list
+status and an independent member-leg table with raw event idempotency. The
+Spot execution service writes `listStatus` before refreshing member orders, and
+startup reconciliation merges `openOrderLists` with `allOrderList` REST
+snapshots. A missing list route is treated as a configuration error when the
+independent store is enabled; the service never treats a list event as a
+single child-order fill.
 
 The LIVE balance CLI commands only connect, synchronize time, and query
 account data under the same guards. Spot reports per-asset free and locked

@@ -36,7 +36,7 @@ from .http import (
     HttpTransportError,
     UrllibAsyncHttpTransport,
 )
-from .models import BinanceCredentials
+from .models import BinanceCredentials, OrderBookLevel, OrderBookSnapshot
 
 _SYMBOL = re.compile(r"^[A-Z0-9_]{1,30}$")
 _SENSITIVE_ASSIGNMENT = re.compile(
@@ -264,6 +264,33 @@ class BinanceFuturesRestClient:
         except (KeyError, InvalidOperation, TypeError, ValueError):
             raise BinanceProtocolError("Binance Futures ticker response is malformed") from None
         return BinanceFuturesTicker(symbol=response_symbol, price=price, time_ms=time_ms)
+
+    async def order_book(self, symbol: str, *, limit: int = 100) -> OrderBookSnapshot:
+        """读取 USD-M/COIN-M REST 深度快照供本地订单簿恢复。"""
+
+        if limit not in {5, 10, 20, 50, 100, 500, 1_000, 5_000}:
+            raise ValueError("unsupported Binance Futures order-book limit")
+        normalized = self._normalize_symbol(symbol)
+        payload = await self._request_json(
+            "GET",
+            self._v1("depth"),
+            params=(('symbol', normalized), ("limit", limit)),
+        )
+        mapping = self._require_mapping(payload, "Futures order book")
+        try:
+            update_id = int(mapping["lastUpdateId"])
+            bids = self._parse_order_book_levels(mapping["bids"])
+            asks = self._parse_order_book_levels(mapping["asks"])
+        except (KeyError, TypeError, ValueError, InvalidOperation):
+            raise BinanceProtocolError("Binance Futures order book response is malformed") from None
+        return OrderBookSnapshot(
+            symbol=normalized,
+            last_update_id=update_id,
+            bids=bids,
+            asks=asks,
+        )
+
+    get_order_book = order_book
 
     async def klines(
         self,
@@ -1095,6 +1122,21 @@ class BinanceFuturesRestClient:
         if not isinstance(payload, Mapping):
             raise BinanceProtocolError(f"Binance Futures {description} response must be an object")
         return payload
+
+    @staticmethod
+    def _parse_order_book_levels(value: object) -> tuple[OrderBookLevel, ...]:
+        if not isinstance(value, list):
+            raise TypeError("order book levels must be a list")
+        levels: list[OrderBookLevel] = []
+        for row in value:
+            if not isinstance(row, (list, tuple)) or len(row) != 2:
+                raise ValueError("order book level must contain price and quantity")
+            price = Decimal(str(row[0]))
+            quantity = Decimal(str(row[1]))
+            if price <= 0 or quantity < 0:
+                raise ValueError("order book level values are invalid")
+            levels.append(OrderBookLevel(price=price, quantity=quantity))
+        return tuple(levels)
 
     @staticmethod
     def _normalize_symbol(symbol: str) -> str:

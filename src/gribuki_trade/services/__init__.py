@@ -159,6 +159,7 @@ from gribuki_trade.services.binance_monitor import (
     BinanceMarketMonitor,
     BinanceMonitorSnapshot,
 )
+from gribuki_trade.services.binance_orderbook import BinanceOrderBookRecoveryService
 from gribuki_trade.services.binance_paper import (
     BinanceMarketSource,
     BinancePaperEngine,
@@ -343,6 +344,7 @@ __all__ = [
     "BinanceUserDataSource",
     "BinanceMarketMonitor",
     "BinanceMonitorSnapshot",
+    "BinanceOrderBookRecoveryService",
     "BinanceShadowConfig",
     "BinanceShadowSession",
     "BinanceShadowStatistics",

@@ -23,6 +23,7 @@ from gribuki_trade.adapters.binance import (
     BinanceEventStreamTerminated,
     BinanceExecutionReport,
     BinanceListStatus,
+    BinanceOrderListSnapshot,
     BinanceOrderSnapshot,
     BinanceOrderUpdate,
     BinanceOutboundAccountPosition,
@@ -36,7 +37,9 @@ from gribuki_trade.trading import (
     BalanceValue,
     ExecutionFill,
     OrderSnapshot,
+    SpotOrderListRecord,
     SQLiteOrderManagementStore,
+    SQLiteSpotOrderListStore,
     TradingCommand,
     TradingCommandStatus,
     TradingCommandType,
@@ -98,6 +101,17 @@ class BinanceSpotExecutionGateway(Protocol):
         order_id: int | None = None,
     ) -> BinanceOrderSnapshot: ...
 
+    async def open_order_lists(self) -> tuple[BinanceOrderListSnapshot, ...]: ...
+
+    async def all_order_lists(
+        self,
+        *,
+        from_id: int | None = None,
+        limit: int = 500,
+        start_time_ms: int | None = None,
+        end_time_ms: int | None = None,
+    ) -> tuple[BinanceOrderListSnapshot, ...]: ...
+
 
 class BinanceUserDataSource(Protocol):
     """执行服务使用的私有数据流接口面。"""
@@ -127,6 +141,8 @@ class BinanceStartupReconciliation:
     recorded_balances: int
     dispatched_pending_commands: int = 0
     unresolved_order_ids: tuple[str, ...] = ()
+    exchange_order_lists: int = 0
+    reconciled_order_lists: int = 0
 
 
 class BinanceSpotTestnetExecutionService:
@@ -144,6 +160,7 @@ class BinanceSpotTestnetExecutionService:
         account_id: str,
         symbols: Sequence[str],
         user_stream: BinanceUserDataSource | None = None,
+        order_list_store: SQLiteSpotOrderListStore | None = None,
         clock: Callable[[], datetime] | None = None,
         _allow_live: bool = False,
         guard: LiveTradingGuard | None = None,
@@ -167,6 +184,7 @@ class BinanceSpotTestnetExecutionService:
         self._symbols = normalized_symbols
         self._symbol_set = frozenset(normalized_symbols)
         self._user_stream = user_stream
+        self._order_list_store = order_list_store
         self._clock = clock or (lambda: datetime.now(UTC))
         self._guard = guard
         self._exchange = exchange
@@ -289,6 +307,7 @@ class BinanceSpotTestnetExecutionService:
             if isinstance(event, BinanceExecutionReport):
                 return self._consume_execution_report(event)
             if isinstance(event, BinanceListStatus):
+                self._record_list_status(event)
                 # 订单列表事件是各成员订单状态的边界；通过同一事务边界的
                 # REST 对账刷新每个子订单，避免把列表状态误投影为单个成交状态。
                 await self._reconcile_startup(recovered_commands=0)
@@ -538,6 +557,7 @@ class BinanceSpotTestnetExecutionService:
                 account_id=self._account_id, symbols=self._symbols
             )
         )
+        list_count, reconciled_lists = await self._reconcile_order_lists(now=now)
         return BinanceStartupReconciliation(
             recovered_commands=recovered_commands,
             exchange_open_orders=len(open_orders),
@@ -547,6 +567,77 @@ class BinanceSpotTestnetExecutionService:
             recorded_fills=recorded_fills,
             recorded_balances=len(balances),
             unresolved_order_ids=unresolved,
+            exchange_order_lists=list_count,
+            reconciled_order_lists=reconciled_lists,
+        )
+
+    async def _reconcile_order_lists(self, *, now: datetime) -> tuple[int, int]:
+        """从公开的订单列表 REST 快照恢复独立列表投影。"""
+
+        if self._order_list_store is None:
+            return 0, 0
+        open_reader = getattr(self._gateway, "open_order_lists", None)
+        history_reader = getattr(self._gateway, "all_order_lists", None)
+        if not callable(open_reader) or not callable(history_reader):
+            raise RuntimeError("Binance gateway lacks order-list reconciliation routes")
+        snapshots = list(await open_reader())
+        snapshots.extend(await history_reader(limit=1_000))
+        latest: dict[str, tuple[BinanceOrderListSnapshot, SpotOrderListRecord]] = {}
+        for snapshot in snapshots:
+            record = _spot_order_list_record(
+                self._account_id, snapshot, source="REST", occurred_at=now
+            )
+            current = latest.get(record.key)
+            if current is None or _order_list_rank(record) >= _order_list_rank(current[1]):
+                latest[record.key] = (snapshot, record)
+        persisted = 0
+        for record in (value[1] for value in latest.values()):
+            event_id = (
+                f"binance-order-list-rest:{record.key}:{record.transaction_time_ms}:"
+                f"{record.list_order_status}"
+            )
+            if self._order_list_store.upsert(
+                record,
+                event_id=event_id,
+                event_type="ORDER_LIST_RECONCILED",
+                occurred_at=now,
+            ):
+                persisted += 1
+        return len(latest), persisted
+
+    def _record_list_status(self, event: BinanceListStatus) -> None:
+        """先落盘 listStatus，再进行成员订单 REST 对账。"""
+
+        if self._order_list_store is None:
+            return
+        record = SpotOrderListRecord(
+            account_id=self._account_id,
+            order_list_id=event.order_list_id,
+            list_client_order_id=event.list_client_order_id,
+            symbol=event.symbol,
+            contingency_type=event.contingency_type,
+            list_status_type=event.list_status_type,
+            list_order_status=event.list_order_status,
+            order_ids=event.order_ids,
+            client_order_ids=event.client_order_ids,
+            updated_at=_datetime_from_ms(event.transaction_time_ms, fallback=self._now()),
+            transaction_time_ms=event.transaction_time_ms,
+            source="USER_STREAM",
+        )
+        self._order_list_store.upsert(
+            record,
+            event_id=(
+                f"binance-list-status:{event.symbol}:{event.order_list_id}:"
+                f"{event.transaction_time_ms}:{event.list_status_type}:{event.list_order_status}"
+            ),
+            event_type="LIST_STATUS",
+            payload={
+                "event_time_ms": event.event_time_ms,
+                "transaction_time_ms": event.transaction_time_ms,
+                "order_ids": list(event.order_ids),
+                "client_order_ids": list(event.client_order_ids),
+            },
+            occurred_at=record.updated_at,
         )
 
     def _consume_execution_report(self, event: BinanceExecutionReport) -> bool:
@@ -801,6 +892,7 @@ class BinanceSpotExecutionService(BinanceSpotTestnetExecutionService):
         symbols: Sequence[str],
         guard: LiveTradingGuard,
         user_stream: BinanceUserDataSource | None = None,
+        order_list_store: SQLiteSpotOrderListStore | None = None,
         clock: Callable[[], datetime] | None = None,
         exchange: str = "BINANCE",
     ) -> None:
@@ -810,6 +902,7 @@ class BinanceSpotExecutionService(BinanceSpotTestnetExecutionService):
             account_id=account_id,
             symbols=symbols,
             user_stream=user_stream,
+            order_list_store=order_list_store,
             clock=clock,
             _allow_live=True,
             guard=guard,
@@ -821,6 +914,42 @@ def _datetime_from_ms(value: int | None, *, fallback: datetime) -> datetime:
     if value is None:
         return fallback.astimezone(UTC)
     return datetime.fromtimestamp(value / 1_000, tz=UTC)
+
+
+def _spot_order_list_record(
+    account_id: str,
+    snapshot: BinanceOrderListSnapshot,
+    *,
+    source: str,
+    occurred_at: datetime,
+) -> SpotOrderListRecord:
+    """把 Binance 适配器快照转换为 broker-neutral 的列表记录。"""
+
+    return SpotOrderListRecord(
+        account_id=account_id,
+        order_list_id=snapshot.order_list_id,
+        list_client_order_id=snapshot.list_client_order_id,
+        symbol=snapshot.symbol,
+        contingency_type=snapshot.contingency_type,
+        list_status_type=snapshot.list_status_type,
+        list_order_status=snapshot.list_order_status,
+        order_ids=tuple(order.order_id for order in snapshot.orders if order.order_id is not None),
+        client_order_ids=tuple(
+            order.client_order_id for order in snapshot.orders if order.client_order_id
+        ),
+        updated_at=occurred_at,
+        transaction_time_ms=snapshot.transaction_time_ms,
+        source=source,
+    )
+
+
+def _order_list_rank(record: SpotOrderListRecord) -> tuple[int, datetime]:
+    """按交易所事务时间选择重复 REST 快照中的最新列表。"""
+
+    return (
+        record.transaction_time_ms if record.transaction_time_ms is not None else -1,
+        record.updated_at,
+    )
 
 
 def _milliseconds(value: datetime) -> int:

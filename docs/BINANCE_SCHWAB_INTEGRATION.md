@@ -193,6 +193,13 @@ REST API。两类产品必须使用各自的基址、签名请求和订单参数
 `BinanceSpotOtoRequest` 和 `BinanceSpotOtocoRequest`，策略不需要拼接原始
 URL 或签名参数。
 
+深度策略通过 `BinanceSpotOrderBook` 或 `BinanceFuturesOrderBook` 配合
+`BinanceOrderBookRecoveryService` 获取 `LocalOrderBookView`。服务先缓冲 WebSocket
+增量，再读取 REST depth 快照；Spot 首帧满足 `U <= lastUpdateId + 1 <= u`，USDⓈ-M
+首帧满足 `U <= lastUpdateId <= u`，后续合约事件还必须满足 `pu == previous_u`。
+缺口、连接重建或缓冲溢出会清空不可信档位并进入 `DESYNCED`，只有新的快照成功衔接后
+才会向策略暴露档位。进程重启时重新 bootstrap，不把旧内存档位当作当前盘口。
+
 合约策略通过 `BinanceFuturesExecutionService` 调用：
 
 - `set_leverage(symbol, leverage)` 设置单个合约杠杆。API 接受 1–125，实际可用上限仍受风险档位和名义价值限制；返回值中的 `maxNotionalValue` 必须保存并用于风险判断。

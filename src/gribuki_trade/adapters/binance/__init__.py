@@ -118,6 +118,14 @@ from .models import (
     OrderBookSnapshot,
     TickerPrice,
 )
+from .orderbook import (
+    BinanceFuturesOrderBook,
+    BinanceLocalOrderBook,
+    BinanceSpotOrderBook,
+    LocalOrderBookView,
+    OrderBookRecoveryResult,
+    OrderBookRecoveryState,
+)
 from .rules import BinanceValidationError, SymbolRules, decimal_to_fixed
 from .stream import (
     KLINE_INTERVALS,
@@ -277,6 +285,12 @@ __all__ = [
     "OrderBookSnapshot",
     "SymbolRules",
     "TickerPrice",
+    "BinanceFuturesOrderBook",
+    "BinanceLocalOrderBook",
+    "BinanceSpotOrderBook",
+    "LocalOrderBookView",
+    "OrderBookRecoveryResult",
+    "OrderBookRecoveryState",
     "UrllibAsyncHttpTransport",
     "UnsupportedBinanceEnvironment",
     "UserWebSocketConnection",

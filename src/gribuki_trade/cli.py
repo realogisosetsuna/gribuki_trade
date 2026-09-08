@@ -86,7 +86,7 @@ from gribuki_trade.services.binance_execution import (
     BinanceStartupReconciliation,
 )
 from gribuki_trade.sqlite_runtime import sqlite_runtime_status
-from gribuki_trade.trading import SQLiteOrderManagementStore
+from gribuki_trade.trading import SQLiteOrderManagementStore, SQLiteSpotOrderListStore
 
 if TYPE_CHECKING:
     from gribuki_trade.domain.paper_trading import PaperPosition
@@ -10055,11 +10055,13 @@ async def _binance_live_order(
     database_path = Path(database).expanduser().resolve()
     database_path.parent.mkdir(parents=True, exist_ok=True)
     store = SQLiteOrderManagementStore(database_path)
+    order_list_store = SQLiteSpotOrderListStore(database_path)
     service = BinanceSpotExecutionService(
         gateway,
         store,
         account_id=DEFAULT_LIVE_ACCOUNT,
         symbols=(symbol.upper(),),
+        order_list_store=order_list_store,
         guard=guard,
     )
     try:
@@ -10092,6 +10094,7 @@ async def _binance_live_order(
         if service.started:
             await service.stop()
         store.close()
+        order_list_store.close()
 
 
 def _live_futures_service() -> tuple[LiveTradingGuard, Any]:
