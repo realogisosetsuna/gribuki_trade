@@ -210,6 +210,11 @@ check, module-layout checks, Binance gateway/request-builder tests, live-record
 schema/model/store tests, and PAPER-day schedule/runner tests. Full quality gates
 remain required after this follow-up is staged.
 
+The live-sync/PAPER-day payload slice and the gateway/live-work policy slice are
+now pushed. Focused payload and storage/provider routes passed; the repository
+gates then passed readiness, Ruff, mypy (333 source files), compileall, and the
+full suite with 1758 passed, 5 environment-skipped tests, and 41 subtests.
+
 The current provider/UI follow-up passed 106 focused tests, then the full suite
 passed 1718 tests with five environment-skipped tests and 41 subtests. Ruff,
 mypy (322 source files), readiness, compileall, and the Chinese-source check all
