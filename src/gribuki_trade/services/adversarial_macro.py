@@ -13,10 +13,9 @@ explicitly labelled untrusted and can never become evidence references.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import re
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -39,14 +38,27 @@ from gribuki_trade.ports.llm_analyzer import (
     MacroAnalyzer,
     UsageReportingMacroAnalyzer,
 )
+from gribuki_trade.services.adversarial_macro_serialization import (
+    _MAX_CLAIM_CHARACTERS,
+    _MAX_INVALIDATION_CONDITIONS,
+    _MAX_ROLE_CLAIMS,
+    _analysis_document,
+    _cross_track_conflict,
+    _document_sha256,
+    _evidence_pack_sha256,
+    _identity_document,
+    _median,
+    _prompt_contract_sha256,
+    _request_sha256,
+    _role_round_number,
+    _single_line,
+    _unique_text,
+)
 
 _FAILURE_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,79}$")
 _ADAPTER_VERSION: Final = "adversarial-macro-wrapper@1"
 _AGGREGATION_VERSION: Final = "conservative-median@1"
 _PEER_ENVELOPE_VERSION: Final = "untrusted-peer-arguments@1"
-_MAX_ROLE_CLAIMS: Final = 6
-_MAX_CLAIM_CHARACTERS: Final = 500
-_MAX_INVALIDATION_CONDITIONS: Final = 6
 
 
 class AdversarialMacroDepth(StrEnum):
@@ -1322,26 +1334,6 @@ def _abstain_analysis(
     )
 
 
-def _request_sha256(request: MacroAnalysisRequest) -> str:
-    document = {
-        "analysis_id": request.analysis_id,
-        "as_of": request.as_of.isoformat(),
-        "evidence": [
-            {
-                "content_hash": item.content_hash,
-                "evidence_id": item.evidence_id,
-                "first_seen_at": item.first_seen_at.isoformat(),
-                "published_at": item.published_at.isoformat(),
-                "publisher": item.publisher,
-                "source_tier": item.source_tier,
-            }
-            for item in request.evidence
-        ],
-        "horizon": request.horizon,
-        "symbol": request.symbol,
-        "technical_summary": list(request.technical_summary),
-    }
-    return _document_sha256(document)
 
 
 async def _call_analyzer_with_usage(
@@ -1449,144 +1441,3 @@ def _role_failure_documents(
             )
         documents.append(base)
     return tuple(documents)
-
-
-def _role_round_number(request: MacroAnalysisRequest) -> int | None:
-    for item in request.technical_summary:
-        if item.startswith("ADVERSARIAL_ROUND="):
-            try:
-                return int(item.removeprefix("ADVERSARIAL_ROUND="))
-            except ValueError:
-                return None
-    return None
-
-
-def _evidence_pack_sha256(request: MacroAnalysisRequest) -> str:
-    return _document_sha256(
-        {
-            "evidence": [
-                {
-                    "content_hash": item.content_hash,
-                    "evidence_id": item.evidence_id,
-                    "first_seen_at": item.first_seen_at.isoformat(),
-                    "published_at": item.published_at.isoformat(),
-                    "publisher": item.publisher,
-                    "source_tier": item.source_tier,
-                }
-                for item in request.evidence
-            ]
-        }
-    )
-
-
-def _prompt_contract_sha256(request: MacroAnalysisRequest) -> str:
-    """角色 prompt 的安全指纹；不重复持久化新闻摘录或隐藏思维链。"""
-
-    return _document_sha256(
-        {
-            "analysis_id": request.analysis_id,
-            "horizon": request.horizon,
-            "symbol": request.symbol,
-            "technical_summary": list(request.technical_summary),
-        }
-    )
-
-
-def _identity_document(identity: AnalyzerAuditIdentity) -> dict[str, object]:
-    return {
-        "provider_id": identity.provider_id,
-        "requested_model": identity.requested_model,
-        "adapter_version": identity.adapter_version,
-        "prompt_version": identity.prompt_version,
-        "prompt_schema_sha256": identity.prompt_schema_sha256,
-        "manifest_sha256": identity.manifest_sha256,
-    }
-
-
-def _analysis_document(analysis: MacroAnalysis) -> dict[str, object]:
-    return {
-        "analysis_id": analysis.analysis_id,
-        "as_of": analysis.as_of.isoformat(),
-        "decision": analysis.decision.value,
-        "regime": analysis.regime,
-        "technical_alignment": str(analysis.technical_alignment),
-        "macro_impact": str(analysis.macro_impact),
-        "claims": [
-            {
-                "text": item.text,
-                "evidence_ids": list(item.evidence_ids),
-                "contradictions": list(item.contradictions),
-            }
-            for item in analysis.claims
-        ],
-        "scenarios": [
-            {
-                "name": item.name,
-                "probability": str(item.probability),
-                "drivers": list(item.drivers),
-                "evidence_ids": list(item.evidence_ids),
-            }
-            for item in analysis.scenarios
-        ],
-        "uncertainties": list(analysis.uncertainties),
-        "data_gaps": list(analysis.data_gaps),
-        "invalidation_conditions": list(analysis.invalidation_conditions),
-        "reported_confidence": analysis.reported_confidence,
-        "refusal_reason": analysis.refusal_reason,
-        "model_version": analysis.model_version,
-    }
-
-
-def _cross_track_conflict(
-    baseline: MacroAnalysis,
-    adversarial: MacroAnalysis,
-    *,
-    threshold: Decimal,
-) -> bool:
-    if (
-        baseline.decision is MacroAnalysisDecision.ABSTAIN
-        or adversarial.decision is MacroAnalysisDecision.ABSTAIN
-    ):
-        return False
-    spread = abs(baseline.macro_impact - adversarial.macro_impact)
-    opposite_material_signs = (
-        baseline.macro_impact >= Decimal("0.20")
-        and adversarial.macro_impact <= Decimal("-0.20")
-    ) or (
-        baseline.macro_impact <= Decimal("-0.20")
-        and adversarial.macro_impact >= Decimal("0.20")
-    )
-    return spread >= threshold or opposite_material_signs
-
-
-def _document_sha256(document: Mapping[str, object]) -> str:
-    encoded = json.dumps(
-        document,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-
-
-def _median(values: Sequence[Decimal]) -> Decimal:
-    if not values:
-        raise ValueError("median requires at least one value")
-    ordered = sorted(values)
-    middle = len(ordered) // 2
-    if len(ordered) % 2:
-        return ordered[middle]
-    return (ordered[middle - 1] + ordered[middle]) / Decimal("2")
-
-
-def _unique_text(values: Iterable[str]) -> tuple[str, ...]:
-    normalized: list[str] = []
-    for value in values:
-        text = _single_line(str(value))
-        if text and text not in normalized:
-            normalized.append(text)
-    return tuple(normalized)
-
-
-def _single_line(value: str) -> str:
-    return " ".join(value.split())

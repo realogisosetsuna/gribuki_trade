@@ -29,28 +29,29 @@ first increment is:
 | Facade | Extracted responsibility | Boundary |
 |---|---|---|
 | `cli.py` | `cli_commands/parsers/` owns command registration; `cli_commands/handlers/binance.py` owns Binance command workflows; `cli_parsing.py` and `cli_output.py` own pure helpers | `cli.py` remains the stable facade and compatibility surface; handlers resolve runtime dependencies through the facade so existing monkeypatch and import contracts remain valid |
-| `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py` owns Spot scalar validation, signing, redaction, and wire parsing | No network, credentials, or gateway state |
+| `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py` owns Spot wire parsing and scalar validation; `adapters/binance/spot_order_params.py` owns Spot order/OCO/OTO/OTOCO parameter validation and encoding | Pure protocol functions have no network, credential, or gateway state; gateway retains transport and compatibility wrappers |
 | `trading/futures_oms.py` | `trading/futures_oms_codec.py` owns SQLite row codecs, JSON/Decimal conversion, timestamps, and event identities | No transactions or broker imports |
 | `trading/oms.py` | `trading/oms_codec.py` owns broker-neutral SQLite row codecs, JSON/Decimal/time conversion, identifiers, and order status projection rules | No connections, transactions, or broker imports; `oms.py` remains the transaction facade |
 | `storage/live_records.py` + `storage/live_record_codec.py` | Live observation ledger transactions and pure hash/JSON identifiers | `test_live_trade_records.py`, `test_live_trade_orchestration.py` |
 | `storage/paper_day.py` | `storage/paper_day_codec.py` owns PAPER-day row decoding, event digests, identifier validation, and lease argument normalization | No connections, transactions, or mutable store state |
-| `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_serialization.py` owns deterministic exit dataset, plan, outcome, registry documents and SHA-256/JSON encoding | Duck-typed pure codecs; no simulation, I/O, broker, or storage imports |
+| `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_serialization.py` owns deterministic documents; `strategy_lab/exit_simulation.py` owns daily replay, costs, slippage, metrics, and objective scoring | Pure codecs and simulation have no broker or storage access; evaluator facade retains experiment orchestration and compatibility helpers |
 | `strategy_lab/experiments.py` | `strategy_lab/experiment_serialization.py` owns strategy/data manifests, trial folds, metrics, and holdout JSON plus SHA-256 serialization | Type-check-only model imports; no simulation, I/O, broker, storage, or promotion authority |
 | `services/ashare_paper_day.py` | `services/ashare_paper_day_projection.py` owns LLM gate and DEEP exit audit/notification projections | Pure projections only; no storage, network, scheduler, or broker imports |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_serialization.py` owns K-line/technical-bar codecs, exit-barrier helpers, UTC normalization, canonical hashes, and event JSONL/file writes | Pure market/exit serialization and durable text primitives; the runner facade retains scheduling, state transitions, and side effects while re-exporting historical private names |
 | `gui/integrations.py` | `gui/integration_validation.py` owns provider/model/token validation and safe error text | Pure configuration validation; Qt widgets, processes, and network probes remain in the GUI facade |
 | `cli.py` | `cli_output.py` owns Decimal formatting and atomic JSON output | Pure output helpers; command dispatch remains in the CLI facade |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_codec.py` owns sidecar JSON/object and event-line decoding | Pure UTF-8/JSON decoding and scalar validation; summary facade retains historical private helper names and report semantics |
-| `reporting/paper_day_summary.py` | `reporting/paper_day_formatting.py` owns stable-code, time, money, percentage, and Markdown-cell formatting | Pure value-to-text formatting; summary keeps compatibility wrappers while projection and file writing remain in the facade |
+| `reporting/paper_day_summary.py` | `reporting/paper_day_formatting.py` owns stable-code/value formatting; `reporting/paper_day_renderer.py` owns deterministic Markdown rendering and audit sections | Pure formatting/rendering has no file, network, SQLite, or Qt dependency; summary facade retains sidecar loading and projection assembly |
 | `adapters/akshare_daily.py` | `adapters/akshare_daily_parsing.py` owns symbol/date normalization, frame column resolution, scalar validation, and `DailyBar` decoding | Pure payload parser; no AKShare client, network, timeout, or mutable adapter state |
 | `services/ashare_close_analysis.py` | `services/ashare_close_models.py` owns request, market-data collection, and run result contracts; `services/ashare_close_projection.py` owns pure assessment/evidence projections; `services/ashare_close_notifications.py` owns report rendering and message splitting | The facade retains market-data/model orchestration and notification enqueue policy; extracted modules have no broker, network, storage, or scheduler dependency |
+| `services/adversarial_macro.py` | `services/adversarial_macro_serialization.py` owns canonical request, identity, analysis documents, hashes, and scalar normalization | Pure audit encoding only; analyzer orchestration and provider calls stay in the service facade |
+| `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_quantity.py` owns lot rules and sell-quantity planning | Pure quantity policy has no storage, network, scheduler, or broker dependency; the runner facade retains matching and ledger transitions |
 | `runtime/paper_account_chain.py` | `runtime/paper_account_manifest.py` owns pure lineage manifests, canonical JSON, account/seal hashes, source-prefix validation, and ledger projection compatibility | No filesystem, SQLite, lock, scheduler, or broker side effects; chain facade retains recovery and atomic persistence |
 
 These modules are intentionally narrow. The old facade names remain available
 so CLI entry points, services, and external integrations can migrate in later
-increments without a flag-day change. The next planned slices are a dedicated
-Binance command-handler package behind `cli.py`, then separation of the A-share
-PAPER/post-close workflows and the remaining execution orchestration helpers.
+increments without a flag-day change. The next planned slices are separation of the A-share PAPER/post-close workflows,
+remaining sidecar loading, and execution orchestration helpers.
 
 When adding a new slice, keep parser/codec/state-transition code pure where
 possible, put provider protocol code under `adapters`, keep durable writes in

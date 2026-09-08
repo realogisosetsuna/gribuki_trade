@@ -29,12 +29,12 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | Original facade | New cohesive module | Responsibility |
 |---|---|---|
 | `cli.py` | `cli_commands/parsers/`, `cli_commands/handlers/binance.py`, `cli_parsing.py`, `cli_output.py` | Command-family registration, Binance workflow handlers, argparse converters, Decimal formatting, and atomic JSON output |
-| `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py` | Spot wire parsing, scalar validation, signing, and redaction |
+| `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py`, `adapters/binance/spot_order_params.py` | Spot wire parsing, scalar validation, signing/redaction, and pure Spot/OCO/OTO/OTOCO parameter encoding |
 | `trading/futures_oms.py` | `trading/futures_oms_codec.py` | Futures SQLite codecs, JSON/Decimal/time conversion, event identity |
 | `trading/oms.py` | `trading/oms_codec.py` | Broker-neutral OMS SQLite row codecs, JSON/Decimal/time conversion, identifiers, and status projection |
 | `storage/paper_day.py` | `storage/paper_day_codec.py` | PAPER-day row decoding, event digests, identifiers, and lease argument validation |
 | `storage/live_records.py` | `storage/live_record_codec.py` | Live-record scalar validation, canonical JSON, event/protection/work identifiers, and event hashes |
-| `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_serialization.py` | Exit dataset, plan, outcome, registry JSON and SHA-256 serialization |
+| `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_serialization.py`, `strategy_lab/exit_simulation.py` | Exit documents plus pure daily replay, costs, slippage, metrics, and objective scoring |
 | `strategy_lab/experiments.py` | `strategy_lab/experiment_serialization.py` | Strategy/data manifests, trial folds, metrics and holdout JSON plus SHA-256 serialization |
 | `services/ashare_paper_day.py` | `services/ashare_paper_day_projection.py` | LLM gate and DEEP exit audit/notification projections |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_serialization.py` | K-line/technical-bar codecs, exit-barrier/time helpers, UTC normalization, canonical hashes, and event JSONL/file primitives |
@@ -42,6 +42,9 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `adapters/akshare_daily.py` | `adapters/akshare_daily_parsing.py` | Symbol/date normalization, frame parsing, and DailyBar validation |
 | `gui/integrations.py` | `gui/integration_validation.py` | Provider/model/token validation and safe UI error text |
 | `services/ashare_close_analysis.py` | `services/ashare_close_models.py`, `services/ashare_close_projection.py`, `services/ashare_close_notifications.py` | Point-in-time request/result contracts, pure evidence/technical projections, and deterministic report rendering/message splitting |
+| `services/adversarial_macro.py` | `services/adversarial_macro_serialization.py` | Canonical request/identity/analysis documents, hashes, and scalar normalization |
+| `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_quantity.py` | Pure lot/quantity rules and sell-quantity planning for A-share intraday PAPER execution |
+| `reporting/paper_day_summary.py` | `reporting/paper_day_renderer.py` | Pure Markdown rendering and audit sections from immutable projections |
 
 ## Next slices
 
@@ -49,11 +52,11 @@ The next large files are grouped by the responsibilities they mix:
 
 | Area | Large files | Extraction order |
 |---|---|---|
-| A-share execution | `services/ashare_paper_day.py`, `services/ashare_intraday_paper.py` | projections/configuration → calendar/session logic → orchestration |
+| A-share execution | `services/ashare_paper_day.py`, remaining `services/ashare_intraday_paper.py` orchestration | projections/configuration → calendar/session logic → orchestration |
 | Durable state | `storage/live_records.py` | codecs/projections → schema/lease helpers → transaction methods |
-| Research | `strategy_lab/exit_evaluator.py`, `services/adversarial_macro.py` | pure calculations → dataset/manifest IO → orchestration |
-| Presentation | `reporting/paper_day_summary.py`, `gui/integrations.py` | value formatting/artifacts → provider boundary → UI wiring |
-| CLI | `cli.py` | command registration → Binance handlers → A-share workflow handlers → output formatting |
+| Research | remaining `services/adversarial_macro.py` orchestration and other strategy/research facades | pure calculations → dataset/manifest IO → orchestration |
+| Presentation | remaining `reporting/paper_day_summary.py`, `gui/integrations.py` | sidecar loading/projection assembly → provider boundary → UI wiring |
+| CLI | `cli.py` | A-share workflow handlers → output formatting → compatibility migration |
 
 The original import path remains a facade until all in-repository callers have
 migrated. The broker-neutral OMS slice now has
@@ -67,6 +70,7 @@ Current source evidence includes `src/gribuki_trade/cli_parsing.py`,
 `src/gribuki_trade/cli_output.py`,
 `src/gribuki_trade/gui/integration_validation.py`,
 `src/gribuki_trade/adapters/binance/spot_parsing.py`,
+`src/gribuki_trade/adapters/binance/spot_order_params.py`,
 `src/gribuki_trade/trading/futures_oms_codec.py`,
 `src/gribuki_trade/trading/oms_codec.py`,
 `src/gribuki_trade/services/ashare_paper_day_projection.py`,
@@ -74,7 +78,11 @@ Current source evidence includes `src/gribuki_trade/cli_parsing.py`,
 `src/gribuki_trade/services/ashare_close_projection.py`,
 `src/gribuki_trade/services/ashare_close_notifications.py`,
 `src/gribuki_trade/storage/paper_day_codec.py`, and
-`src/gribuki_trade/strategy_lab/exit_serialization.py`, and
+`src/gribuki_trade/strategy_lab/exit_serialization.py`,
+`src/gribuki_trade/strategy_lab/exit_simulation.py`,
+`src/gribuki_trade/services/adversarial_macro_serialization.py`,
+`src/gribuki_trade/reporting/paper_day_renderer.py`,
+`src/gribuki_trade/services/ashare/ashare_intraday_quantity.py`, and
 `src/gribuki_trade/strategy_lab/experiment_serialization.py`. Focused verification is
 covered by `tests/unit/test_cli_parsing.py`,
 `tests/unit/test_cli_output.py`, `tests/unit/test_binance_spot_parsing.py`,
@@ -102,7 +110,8 @@ extracted to `src/gribuki_trade/cli_commands/handlers/binance.py`.
 Representative routing tests include `tests/unit/test_akshare_market_data.py`,
 `tests/unit/test_ashare_paper_day.py`, `tests/unit/test_binance_execution.py`,
 and `tests/unit/test_cli.py`. The remaining oversized orchestration facades
-(`ashare_paper_day.py`, `storage/live_records.py`, and the A-share workflow
-branches still in `cli.py`) are the next vertical slices; each must first
+(`ashare_paper_day.py`, `storage/live_records.py`, the remaining sidecar loading in
+`reporting/paper_day_summary.py`, and the A-share workflow branches in `cli.py`)
+are the next vertical slices; each must first
 extract pure projections or codecs before moving transaction and dispatch
 logic.

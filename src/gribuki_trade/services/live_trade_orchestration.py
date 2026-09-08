@@ -229,10 +229,10 @@ class LiveTradeOrchestrationService:
                     continue
                 raise
             except (OSError, TimeoutError):
-                failed_at = max(moment, datetime.now(UTC))
+                # 所有工作状态都以调用方提供的 moment 推进，便于重放和恢复测试保持确定性。
                 failed = self._fail_claimed_work(
                     work,
-                    failed_at=failed_at,
+                    failed_at=moment,
                     error_code="TRANSIENT_DEPENDENCY_FAILURE",
                     retryable=True,
                 )

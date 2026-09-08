@@ -51,14 +51,38 @@ from .rules import (
     decimal_from_api,
     decimal_to_fixed,
 )
-from .spot_parsing import (
+from .spot_order_params import (
     CLIENT_ORDER_ID as _CLIENT_ORDER_ID,
 )
-from .spot_parsing import (
-    ORDER_RESPONSE_TYPES as _ORDER_RESPONSE_TYPES,
+from .spot_order_params import (
+    append_optional as _append_optional,
 )
-from .spot_parsing import (
-    SPOT_ORDER_TYPES as _SPOT_ORDER_TYPES,
+from .spot_order_params import (
+    list_leg_params as _list_leg_params,
+)
+from .spot_order_params import (
+    optional_text as _optional_text,
+)
+from .spot_order_params import (
+    order_type as _order_type,
+)
+from .spot_order_params import (
+    positive_decimal as _positive_decimal,
+)
+from .spot_order_params import (
+    prefixed_leg_params as _prefixed_leg_params,
+)
+from .spot_order_params import (
+    require_client_order_id as _require_client_order_id,
+)
+from .spot_order_params import (
+    spot_order_params as _spot_order_params,
+)
+from .spot_order_params import (
+    validate_leg as _validate_leg,
+)
+from .spot_order_params import (
+    validate_list_response_type as _validate_list_response_type,
 )
 from .spot_parsing import (
     api_code as _api_code_value,
@@ -628,9 +652,7 @@ class BinanceSpotGateway:
         """查询当前打开的现货订单列表，用于 OCO/OTO/OTOCO 恢复。"""
 
         self._require_order_connection()
-        payload = await self._request_json(
-            "GET", "/api/v3/openOrderLists", signed=True
-        )
+        payload = await self._request_json("GET", "/api/v3/openOrderLists", signed=True)
         if not isinstance(payload, list):
             raise BinanceProtocolError("Binance open order lists response must be a list")
         if any(not isinstance(item, Mapping) for item in payload):
@@ -1323,60 +1345,40 @@ class BinanceSpotGateway:
 
     @staticmethod
     def _positive_decimal(value: Decimal, label: str) -> Decimal:
-        number = Decimal(str(value))
-        if not number.is_finite() or number <= 0:
-            raise ValueError(f"{label} must be positive and finite")
-        return number
+        """兼容旧网关导出的正数校验辅助方法。"""
+
+        return _positive_decimal(value, label)
 
     @staticmethod
     def _order_type(value: str) -> str:
-        normalized = str(value).upper()
-        if normalized not in _SPOT_ORDER_TYPES:
-            raise ValueError(f"unsupported Spot order type: {value!r}")
-        return normalized
+        """兼容旧网关导出的订单类型校验辅助方法。"""
+
+        return _order_type(value)
 
     @staticmethod
     def _validate_list_response_type(value: str) -> None:
-        if str(value).upper() not in _ORDER_RESPONSE_TYPES:
-            raise ValueError("response_type must be ACK, RESULT, or FULL")
+        """兼容旧网关导出的订单列表响应类型校验方法。"""
+
+        _validate_list_response_type(value)
 
     @staticmethod
     def _append_optional(params: list[tuple[str, object]], key: str, value: object | None) -> None:
-        if value is not None:
-            params.append((key, value))
+        _append_optional(params, key, value)
 
     @staticmethod
     def _require_client_order_id(value: str | None) -> None:
-        if value is None or not _CLIENT_ORDER_ID.fullmatch(value):
-            raise ValueError("client order id must be 1-36 Binance-safe characters")
+        _require_client_order_id(value)
 
     @staticmethod
     def _optional_text(value: object) -> str | None:
-        return None if value is None else str(value)
+        return _optional_text(value)
 
-    def _validate_leg(self, leg: BinanceSpotOrderLeg, *, require_quantity: bool) -> None:
-        self._order_type(leg.order_type)
-        if not isinstance(leg.side, Side):
-            raise ValueError("order leg side must be BUY or SELL")
-        if require_quantity:
-            self._positive_decimal(leg.quantity, "quantity")
-        for name, value in (
-            ("price", leg.price),
-            ("stop_price", leg.stop_price),
-            ("quote_order_quantity", leg.quote_order_quantity),
-            ("iceberg_quantity", leg.iceberg_quantity),
-        ):
-            if value is not None:
-                self._positive_decimal(value, name)
-        if leg.trailing_delta is not None and (
-            isinstance(leg.trailing_delta, bool) or leg.trailing_delta <= 0
-        ):
-            raise ValueError("trailing_delta must be a positive integer BIPS")
-        if leg.client_order_id is not None:
-            self._require_client_order_id(leg.client_order_id)
+    @staticmethod
+    def _validate_leg(leg: BinanceSpotOrderLeg, *, require_quantity: bool) -> None:
+        _validate_leg(leg, require_quantity=require_quantity)
 
+    @staticmethod
     def _spot_order_params(
-        self,
         *,
         symbol: str,
         side: Side,
@@ -1394,101 +1396,32 @@ class BinanceSpotGateway:
         self_trade_prevention_mode: str | None,
         response_type: str,
     ) -> list[tuple[str, object]]:
-        kind = self._order_type(order_type)
-        if not isinstance(side, Side):
-            raise ValueError("side must be BUY or SELL")
-        if (quantity is None) == (quote_order_quantity is None):
-            raise ValueError("provide exactly one of quantity or quote_order_quantity")
-        if quantity is not None:
-            quantity = self._positive_decimal(quantity, "quantity")
-        if quote_order_quantity is not None:
-            quote_order_quantity = self._positive_decimal(
-                quote_order_quantity, "quote_order_quantity"
-            )
-        if price is not None:
-            price = self._positive_decimal(price, "price")
-        if stop_price is not None:
-            stop_price = self._positive_decimal(stop_price, "stop_price")
-        if trailing_delta is not None and (isinstance(trailing_delta, bool) or trailing_delta <= 0):
-            raise ValueError("trailing_delta must be a positive integer BIPS")
-        if (
-            kind in {"LIMIT", "LIMIT_MAKER", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"}
-            and price is None
-        ):
-            raise ValueError(f"price is required for {kind}")
-        if kind in {"LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"} and not time_in_force:
-            raise ValueError(f"time_in_force is required for {kind}")
-        if (
-            kind in {"STOP_LOSS", "STOP_LOSS_LIMIT", "TAKE_PROFIT", "TAKE_PROFIT_LIMIT"}
-            and stop_price is None
-            and trailing_delta is None
-        ):
-            raise ValueError(f"stop_price or trailing_delta is required for {kind}")
-        self._validate_list_response_type(response_type)
-        if client_order_id is not None:
-            self._require_client_order_id(client_order_id)
-        params: list[tuple[str, object]] = [
-            ("symbol", symbol),
-            ("side", side.value),
-            ("type", kind),
-        ]
-        self._append_optional(
-            params, "timeInForce", None if time_in_force is None else str(time_in_force).upper()
+        return _spot_order_params(
+            symbol=symbol,
+            side=side,
+            order_type_value=order_type,
+            quantity=quantity,
+            quote_order_quantity=quote_order_quantity,
+            price=price,
+            stop_price=stop_price,
+            trailing_delta=trailing_delta,
+            time_in_force=time_in_force,
+            client_order_id=client_order_id,
+            iceberg_quantity=iceberg_quantity,
+            strategy_id=strategy_id,
+            strategy_type=strategy_type,
+            self_trade_prevention_mode=self_trade_prevention_mode,
+            response_type=response_type,
         )
-        self._append_optional(
-            params, "quantity", None if quantity is None else decimal_to_fixed(quantity)
-        )
-        self._append_optional(
-            params,
-            "quoteOrderQty",
-            None if quote_order_quantity is None else decimal_to_fixed(quote_order_quantity),
-        )
-        self._append_optional(params, "price", None if price is None else decimal_to_fixed(price))
-        self._append_optional(
-            params, "stopPrice", None if stop_price is None else decimal_to_fixed(stop_price)
-        )
-        self._append_optional(params, "trailingDelta", trailing_delta)
-        self._append_optional(params, "newClientOrderId", client_order_id)
-        self._append_optional(
-            params,
-            "icebergQty",
-            None
-            if iceberg_quantity is None
-            else decimal_to_fixed(self._positive_decimal(iceberg_quantity, "iceberg_quantity")),
-        )
-        self._append_optional(params, "strategyId", strategy_id)
-        self._append_optional(params, "strategyType", strategy_type)
-        self._append_optional(params, "selfTradePreventionMode", self_trade_prevention_mode)
-        params.append(("newOrderRespType", str(response_type).upper()))
-        return params
 
+    @staticmethod
     def _list_leg_params(
-        self, prefix: str, leg: BinanceSpotOrderLeg, *, quantity: Decimal
+        prefix: str, leg: BinanceSpotOrderLeg, *, quantity: Decimal
     ) -> list[tuple[str, object]]:
-        self._validate_leg(leg, require_quantity=False)
-        params: list[tuple[str, object]] = []
-        for key, value in (
-            (f"{prefix}Price", leg.price),
-            (f"{prefix}StopPrice", leg.stop_price),
-            (f"{prefix}TrailingDelta", leg.trailing_delta),
-            (
-                f"{prefix}TimeInForce",
-                None if leg.time_in_force is None else str(leg.time_in_force).upper(),
-            ),
-            (
-                f"{prefix}IcebergQty",
-                None if leg.iceberg_quantity is None else decimal_to_fixed(leg.iceberg_quantity),
-            ),
-            (f"{prefix}ClientOrderId", leg.client_order_id),
-        ):
-            if value is not None:
-                params.append(
-                    (key, decimal_to_fixed(value) if isinstance(value, Decimal) else value)
-                )
-        return params
+        return _list_leg_params(prefix, leg, quantity=quantity)
 
+    @staticmethod
     def _prefixed_leg_params(
-        self,
         prefix: str,
         leg: BinanceSpotOrderLeg,
         *,
@@ -1497,16 +1430,14 @@ class BinanceSpotGateway:
         include_side: bool = True,
         include_quantity: bool = True,
     ) -> list[tuple[str, object]]:
-        self._validate_leg(leg, require_quantity=required and include_quantity)
-        params: list[tuple[str, object]] = []
-        if include_type:
-            params.append((f"{prefix}Type", self._order_type(leg.order_type)))
-        if include_side:
-            params.append((f"{prefix}Side", leg.side.value))
-        if include_quantity:
-            params.append((f"{prefix}Quantity", decimal_to_fixed(leg.quantity)))
-        params.extend(self._list_leg_params(prefix, leg, quantity=leg.quantity))
-        return params
+        return _prefixed_leg_params(
+            prefix,
+            leg,
+            required=required,
+            include_type=include_type,
+            include_side=include_side,
+            include_quantity=include_quantity,
+        )
 
     def _order_list_from_payload(
         self, payload: object, *, fallback_symbol: str

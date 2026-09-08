@@ -12,6 +12,16 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         ("gribuki_trade.adapters.paper", "adapters/simulated/paper.py"),
         ("gribuki_trade.services.ashare_paper_day", "services/ashare/ashare_paper_day.py"),
         ("gribuki_trade.services.binance_execution", "services/binance/binance_execution.py"),
+        (
+            "gribuki_trade.adapters.binance.spot_order_params",
+            "adapters/binance/spot_order_params.py",
+        ),
+        ("gribuki_trade.reporting.paper_day_renderer", "reporting/paper_day_renderer.py"),
+        (
+            "gribuki_trade.services.adversarial_macro_serialization",
+            "services/adversarial_macro_serialization.py",
+        ),
+        ("gribuki_trade.strategy_lab.exit_simulation", "strategy_lab/exit_simulation.py"),
     )
     for name, suffix in modules:
         module = importlib.import_module(name)

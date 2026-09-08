@@ -141,14 +141,18 @@ the migration. Regression coverage is in
 ## Provider and command directory grouping
 
 The implementation now has explicit navigation roots for A-share, cross-market,
-macro, simulated, Binance, and CLI command families. Binance command workflows
+macro, simulated, Binance, and CLI command families. This increment also extracts
+Binance Spot order parameter encoding, reporting Markdown rendering, adversarial
+macro audit serialization, and strategy exit simulation into focused modules. Binance command workflows
 are grouped under `cli_commands/handlers/` alongside the parser families. Compatibility aliases at
 the former flat paths are intentionally thin and use the implementation module
 object so existing imports and monkeypatch-based operational tests retain their
 semantics. This grouping is structural; it does not alter broker permissions,
 order state transitions, or durable schemas.
 
-Validation evidence for this increment: CLI and parser tests 191 passed; adapter
-routing tests 54 passed; runtime/manifest and strategy serialization contracts
-passed; close-analysis component/service tests passed. Full quality gates remain
-required after the next paper-day extraction is merged.
+Validation evidence for this increment: CLI and parser tests 191 passed; the
+Binance Spot parameter/gateway suite, reporting renderer/summary suite,
+adversarial macro suite, exit simulation suite, and A-share quantity/PAPER suite
+passed together (173 focused tests); Ruff, mypy (306 source files), readiness,
+compileall, and Chinese-source checks passed. Full quality gates remain required
+after the next orchestration slice is merged.
