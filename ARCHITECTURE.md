@@ -95,3 +95,6 @@ of architecture as capabilities; record them as verification gaps instead.
 For the progressive-read path, start with `docs/architecture/module-map.md`,
 then open the boundary document matching the task, then the named source/test
 files. `docs/architecture/verification-map.md` maps behavior to tests.
+
+
+Provider implementations are grouped under `src/gribuki_trade/adapters/ashare/`, `market_data/`, `macro/`, and `simulated/`; platform protocol packages remain under `adapters/binance/` and `adapters/schwab/`. A-share and Binance application services follow the same grouping under `services/ashare/` and `services/binance/`.
