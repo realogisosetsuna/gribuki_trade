@@ -22,6 +22,18 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "services/adversarial_macro_serialization.py",
         ),
         ("gribuki_trade.strategy_lab.exit_simulation", "strategy_lab/exit_simulation.py"),
+        (
+            "gribuki_trade.adapters.market_data.cross_market_payload",
+            "adapters/market_data/cross_market_payload.py",
+        ),
+        (
+            "gribuki_trade.features.close_analysis_indicators",
+            "features/close_analysis_indicators.py",
+        ),
+        (
+            "gribuki_trade.services.ashare.ashare_paper_day_config",
+            "services/ashare/ashare_paper_day_config.py",
+        ),
     )
     for name, suffix in modules:
         module = importlib.import_module(name)

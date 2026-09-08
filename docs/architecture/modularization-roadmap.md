@@ -40,10 +40,13 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_serialization.py` | K-line/technical-bar codecs, exit-barrier/time helpers, UTC normalization, canonical hashes, and event JSONL/file primitives |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_codec.py` | Sidecar JSON and JSONL event decoding for reports |
 | `adapters/akshare_daily.py` | `adapters/akshare_daily_parsing.py` | Symbol/date normalization, frame parsing, and DailyBar validation |
+| `adapters/market_data/cross_market.py` | `adapters/market_data/cross_market_payload.py` | DataFrame/quote/date/number parsing and exact-universe validation |
 | `gui/integrations.py` | `gui/integration_validation.py` | Provider/model/token validation and safe UI error text |
+| `features/close_analysis.py` | `features/close_analysis_indicators.py` | ATR/RSI/ADX, volatility, liquidity, trend, and score calculations |
 | `services/ashare_close_analysis.py` | `services/ashare_close_models.py`, `services/ashare_close_projection.py`, `services/ashare_close_notifications.py` | Point-in-time request/result contracts, pure evidence/technical projections, and deterministic report rendering/message splitting |
 | `services/adversarial_macro.py` | `services/adversarial_macro_serialization.py` | Canonical request/identity/analysis documents, hashes, and scalar normalization |
 | `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_quantity.py` | Pure lot/quantity rules and sell-quantity planning for A-share intraday PAPER execution |
+| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_config.py` | Frozen schedule/risk configuration and policy manifest projections |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_renderer.py` | Pure Markdown rendering and audit sections from immutable projections |
 
 ## Next slices
@@ -71,6 +74,7 @@ Current source evidence includes `src/gribuki_trade/cli_parsing.py`,
 `src/gribuki_trade/gui/integration_validation.py`,
 `src/gribuki_trade/adapters/binance/spot_parsing.py`,
 `src/gribuki_trade/adapters/binance/spot_order_params.py`,
+`src/gribuki_trade/adapters/market_data/cross_market_payload.py`,
 `src/gribuki_trade/trading/futures_oms_codec.py`,
 `src/gribuki_trade/trading/oms_codec.py`,
 `src/gribuki_trade/services/ashare_paper_day_projection.py`,
@@ -82,7 +86,9 @@ Current source evidence includes `src/gribuki_trade/cli_parsing.py`,
 `src/gribuki_trade/strategy_lab/exit_simulation.py`,
 `src/gribuki_trade/services/adversarial_macro_serialization.py`,
 `src/gribuki_trade/reporting/paper_day_renderer.py`,
-`src/gribuki_trade/services/ashare/ashare_intraday_quantity.py`, and
+`src/gribuki_trade/services/ashare/ashare_intraday_quantity.py`,
+`src/gribuki_trade/services/ashare/ashare_paper_day_config.py`,
+`src/gribuki_trade/features/close_analysis_indicators.py`, and
 `src/gribuki_trade/strategy_lab/experiment_serialization.py`. Focused verification is
 covered by `tests/unit/test_cli_parsing.py`,
 `tests/unit/test_cli_output.py`, `tests/unit/test_binance_spot_parsing.py`,
