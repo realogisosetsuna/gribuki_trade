@@ -221,6 +221,12 @@ models, while Binance execution record conversions live outside the execution
 orchestrator. Focused reporting and execution routes passed 39 tests; the
 facades retain their historical private helper names and durable side effects.
 
+The A-share screening payload slice now follows the same boundary: provider row
+decoding, security/date/number validation, coverage checks, and revision hashes
+are isolated in `adapters/ashare/screening_payload.py`; the adapter facade keeps
+AKShare calls, timeout/concurrency control, fallback selection, and degradation
+reporting.
+
 The current provider/UI follow-up passed 106 focused tests, then the full suite
 passed 1718 tests with five environment-skipped tests and 41 subtests. Ruff,
 mypy (322 source files), readiness, compileall, and the Chinese-source check all

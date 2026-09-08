@@ -108,6 +108,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "gribuki_trade.reporting.paper_day_projection_models",
             "reporting/paper_day_projection_models.py",
         ),
+        (
+            "gribuki_trade.adapters.ashare.screening_payload",
+            "adapters/ashare/screening_payload.py",
+        ),
     )
     for name, suffix in modules:
         module = importlib.import_module(name)
