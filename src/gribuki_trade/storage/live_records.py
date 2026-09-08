@@ -52,6 +52,12 @@ from gribuki_trade.storage.live_record_models import (
     _row_to_work,
 )
 from gribuki_trade.storage.live_record_schema import ensure_live_record_schema
+from gribuki_trade.storage.live_record_work_policy import (
+    build_claim_due_work_query,
+    normalize_lease_for,
+    normalize_work_claim,
+    normalize_work_failure,
+)
 
 
 class LiveRecordStoreError(RuntimeError):
@@ -606,49 +612,23 @@ class SQLiteLiveRecordStore:
     ) -> tuple[LiveWorkItem, ...]:
         """领取到期工作；过期租约可被另一应用进程安全接管。"""
 
-        moment = _aware_utc(now)
-        if lease_for <= timedelta(0):
-            raise ValueError("lease_for must be positive")
-        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
-            raise ValueError("limit must be a positive integer")
-        normalized_work_ids: tuple[str, ...] | None = None
-        if work_ids is not None:
-            normalized_work_ids = tuple(
-                sorted(
-                    {
-                        work_id.strip()
-                        for work_id in work_ids
-                        if isinstance(work_id, str) and work_id.strip()
-                    }
-                )
-            )
-            if len(normalized_work_ids) != len(work_ids):
-                raise ValueError("work_ids must contain only unique non-empty strings")
-            if not normalized_work_ids:
-                return ()
+        policy = normalize_work_claim(
+            now=now,
+            lease_for=lease_for,
+            kinds=kinds,
+            work_ids=work_ids,
+            limit=limit,
+        )
+        if policy.work_ids == ():
+            return ()
         with self._transaction() as connection:
-            filters = [
-                "available_at <= ?",
-                "(status IN ('PENDING','RETRY') OR (status = 'RUNNING' AND lease_until <= ?))",
-            ]
-            parameters: list[object] = [_time(moment), _time(moment)]
-            if kinds:
-                values = tuple(sorted(kind.value for kind in kinds))
-                filters.append("kind IN (" + ",".join("?" for _ in values) + ")")
-                parameters.extend(values)
-            if normalized_work_ids is not None:
-                filters.append(
-                    "work_id IN (" + ",".join("?" for _ in normalized_work_ids) + ")"
-                )
-                parameters.extend(normalized_work_ids)
+            query, parameters = build_claim_due_work_query(policy)
             rows = connection.execute(
-                "SELECT work_id FROM live_work_items WHERE "
-                + " AND ".join(filters)
-                + " ORDER BY available_at, created_at, work_id LIMIT ?",
-                (*parameters, limit),
+                query,
+                parameters,
             ).fetchall()
             claimed: list[LiveWorkItem] = []
-            lease_until = moment + lease_for
+            lease_until = policy.moment + policy.lease_for
             for row in rows:
                 work_id = str(row["work_id"])
                 connection.execute(
@@ -658,7 +638,7 @@ class SQLiteLiveRecordStore:
                         lease_until = ?, updated_at = ?, error_code = NULL
                     WHERE work_id = ?
                     """,
-                    (_time(lease_until), _time(moment), work_id),
+                    (_time(lease_until), _time(policy.moment), work_id),
                 )
                 claimed_row = connection.execute(
                     "SELECT * FROM live_work_items WHERE work_id = ?",
@@ -870,8 +850,7 @@ class SQLiteLiveRecordStore:
         """按领取代际续租；过期后若已被接管，旧 worker 无法复活租约。"""
 
         moment = _aware_utc(renewed_at)
-        if lease_for <= timedelta(0):
-            raise ValueError("lease_for must be positive")
+        lease_for = normalize_lease_for(lease_for)
         attempt = _lease_attempt(lease_attempt)
         with self._transaction() as connection:
             row = connection.execute(
@@ -994,13 +973,16 @@ class SQLiteLiveRecordStore:
     ) -> LiveWorkItem:
         """释放失败任务；达到上限后进入 DEAD 并留下不可变审计事件。"""
 
-        moment = _aware_utc(failed_at)
-        code = _error_code(error_code)
-        if retry_after < timedelta(0):
-            raise ValueError("retry_after must not be negative")
-        if maximum_attempts < 1:
-            raise ValueError("maximum_attempts must be positive")
-        attempt = _lease_attempt(lease_attempt)
+        policy = normalize_work_failure(
+            failed_at=failed_at,
+            error_code=error_code,
+            retry_after=retry_after,
+            maximum_attempts=maximum_attempts,
+            lease_attempt=lease_attempt,
+        )
+        moment = policy.moment
+        code = policy.error_code
+        attempt = policy.lease_attempt
         with self._transaction() as connection:
             row = connection.execute(
                 "SELECT * FROM live_work_items WHERE work_id = ?", (work_id,)
@@ -1014,7 +996,7 @@ class SQLiteLiveRecordStore:
                 return work
             if work.status is not LiveWorkStatus.RUNNING:
                 raise LiveRecordStateError("WORK_NOT_CLAIMED")
-            dead = not retryable or work.attempts >= maximum_attempts
+            dead = not retryable or work.attempts >= policy.maximum_attempts
             connection.execute(
                 """
                 UPDATE live_work_items SET
@@ -1024,7 +1006,7 @@ class SQLiteLiveRecordStore:
                 """,
                 (
                     LiveWorkStatus.DEAD.value if dead else LiveWorkStatus.RETRY.value,
-                    _time(moment if dead else moment + retry_after),
+                    _time(moment if dead else moment + policy.retry_after),
                     _time(moment),
                     code,
                     work_id,

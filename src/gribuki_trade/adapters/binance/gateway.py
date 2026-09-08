@@ -14,6 +14,16 @@ from uuid import uuid4
 from gribuki_trade.domain.orders import OrderIntent, OrderStatus, Side
 from gribuki_trade.ports.broker import BrokerEvent
 
+from .errors import (
+    BinanceAPIError,
+    BinanceConfigurationError,
+    BinanceProtocolError,
+    BinanceTransportError,
+    BinanceUncertainResultError,
+)
+from .errors import (
+    BinanceError as _BinanceError,
+)
 from .http import (
     AsyncHttpTransport,
     HttpRequest,
@@ -44,6 +54,7 @@ from .models import (
     OrderBookSnapshot,
     TickerPrice,
 )
+from .rate_limit import parse_rate_limit_usage
 from .request_builder import encode_request
 from .rules import (
     BinanceValidationError,
@@ -107,36 +118,7 @@ from .spot_parsing import (
     sign_hmac_sha256 as _sign_hmac_sha256,
 )
 
-
-class BinanceError(RuntimeError):
-    """可安全记录日志的 Binance 适配器失败基类。"""
-
-
-class BinanceConfigurationError(BinanceError):
-    """所选环境或签名端点未得到安全配置。"""
-
-
-class BinanceProtocolError(BinanceError):
-    """Binance 或传输层返回了格式错误的响应。"""
-
-
-class BinanceTransportError(BinanceError):
-    """HTTP 请求失败；不保留请求 URL 或凭据。"""
-
-
-class BinanceAPIError(BinanceError):
-    """消息已净化的已知 Binance API 拒绝。"""
-
-    def __init__(self, *, status_code: int, code: int | None, message: str) -> None:
-        self.status_code = status_code
-        self.code = code
-        self.message = message
-        code_text = "unknown" if code is None else str(code)
-        super().__init__(f"Binance API error (HTTP {status_code}, code {code_text}): {message}")
-
-
-class BinanceUncertainResultError(BinanceAPIError):
-    """交易所可能已经执行请求，必须进行对账。"""
+BinanceError = _BinanceError
 
 
 def sign_hmac_sha256(secret_key: str, payload: str) -> str:
@@ -1644,43 +1626,7 @@ class BinanceSpotGateway:
         return _optional_integer_value(value, label)
 
     def _update_rate_limit_usage(self, headers: Mapping[str, str]) -> None:
-        normalized = {str(key).lower(): str(value) for key, value in headers.items()}
-
-        def read(name: str) -> int | None:
-            raw = normalized.get(name.lower())
-            if raw is None:
-                return None
-            try:
-                value = int(raw)
-            except ValueError:
-                return None
-            return value if value >= 0 else None
-
-        observed = BinanceRateLimitUsage(
-            used_weight_1m=read("x-mbx-used-weight-1m"),
-            order_count_10s=read("x-mbx-order-count-10s"),
-            order_count_1d=read("x-mbx-order-count-1d"),
-            retry_after_seconds=read("retry-after"),
-        )
-        prior = self._rate_limit_usage
-        self._rate_limit_usage = BinanceRateLimitUsage(
-            used_weight_1m=(
-                observed.used_weight_1m
-                if observed.used_weight_1m is not None
-                else prior.used_weight_1m
-            ),
-            order_count_10s=(
-                observed.order_count_10s
-                if observed.order_count_10s is not None
-                else prior.order_count_10s
-            ),
-            order_count_1d=(
-                observed.order_count_1d
-                if observed.order_count_1d is not None
-                else prior.order_count_1d
-            ),
-            retry_after_seconds=observed.retry_after_seconds,
-        )
+        self._rate_limit_usage = parse_rate_limit_usage(headers, prior=self._rate_limit_usage)
 
     def _snapshot_from_payload(
         self,

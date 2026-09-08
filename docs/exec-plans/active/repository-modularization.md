@@ -172,6 +172,13 @@ intraday execution policy, and Binance CLI result shaping. These are pure data o
 policy modules; file loading, account matching, network calls, and LIVE guards stay
 in their existing owners.
 
+The latest increment separates live-sync result payloads from the CLI facade,
+strict PAPER-day LLM audit payload recovery from the nested runner, Binance error
+and rate-limit protocol helpers from the REST gateway, and live-record work-queue
+lease/query policy from the SQLite store. These modules are pure or connection-
+independent; command dispatch, HTTP transport, transactions, and state changes
+remain in their original owners.
+
 Focused validation for this increment passed 260 tests. The full suite passed 1730
 tests with five environment-skipped tests and 41 subtests; Ruff, mypy (325 source
 files), readiness, compileall, and the Chinese-source check passed.

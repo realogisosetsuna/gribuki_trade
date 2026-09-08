@@ -8,7 +8,7 @@ SQLite、调度器或 broker 访问，因此可以独立测试，也不会改变
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from typing import Any, Protocol
+from typing import Protocol
 
 
 class _ValueLike(Protocol):
@@ -71,7 +71,7 @@ class _RunSummaryLike(Protocol):
 
 class _CycleRunLike(Protocol):
     barrier_observations: int
-    failures: Iterable[object]
+    failures: Iterable[_FailureLike]
     fetched_bars: int
     queued_alerts: int
     target_count: int
@@ -84,9 +84,9 @@ class _FailureLike(Protocol):
 
 
 def _live_status_payload(
-    snapshot: Any,
-    tracking: Iterable[Any],
-    work_items: Iterable[Any],
+    snapshot: _SnapshotLike,
+    tracking: Iterable[_TrackingLike],
+    work_items: Iterable[_WorkLike],
 ) -> dict[str, object]:
     """将实盘观察账户、保护跟踪和恢复工作投影成稳定状态文档。"""
 
@@ -133,7 +133,7 @@ def _live_status_payload(
     }
 
 
-def _live_ingest_payload(outcome: Any) -> dict[str, object]:
+def _live_ingest_payload(outcome: _InboundOutcomeLike) -> dict[str, object]:
     """将单条 OneBot 入站结果转换为不含领域对象的 JSON 文档。"""
 
     return {
@@ -154,10 +154,10 @@ def _live_immediate_protection_payload(
     *,
     protection_id: str,
     protection_work_id: str,
-    deep_work: Any,
-    quick: Any,
-    work: Any,
-    tracking_state: Any,
+    deep_work: _WorkLike | None,
+    quick: _RunSummaryLike,
+    work: _WorkLike,
+    tracking_state: _TrackingLike,
     tracking_result: Mapping[str, object],
     quick_ok: bool,
     tracking_ok: bool,
@@ -233,11 +233,11 @@ def _append_live_immediate_protection_receipt(
 
 def _live_cycle_payload(
     *,
-    build_work: Any,
-    deep_work: Any,
-    close_work: Any,
-    tracking_runs: Iterable[Any],
-    dispatch: Mapping[str, Any],
+    build_work: _RunSummaryLike,
+    deep_work: _RunSummaryLike,
+    close_work: _RunSummaryLike,
+    tracking_runs: Iterable[_CycleRunLike],
+    dispatch: Mapping[str, object],
     dispatch_failed: bool,
     deep_timeout_seconds: float,
 ) -> dict[str, object]:

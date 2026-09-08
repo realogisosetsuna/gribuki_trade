@@ -57,6 +57,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `cli_commands/handlers/binance.py` | `cli_commands/binance_results.py` | Balance validation, testnet deltas, and reconciliation payload shaping |
 | `cli.py` | `cli_commands/close_research_payloads.py` | Close-research archive/profile payload projections |
 | `adapters/binance/futures.py` | `adapters/binance/futures_order_params.py` | Futures order/protection parameter validation and encoding |
+| `adapters/binance/gateway.py` | `adapters/binance/errors.py`, `adapters/binance/rate_limit.py` | Shared error hierarchy and pure rate-limit response-header parsing |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_notifications.py` | Stable notification kind, artifact identity, and report text projections |
 | `gui/integrations.py` | `gui/napcat_process.py` | NapCat launch-command validation and owned process lifecycle |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_renderer.py` | Pure Markdown rendering and audit sections from immutable projections |
@@ -67,6 +68,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `adapters/binance/gateway.py` | `adapters/binance/request_builder.py` | Deterministic REST query/form encoding and signed request assembly |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_schedule.py` | Session timezone, phase boundaries, and scheduler sleep calculations |
 | `cli.py` | `cli_commands/live_sync_payloads.py` | Pure live-sync status, ingest, protection, cycle, and receipt result documents |
+| `storage/live_records.py` | `storage/live_record_work_policy.py` | Work-claim SQL construction and lease/failure parameter normalization |
 
 ## Next slices
 
@@ -110,6 +112,9 @@ Current source evidence includes `src/gribuki_trade/cli_parsing.py`,
 `src/gribuki_trade/services/ashare/ashare_intraday_quantity.py`,
 `src/gribuki_trade/services/ashare/ashare_paper_day_config.py`,
 `src/gribuki_trade/services/ashare/ashare_paper_day_llm_payloads.py`,
+`src/gribuki_trade/adapters/binance/errors.py`,
+`src/gribuki_trade/adapters/binance/rate_limit.py`,
+`src/gribuki_trade/storage/live_record_work_policy.py`,
 `src/gribuki_trade/features/close_analysis_indicators.py`, and
 `src/gribuki_trade/storage/live_record_models.py`,
 `src/gribuki_trade/trading/oms_schema.py`,
