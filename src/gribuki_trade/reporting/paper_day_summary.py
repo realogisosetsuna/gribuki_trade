@@ -28,6 +28,18 @@ from pathlib import Path
 from typing import cast
 
 from . import paper_day_llm_projection as _llm_projection_module
+from .paper_day_account_projection import (
+    applied_fill_sides,
+    artifact_status_from_events,
+    latest_account_event,
+    notification_projection,
+    order_id,
+    positions,
+    unique_applied_fills,
+)
+from .paper_day_account_projection import (
+    realized_by_symbol as project_realized_by_symbol,
+)
 from .paper_day_llm_projection import (
     PaperDayDeepExitLLMComparison,
     PaperDayDeepExitSellReview,
@@ -36,33 +48,17 @@ from .paper_day_llm_projection import (
     PaperDayPreopenLLMComparison,
     project_llm_sidecars,
 )
+from .paper_day_projection_models import (
+    PaperDayNotificationProjection,
+    PaperDayPositionProjection,
+    PaperDaySidecarError,
+    PaperDaySidecarEvent,
+)
 
 _llm_projection = project_llm_sidecars
 _nearest_rank = _llm_projection_module._nearest_rank
 
 UNAVAILABLE = "不可得（sidecar 未记录）"
-
-
-class PaperDaySidecarError(RuntimeError):
-    """无法构建旁路日志投影时抛出的稳定错误。"""
-
-    def __init__(self, code: str, detail: str) -> None:
-        self.code = code
-        super().__init__(detail)
-
-
-@dataclass(frozen=True, slots=True)
-class PaperDaySidecarEvent:
-    sequence: int
-    event_id: str
-    event_type: str
-    known_at: datetime
-    occurred_at: datetime
-    payload: dict[str, object]
-    phase: str
-    severity: str
-    symbol: str | None
-    correlation_id: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,41 +78,6 @@ class PaperDaySourceTransition:
     previous_state: str | None
     state: str
     error_code: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class PaperDayPositionProjection:
-    symbol: str
-    quantity: int
-    today_buy: int | None
-    available_to_sell: int | None
-    average_cost: Decimal | None
-    mark: Decimal | None
-    market_value: Decimal | None
-    unrealized_pnl: Decimal | None
-    realized_pnl: Decimal | None
-
-
-@dataclass(frozen=True, slots=True)
-class PaperDayNotificationProjection:
-    required: int
-    sent: int | None
-    gaps: int | None
-    retried: int | None
-    dead: int | None
-    exact_final_counts: bool
-    required_before_summary: int | None
-    sent_before_summary: int | None
-    gaps_before_summary: int | None
-    artifact_delivery_status: str
-    artifact_delivery_complete: bool
-    daily_review_delivery_complete: bool
-    text_required: int | None
-    text_sent: int | None
-    text_gaps: int | None
-    delivery_projection_exact: bool
-
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -1156,125 +1117,51 @@ def _stable_rejection_reasons(
 
 
 def _order_id(event: PaperDaySidecarEvent) -> str | None:
-    direct = _optional_string(event.payload.get("order_id"))
-    if direct is not None:
-        return direct
-    order = _optional_object(event.payload.get("order"))
-    if order is not None:
-        nested = _optional_string(order.get("order_id"))
-        if nested is not None:
-            return nested
-    return event.correlation_id
+    """兼容旧私有名称；订单身份投影位于 account_projection。"""
+
+    return order_id(event)
 
 
 def _unique_applied_fills(
     events: Iterable[PaperDaySidecarEvent],
 ) -> tuple[PaperDaySidecarEvent, ...]:
-    result: list[PaperDaySidecarEvent] = []
-    seen: set[str] = set()
-    for event in events:
-        if event.event_type != "FILL_APPLIED":
-            continue
-        fill_id = _optional_string(event.payload.get("fill_id")) or event.correlation_id
-        if fill_id is None or fill_id in seen:
-            continue
-        seen.add(fill_id)
-        result.append(event)
-    return tuple(result)
+    """兼容旧私有名称；成交去重投影位于 account_projection。"""
+
+    return unique_applied_fills(events)
 
 
 def _latest_account_event(
     events: Iterable[PaperDaySidecarEvent],
 ) -> PaperDaySidecarEvent | None:
-    result = None
-    for event in events:
-        if _optional_decimal(event.payload.get("cash")) is not None and isinstance(
-            event.payload.get("positions"), list
-        ):
-            result = event
-    return result
+    """兼容旧私有名称；账户快照选择位于 account_projection。"""
+
+    return latest_account_event(events)
 
 
 def _positions(
     value: object,
     realized_by_symbol: dict[str, Decimal] | None,
 ) -> tuple[PaperDayPositionProjection, ...]:
-    if not isinstance(value, list):
-        return ()
-    result = []
-    for item in value:
-        document = _optional_object(item)
-        if document is None:
-            continue
-        symbol = _optional_string(document.get("symbol"))
-        quantity = _optional_int(document.get("quantity"))
-        if symbol is None or quantity is None or quantity < 0:
-            continue
-        average_cost = _optional_decimal(document.get("average_cost"))
-        mark = _optional_decimal(document.get("mark"))
-        market_value = mark * quantity if mark is not None else None
-        unrealized = (
-            (mark - average_cost) * quantity
-            if mark is not None and average_cost is not None
-            else None
-        )
-        realized = None if realized_by_symbol is None else realized_by_symbol.get(symbol)
-        result.append(
-            PaperDayPositionProjection(
-                symbol=symbol,
-                quantity=quantity,
-                today_buy=_optional_int(document.get("today_buy")),
-                available_to_sell=_optional_int(document.get("available_to_sell")),
-                average_cost=average_cost,
-                mark=mark,
-                market_value=market_value,
-                unrealized_pnl=unrealized,
-                realized_pnl=realized,
-            )
-        )
-    return tuple(sorted(result, key=lambda item: item.symbol))
+    """兼容旧私有名称；持仓投影位于 account_projection。"""
+
+    return positions(value, realized_by_symbol)
 
 
 def _realized_by_symbol(
     final_account: dict[str, object] | None,
 ) -> dict[str, Decimal] | None:
-    if final_account is None:
-        return None
-    values = final_account.get("positions")
-    if not isinstance(values, list):
-        return None
-    result: dict[str, Decimal] = {}
-    for value in values:
-        document = _optional_object(value)
-        if document is None:
-            return None
-        symbol = _optional_string(document.get("symbol"))
-        realized = _optional_decimal(document.get("realized_pnl"))
-        if symbol is None or realized is None:
-            return None
-        result[symbol] = realized
-    return result
+    """兼容旧私有名称；已实现盈亏投影位于 account_projection。"""
+
+    return project_realized_by_symbol(final_account)
 
 
 def _applied_fill_sides(
     events: Iterable[PaperDaySidecarEvent],
     applied: tuple[PaperDaySidecarEvent, ...],
 ) -> tuple[str, ...]:
-    started: dict[str, str] = {}
-    for event in events:
-        if event.event_type != "FILL_STARTED":
-            continue
-        fill = _optional_object(event.payload.get("fill"))
-        fill_id = None if fill is None else _optional_string(fill.get("fill_id"))
-        side = None if fill is None else _optional_string(fill.get("side"))
-        if fill_id is not None and side is not None:
-            started[fill_id] = side
-    result = []
-    for event in applied:
-        fill_id = _optional_string(event.payload.get("fill_id")) or event.correlation_id
-        if fill_id is not None and fill_id in started:
-            result.append(started[fill_id])
-    return tuple(result)
+    """兼容旧私有名称；成交方向投影位于 account_projection。"""
+
+    return applied_fill_sides(events, applied)
 
 
 def _notification_projection(
@@ -1283,88 +1170,15 @@ def _notification_projection(
     final_result: dict[str, object] | None,
     status: dict[str, object],
 ) -> PaperDayNotificationProjection:
-    required = sum(
-        isinstance(event.payload.get("notification_text"), str)
-        and bool(cast(str, event.payload.get("notification_text")).strip())
-        for event in events
-    )
-    sent = None
-    gaps = None
-    exact = False
-    if final_result is not None:
-        final_required = _optional_int(final_result.get("notification_required"))
-        final_sent = _optional_int(final_result.get("notification_sent"))
-        final_gaps = _optional_int(final_result.get("notification_gaps"))
-        if final_required is not None and final_sent is not None and final_gaps is not None:
-            required = final_required
-            sent = final_sent
-            gaps = final_gaps
-            exact = True
-    payload = {} if terminal is None else terminal.payload
-    delivery_source = final_result if final_result is not None else status
-    artifact_status = _optional_string(delivery_source.get("artifact_delivery_status"))
-    artifact_complete = _optional_bool(
-        delivery_source.get("artifact_delivery_complete")
-    )
-    daily_complete = _optional_bool(
-        delivery_source.get("daily_review_delivery_complete")
-    )
-    text_required = _optional_int(delivery_source.get("text_notification_required"))
-    text_sent = _optional_int(delivery_source.get("text_notification_sent"))
-    text_gaps = _optional_int(delivery_source.get("text_notification_gaps"))
-    delivery_exact = (
-        artifact_status in {"PENDING", "SENT", "AMBIGUOUS", "NOT_CONFIGURED"}
-        and artifact_complete is not None
-        and daily_complete is not None
-        and text_required is not None
-        and text_sent is not None
-        and text_gaps is not None
-    )
-    if artifact_status not in {"PENDING", "SENT", "AMBIGUOUS", "NOT_CONFIGURED"}:
-        artifact_status = _artifact_status_from_events(events)
-        artifact_complete = artifact_status == "SENT"
-        daily_complete = False
-    return PaperDayNotificationProjection(
-        required=required,
-        sent=sent,
-        gaps=gaps,
-        retried=None,
-        dead=None,
-        exact_final_counts=exact,
-        required_before_summary=_optional_int(
-            payload.get("notification_required_before_summary")
-        ),
-        sent_before_summary=_optional_int(payload.get("notification_sent_before_summary")),
-        gaps_before_summary=_optional_int(payload.get("notification_gaps_before_summary")),
-        artifact_delivery_status=artifact_status,
-        artifact_delivery_complete=artifact_complete is True,
-        daily_review_delivery_complete=daily_complete is True,
-        text_required=text_required,
-        text_sent=text_sent,
-        text_gaps=text_gaps,
-        delivery_projection_exact=delivery_exact,
-    )
+    """兼容旧私有名称；通知投影位于 account_projection。"""
+
+    return notification_projection(events, terminal, final_result, status)
 
 
 def _artifact_status_from_events(events: tuple[PaperDaySidecarEvent, ...]) -> str:
-    """从 sidecar 事件投影附件状态；缺少精确总计时仍保持失败关闭。"""
+    """兼容旧私有名称；附件状态投影位于 account_projection。"""
 
-    by_type = {
-        "REPORT_ARTIFACT_DELIVERY_AMBIGUOUS": "AMBIGUOUS",
-        "REPORT_ARTIFACT_DELIVERY_NOT_CONFIGURED": "NOT_CONFIGURED",
-        "REPORT_ARTIFACT_DELIVERY_PENDING": "PENDING",
-        "REPORT_ARTIFACT_DELIVERY_SENT": "SENT",
-        "REPORT_ARTIFACT_LEGACY_FAILURE_AMBIGUOUS": "AMBIGUOUS",
-        "REPORT_UPLOAD_FAILED": "AMBIGUOUS",
-    }
-    retained = "NOT_REPORTED"
-    for event in events:
-        if event.event_type in by_type:
-            retained = by_type[event.event_type]
-        elif event.event_type == "REPORT_UPLOADED" and event.payload.get("delivered") is True:
-            retained = "SENT"
-    return retained
-
+    return artifact_status_from_events(events)
 
 
 def _source_transitions(

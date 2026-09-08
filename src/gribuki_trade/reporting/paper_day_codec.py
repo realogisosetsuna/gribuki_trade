@@ -15,7 +15,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import cast
 
-from .paper_day_summary import PaperDaySidecarError, PaperDaySidecarEvent
+from .paper_day_projection_models import PaperDaySidecarError, PaperDaySidecarEvent
 
 
 def read_json_object(path: Path, code: str) -> dict[str, object]:

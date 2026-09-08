@@ -51,9 +51,11 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_quantity.py` | Pure lot/quantity rules and sell-quantity planning for A-share intraday PAPER execution |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_config.py` | Frozen schedule/risk configuration and policy manifest projections |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_llm_payloads.py` | Strict LLM audit payload recovery, type validation, and pure gate/text projections |
+| `services/binance/binance_execution.py` | `services/binance/binance_execution_records.py` | Pure snapshot/fill/balance/order-list record projections and timestamp normalization |
 | `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_serialization.py` | Safe audit documents, stable JSON normalization, and hashes |
 | `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_policy.py` | Risk config, price acceptance, board price bands, and validation |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_llm_projection.py` | LLM sidecar data classes and pure projection statistics |
+| `reporting/paper_day_summary.py` | `reporting/paper_day_projection_models.py`, `reporting/paper_day_account_projection.py` | Immutable sidecar models and pure account/order/fill/notification projections |
 | `cli_commands/handlers/binance.py` | `cli_commands/binance_results.py` | Balance validation, testnet deltas, and reconciliation payload shaping |
 | `cli.py` | `cli_commands/close_research_payloads.py` | Close-research archive/profile payload projections |
 | `adapters/binance/futures.py` | `adapters/binance/futures_order_params.py` | Futures order/protection parameter validation and encoding |
@@ -115,6 +117,7 @@ Current source evidence includes `src/gribuki_trade/cli_parsing.py`,
 `src/gribuki_trade/adapters/binance/errors.py`,
 `src/gribuki_trade/adapters/binance/rate_limit.py`,
 `src/gribuki_trade/storage/live_record_work_policy.py`,
+`src/gribuki_trade/services/binance/binance_execution_records.py`,
 `src/gribuki_trade/features/close_analysis_indicators.py`, and
 `src/gribuki_trade/storage/live_record_models.py`,
 `src/gribuki_trade/trading/oms_schema.py`,

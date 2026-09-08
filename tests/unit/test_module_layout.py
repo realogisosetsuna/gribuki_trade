@@ -96,6 +96,18 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "gribuki_trade.storage.live_record_work_policy",
             "storage/live_record_work_policy.py",
         ),
+        (
+            "gribuki_trade.services.binance.binance_execution_records",
+            "services/binance/binance_execution_records.py",
+        ),
+        (
+            "gribuki_trade.reporting.paper_day_account_projection",
+            "reporting/paper_day_account_projection.py",
+        ),
+        (
+            "gribuki_trade.reporting.paper_day_projection_models",
+            "reporting/paper_day_projection_models.py",
+        ),
     )
     for name, suffix in modules:
         module = importlib.import_module(name)
