@@ -22,6 +22,7 @@ from gribuki_trade.adapters.binance import (
     parse_user_data_event,
     signature_payload,
 )
+from gribuki_trade.adapters.binance.user_stream_parsing import _sanitize_message
 from gribuki_trade.domain.orders import OrderStatus, Side
 
 
@@ -38,6 +39,17 @@ def subscription_response(request_id: int = 1, subscription_id: int = 7) -> str:
             "rateLimits": [],
         }
     )
+
+
+def test_user_stream_sanitizer_handles_json_quoted_assignments() -> None:
+    message = '{"apiKey":"api-secret","secret":"secret-value","signature":"sig"}'
+
+    sanitized = _sanitize_message(message, ())
+
+    assert "api-secret" not in sanitized
+    assert "secret-value" not in sanitized
+    assert '"sig"' not in sanitized
+    assert sanitized.count("<redacted>") == 3
 
 
 def execution_report(**overrides: object) -> dict[str, object]:

@@ -459,3 +459,5 @@ signature payload encoding, frame/envelope decoding, and strict field validation
 the stream facade retains WebSocket authentication, reconnect, buffering, and
 rotation. The facade re-exports the parser's public types and functions, and the
 focused user-stream/execution route passed after the split.
+The parser's sanitization regression now also covers JSON-quoted `apiKey`,
+`secret`, and `signature` values in subscription errors.

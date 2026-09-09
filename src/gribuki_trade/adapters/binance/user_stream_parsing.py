@@ -22,7 +22,8 @@ LIVE_USER_WS_API_URL = "wss://ws-api.binance.com:443/ws-api/v3"
 TESTNET_USER_WS_API_URL = "wss://ws-api.testnet.binance.vision/ws-api/v3"
 
 _SENSITIVE_ASSIGNMENT = re.compile(
-    r"(?i)\b(api[-_ ]?key|secret(?:[-_ ]?key)?|signature)\b\s*[:=]\s*[^\s,;&]+"
+    r"(?i)[\"']?\b(api[-_ ]?key|secret(?:[-_ ]?key)?|signature)\b"
+    r"[\"']?\s*[:=]\s*[\"']?[^\"'\s,;&}]+"
 )
 
 @dataclass(frozen=True, slots=True)
