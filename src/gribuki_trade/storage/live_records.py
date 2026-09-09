@@ -42,6 +42,7 @@ from gribuki_trade.storage.live_record_codec import (
     _protection_work_id,
     _time,
 )
+from gribuki_trade.storage.live_record_confirmation_policy import validate_confirmation
 from gribuki_trade.storage.live_record_errors import (
     LiveRecordConflictError,
     LiveRecordIntegrityError,
@@ -204,7 +205,7 @@ class SQLiteLiveRecordStore:
             if row is None:
                 raise LiveRecordStateError("COMMAND_NOT_FOUND")
             command = _row_to_command(row)
-            self._validate_confirmation(command, fill, sender_id, fingerprint)
+            validate_confirmation(command, fill, sender_id, fingerprint)
             if command.state != "PENDING":
                 if command.terminal_event_id is None:
                     raise LiveRecordIntegrityError("terminal command has no terminal event")
@@ -1164,20 +1165,6 @@ class SQLiteLiveRecordStore:
 
     def __exit__(self, *_args: object) -> None:
         self.close()
-
-    def _validate_confirmation(
-        self,
-        command: StoredLiveCommand,
-        fill: ConfirmedLiveFill,
-        sender_id: str,
-        fingerprint: str,
-    ) -> None:
-        if command.account_id != fill.account_id or command.fill_json != fill.canonical_json():
-            raise LiveRecordIntegrityError("command index contains a different fill")
-        if command.sender_id != sender_id:
-            raise LiveRecordStateError("CONFIRMING_SENDER_MISMATCH")
-        if command.fingerprint != fingerprint:
-            raise LiveRecordStateError("CONFIRMATION_FINGERPRINT_MISMATCH")
 
     def _allocate_sell_lots(
         self,

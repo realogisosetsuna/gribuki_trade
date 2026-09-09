@@ -96,6 +96,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `storage/live_records.py` | `storage/live_record_work_policy.py` | Work-claim SQL construction and lease/failure parameter normalization |
 | `storage/live_records.py` | `storage/live_record_protection_policy.py` | T+1 sellable-quantity and FIFO protection-lot allocation projections |
 | `storage/live_records.py` | `storage/live_record_integrity.py`, `storage/live_record_errors.py` | Legacy JSON recovery validation, append-only event hash-chain verification, and shared durable-store error types |
+| `storage/live_records.py` | `storage/live_record_confirmation_policy.py` | Pure two-phase live-fill identity validation for command, sender, and confirmation fingerprint |
 
 ## Next slices
 
