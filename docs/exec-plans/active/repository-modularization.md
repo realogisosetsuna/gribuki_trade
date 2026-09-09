@@ -401,6 +401,12 @@ guards, and pure price/quantity policy documents. The runner facade retains
 historical private names as aliases and continues to own event-chain writes,
 SQLite transactions, scheduling, and notifications. Focused risk-codec and
 existing PAPER-day policy tests cover the compatibility path. The combined
-repository gate passed readiness, Ruff, mypy (354 source files), compileall, and
-1828 tests with five environment-skipped tests, 41 subtests, and the recurring
+repository gate passed readiness, Ruff, mypy (355 source files), compileall, and
+1833 tests with five environment-skipped tests, 41 subtests, and the recurring
 Windows pytest-cache permission warning.
+
+The broker-neutral OMS command boundary now lives in
+`trading/oms_command_policy.py`. It owns account/symbol scope normalization,
+claim and lease validation, and UNKNOWN recovery state projection; `oms.py`
+retains SQLite transactions, outbox leases, order events, and durable writes.
+The focused OMS command-policy route passed 17 tests before the next full gate.

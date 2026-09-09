@@ -53,6 +53,13 @@ from .oms_codec import (
     _utc,
     _validate_order_time,
 )
+from .oms_command_policy import (
+    normalize_command_scope,
+    project_unknown_command,
+    unknown_command_event_id,
+    validate_claim_limit,
+    validate_lease_for,
+)
 from .oms_position_policy import project_position_fill
 from .oms_schema import initialize_oms_schema
 
@@ -293,37 +300,28 @@ class SQLiteOrderManagementStore:
         """租赁未发送命令，可选限制在一个账户内。"""
 
         now = _utc(now, "now")
-        normalized_account = (
-            None if account_id is None else _identifier(account_id, "account_id")
-        )
-        normalized_symbols = (
-            None
-            if symbols is None
-            else tuple(dict.fromkeys(_identifier(value, "symbol") for value in symbols))
-        )
-        if limit < 1:
-            raise ValueError("limit must be positive")
-        if lease_for <= timedelta(0):
-            raise ValueError("lease_for must be positive")
+        scope = normalize_command_scope(account_id, symbols)
+        validate_claim_limit(limit)
+        validate_lease_for(lease_for)
         with self._transaction() as connection:
             self._recover_claims(
                 connection,
                 now=now,
                 include_active=False,
-                account_id=normalized_account,
-                symbols=normalized_symbols,
+                account_id=scope.account_id,
+                symbols=scope.symbols,
             )
             conditions = ["commands.status = ?"]
             parameters: list[object] = [TradingCommandStatus.PENDING.value]
-            if normalized_account is not None:
+            if scope.account_id is not None:
                 conditions.append("orders.account_id = ?")
-                parameters.append(normalized_account)
-            if normalized_symbols is not None:
-                if not normalized_symbols:
+                parameters.append(scope.account_id)
+            if scope.symbols is not None:
+                if not scope.symbols:
                     return ()
-                placeholders = ",".join("?" for _ in normalized_symbols)
+                placeholders = ",".join("?" for _ in scope.symbols)
                 conditions.append(f"orders.symbol IN ({placeholders})")
-                parameters.extend(normalized_symbols)
+                parameters.extend(scope.symbols)
             parameters.append(limit)
             rows = connection.execute(
                 f"""
@@ -369,8 +367,7 @@ class SQLiteOrderManagementStore:
 
         command_id = _identifier(command_id, "command_id")
         now = _utc(now, "now")
-        if lease_for <= timedelta(0):
-            raise ValueError("lease_for must be positive")
+        validate_lease_for(lease_for)
         with self._transaction() as connection:
             self._recover_claims(connection, now=now, include_active=False)
             row = connection.execute(
@@ -450,21 +447,14 @@ class SQLiteOrderManagementStore:
         """隔离被遗弃的发送，可选限制在一个账户内。"""
 
         now = _utc(now, "now")
-        normalized_account = (
-            None if account_id is None else _identifier(account_id, "account_id")
-        )
-        normalized_symbols = (
-            None
-            if symbols is None
-            else tuple(dict.fromkeys(_identifier(value, "symbol") for value in symbols))
-        )
+        scope = normalize_command_scope(account_id, symbols)
         with self._transaction() as connection:
             recovered_ids = self._recover_claims(
                 connection,
                 now=now,
                 include_active=True,
-                account_id=normalized_account,
-                symbols=normalized_symbols,
+                account_id=scope.account_id,
+                symbols=scope.symbols,
             )
             if not recovered_ids:
                 return ()
@@ -893,14 +883,7 @@ class SQLiteOrderManagementStore:
         account_id: str | None = None,
         symbols: Iterable[str] | None = None,
     ) -> tuple[OrderSnapshot, ...]:
-        normalized_account = (
-            None if account_id is None else _identifier(account_id, "account_id")
-        )
-        normalized_symbols = (
-            None
-            if symbols is None
-            else tuple(dict.fromkeys(_identifier(value, "symbol") for value in symbols))
-        )
+        scope = normalize_command_scope(account_id, symbols)
         with self._read_lock():
             query = """
                 SELECT DISTINCT orders.* FROM oms_orders AS orders
@@ -912,15 +895,15 @@ class SQLiteOrderManagementStore:
                 OrderStatus.UNKNOWN.value,
                 TradingCommandStatus.UNKNOWN.value,
             ]
-            if normalized_account is not None:
+            if scope.account_id is not None:
                 query += " AND orders.account_id = ?"
-                values.append(normalized_account)
-            if normalized_symbols is not None:
-                if not normalized_symbols:
+                values.append(scope.account_id)
+            if scope.symbols is not None:
+                if not scope.symbols:
                     return ()
-                placeholders = ",".join("?" for _ in normalized_symbols)
+                placeholders = ",".join("?" for _ in scope.symbols)
                 query += f" AND orders.symbol IN ({placeholders})"
-                values.extend(normalized_symbols)
+                values.extend(scope.symbols)
             query += " ORDER BY orders.created_at, orders.client_order_id"
             rows = self._connection.execute(query, values).fetchall()
         return tuple(_row_to_order(row) for row in rows)
@@ -1084,21 +1067,24 @@ class SQLiteOrderManagementStore:
             "SELECT * FROM oms_orders WHERE client_order_id = ?", (client_order_id,)
         ).fetchone()
         order = _row_to_order(_require_row(order_row))
-        status = (
-            TradingCommandStatus.RESOLVED
-            if order.status in _TERMINAL_STATUSES
-            else TradingCommandStatus.UNKNOWN
-        )
+        projection = project_unknown_command(order.status)
         connection.execute(
             """
             UPDATE oms_command_outbox
             SET status = ?, lease_until = NULL, last_error_code = ?, dispatched_at = ?
             WHERE id = ?
             """,
-            (status.value, error_code, _time(occurred_at), int(row["id"])),
+            (
+                projection.command_status.value,
+                error_code,
+                _time(occurred_at),
+                int(row["id"]),
+            ),
         )
-        event_id = f"command-unknown:{row['command_id']}:{row['attempt_count']}"
-        order_status = None if status is TradingCommandStatus.RESOLVED else OrderStatus.UNKNOWN
+        event_id = unknown_command_event_id(
+            str(row["command_id"]), int(row["attempt_count"])
+        )
+        order_status = projection.order_status
         self._insert_order_event(
             connection,
             event_id=event_id,
@@ -1110,7 +1096,7 @@ class SQLiteOrderManagementStore:
                 {
                     "command_id": row["command_id"],
                     "error_code": error_code,
-                    "status": status.value,
+                    "status": projection.command_status.value,
                 }
             ),
             applied=order_status is not None,
