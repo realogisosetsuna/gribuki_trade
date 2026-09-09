@@ -7,6 +7,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from gribuki_trade.adapters.ashare.derivatives import *  # noqa: F403
 
+SSE_ETF_SHARE_SOURCE_ID: str  # type: ignore[no-redef]
+SSE_OPTION_RISK_SOURCE_ID: str  # type: ignore[no-redef]
+
 _implementation = _import_module("gribuki_trade.adapters.ashare.derivatives")
 _sys.modules[__name__] = _implementation
 globals().update(

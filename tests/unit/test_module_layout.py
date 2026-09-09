@@ -50,6 +50,26 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "ingest/search_providers.py",
         ),
         (
+            "gribuki_trade.adapters.binance.stream_models",
+            "adapters/binance/stream_models.py",
+        ),
+        (
+            "gribuki_trade.adapters.ashare.derivatives_parsing",
+            "adapters/ashare/derivatives_parsing.py",
+        ),
+        (
+            "gribuki_trade.cli_commands.handlers.ashare_paper_day",
+            "cli_commands/handlers/ashare_paper_day.py",
+        ),
+        (
+            "gribuki_trade.cli_commands.handlers.ashare_paper_day_run",
+            "cli_commands/handlers/ashare_paper_day_run.py",
+        ),
+        (
+            "gribuki_trade.cli_commands.ashare_paper_day_results",
+            "cli_commands/ashare_paper_day_results.py",
+        ),
+        (
             "gribuki_trade.features.cross_market_models",
             "features/cross_market_models.py",
         ),
@@ -477,6 +497,47 @@ def test_model_extractions_keep_facade_type_identity() -> None:
                 "SearXNGSearchProvider",
                 "SearchProviderError",
                 "SearchProviderRateLimited",
+            ),
+        ),
+        (
+            "gribuki_trade.adapters.binance.stream",
+            "gribuki_trade.adapters.binance.stream_models",
+            (
+                "BinanceBookTickerEvent",
+                "BinanceTradeEvent",
+                "BinanceKlineEvent",
+                "BinanceDepthEvent",
+                "BinanceMarketEvent",
+            ),
+        ),
+        (
+            "gribuki_trade.adapters.ashare.derivatives",
+            "gribuki_trade.adapters.ashare.derivatives_parsing",
+            (
+                "SSE_OPTION_RISK_SOURCE_ID",
+                "SSE_ETF_SHARE_SOURCE_ID",
+                "_parse_option_rows",
+                "_parse_etf_share_row",
+            ),
+        ),
+        (
+            "gribuki_trade.cli",
+            "gribuki_trade.cli_commands.handlers.ashare_paper_day",
+            ("_PaperDayCLIError", "_ashare_paper_day", "_run_ashare_paper_day"),
+        ),
+        (
+            "gribuki_trade.cli",
+            "gribuki_trade.cli_commands.handlers.ashare_paper_day_run",
+            ("_run_ashare_paper_day_owned", "_paper_day_resume_config_compatible"),
+        ),
+        (
+            "gribuki_trade.cli",
+            "gribuki_trade.cli_commands.ashare_paper_day_results",
+            (
+                "_paper_day_delivery_projection",
+                "_ashare_paper_day_status",
+                "_ashare_paper_day_report",
+                "_ashare_paper_day_summary",
             ),
         ),
     )

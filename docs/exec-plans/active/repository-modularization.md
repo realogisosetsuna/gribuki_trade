@@ -700,3 +700,29 @@ validation, response decoding, and typed provider errors into
 concurrency, failure backoff, clustering, publisher confirmation, and event
 construction while preserving historical provider exports. Focused discovery,
 module-layout, Ruff, and mypy checks pass.
+
+### 2026-09-10 — Binance public stream models
+
+Extracted public market event value objects and pure stream-name/environment URL
+validation into `adapters/binance/stream_models.py`. The stream facade retains
+WebSocket connection lifecycle, reconnect policy, frame parsing, and sequence
+monotonicity. Binance-focused tests, Ruff, and mypy pass.
+
+### 2026-09-10 — CLI PAPER-day workflow
+
+Split the A-share PAPER-day CLI boundary into
+`cli_commands/handlers/ashare_paper_day.py` for command validation and dispatch,
+`cli_commands/handlers/ashare_paper_day_run.py` for resource setup, continuity
+checks, and runner lifecycle, and `cli_commands/ashare_paper_day_results.py` for
+sidecar-only status/report/summary projections. The CLI facade retains parser
+dispatch and historical private exports, while the service runner keeps durable
+ledger/event/outbox transaction boundaries. Focused CLI and module-layout tests,
+Ruff, mypy, and compile checks pass.
+
+### 2026-09-10 — SSE derivatives parsing boundary
+
+Extracted official SSE option-risk and ETF-share document decoding, visibility
+checks, scalar validation, and row projections into
+`adapters/ashare/derivatives_parsing.py`. The adapter facade retains HTTP client
+ownership, request limits, timeout/transport mapping, and the historical public
+exports. Adapter and module-layout tests plus Ruff, mypy, and compile checks pass.
