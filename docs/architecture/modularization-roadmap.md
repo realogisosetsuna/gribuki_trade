@@ -46,6 +46,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `strategy_lab/experiments.py` | `strategy_lab/experiment_models.py` | Immutable manifests, walk-forward configuration/folds, weight constraints, costs, metrics, evaluation records, and research experiment results |
 | `strategy_lab/discovery.py` | `strategy_lab/discovery_models.py` | Factor-template grammar, search budgets, candidate inventories, and redundancy-filter value objects |
 | `services/binance/binance_shadow.py` | `services/binance/binance_shadow_models.py` | Shadow configuration, safety watermark, market quote, adapter snapshot, and session statistics |
+| `services/binance/binance_futures_unattended.py` | `services/binance/binance_futures_unattended_models.py` | Immutable startup and reconciliation summary returned by the unattended Futures service |
 | `services/ashare_paper_day.py` | `services/ashare_paper_day_projection.py` | LLM gate and DEEP exit audit/notification projections |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_serialization.py` | K-line/technical-bar codecs, exit-barrier/time helpers, UTC normalization, canonical hashes, and event JSONL/file primitives |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_codec.py` | Sidecar JSON and JSONL event decoding for reports |

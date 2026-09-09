@@ -653,3 +653,11 @@ quote, adapter snapshot, and session statistics into
 checks, strategy decision adaptation, paper execution, and restart recovery;
 historical imports continue to resolve to the same classes. Focused shadow,
 module-layout, Ruff, mypy, and compile checks pass.
+
+### 2026-09-09 — unattended Futures result model
+
+Extracted `FuturesStartupReconciliation` into
+`services/binance/binance_futures_unattended_models.py`. The unattended Futures
+facade retains lease ownership, startup reconciliation, private-user-stream
+processing, and execution side effects. Historical imports and type identity are
+preserved.

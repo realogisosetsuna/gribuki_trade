@@ -6,7 +6,6 @@ import asyncio
 import hashlib
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -21,6 +20,9 @@ from gribuki_trade.adapters.binance.futures_user_stream import (
     FuturesUserEvent as AdapterFuturesUserEvent,
 )
 from gribuki_trade.runtime.guard import BrokerOperation, LiveTradingGuard
+from gribuki_trade.services.binance.binance_futures_unattended_models import (
+    FuturesStartupReconciliation,
+)
 from gribuki_trade.trading.futures_models import (
     FuturesBalanceSnapshot,
     FuturesCommandStatus,
@@ -34,19 +36,7 @@ from gribuki_trade.trading.futures_models import (
 )
 from gribuki_trade.trading.futures_oms import FuturesOrderManagementStore
 
-
-@dataclass(frozen=True, slots=True)
-class FuturesStartupReconciliation:
-    """启动或断线对账的可审计摘要。"""
-
-    recovered_commands: int
-    open_orders: int
-    open_algo_orders: int
-    history_orders: int
-    history_algo_orders: int
-    positions: int
-    balances: int
-    unresolved_protection_plans: tuple[str, ...] = ()
+__all__ = ["BinanceFuturesUnattendedExecutionService", "FuturesStartupReconciliation"]
 
 
 class BinanceFuturesUnattendedExecutionService:
