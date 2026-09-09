@@ -87,6 +87,15 @@ private helper names remain aliases in the runner module. Focused validation is
 covered by `tests/unit/test_ashare_paper_day_serialization.py` and the existing
 PAPER-day compatibility suite.
 
+The nested runner now also delegates watchlist, intraday-candidate, pending-order,
+and fill document codecs to
+`services/ashare/ashare_paper_day_documents.py`. The module owns only pure
+object/document conversion, A-share board resolution, and strict scalar
+validation; the runner keeps recovery orchestration, journal transactions,
+scheduling, and notifications. `PaperDayWatchEntry` and historical private
+helper names remain compatibility aliases in the facade. Focused coverage is in
+`tests/unit/test_ashare_paper_day_documents.py` and the existing PAPER-day suite.
+
 The AKShare daily-history slice now includes
 `adapters/akshare_daily_parsing.py`. It owns provider symbol/date normalization,
 DataFrame row extraction, column alias resolution, numeric/OHLC validation, and
@@ -318,3 +327,20 @@ boundary and Futures REST response parsing boundary described above. Repository-
 validation then passed readiness, Ruff, mypy (346 source files), compileall, and the
 full pytest route with 1808 passed, five environment-skipped tests, 41 subtests,
 and one recurring Windows pytest-cache permission warning.
+
+The CLI A-share handler slice is now in place. `cli_commands/handlers/ashare.py`
+owns source-health and watchlist read-only command handlers plus pure screening and
+intraday result projections. `cli.py` continues to own command dispatch, provider
+calls, persistence, and all historical facade names. Focused validation covers the
+handler module-layout contract and projection type checks; the existing CLI route
+continues to exercise the source-health and screening projection behavior.
+
+The PAPER-day document boundary is now also isolated in
+`services/ashare/ashare_paper_day_documents.py`. It owns the immutable watch-entry
+model and watchlist, candidate, order, and fill codecs, while the runner retains
+calendar, recovery, persistence, transaction, scheduling, and notification side
+effects through explicit compatibility aliases. The new CLI-handler and PAPER-day
+document routes passed together with the existing serialization and runner tests;
+the complete repository gate passed readiness, Ruff, mypy (347 source files),
+compileall, and 1815 tests with five environment-skipped tests, 41 subtests, and
+the recurring Windows pytest-cache permission warning.

@@ -112,6 +112,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "gribuki_trade.services.ashare.ashare_paper_day_llm_payloads",
             "services/ashare/ashare_paper_day_llm_payloads.py",
         ),
+        (
+            "gribuki_trade.services.ashare.ashare_paper_day_documents",
+            "services/ashare/ashare_paper_day_documents.py",
+        ),
         ("gribuki_trade.adapters.binance.errors", "adapters/binance/errors.py"),
         ("gribuki_trade.adapters.binance.rate_limit", "adapters/binance/rate_limit.py"),
         (
@@ -156,7 +160,16 @@ def test_cli_handler_families_are_independent_execution_modules() -> None:
     importlib.import_module("gribuki_trade.cli")
     ashare = importlib.import_module("gribuki_trade.cli_commands.handlers.ashare")
     binance = importlib.import_module("gribuki_trade.cli_commands.handlers.binance")
-    for name in ("_ashare_snapshot", "_ashare_bars", "_ashare_daily", "_ashare_research_runs"):
+    for name in (
+        "_ashare_snapshot",
+        "_ashare_bars",
+        "_ashare_daily",
+        "_ashare_research_runs",
+        "_ashare_source_health",
+        "_ashare_watchlist",
+        "_ashare_screening_run_json",
+        "_ashare_intraday_run_json",
+    ):
         assert callable(getattr(ashare, name))
     assert callable(binance._binance_live_status)
 

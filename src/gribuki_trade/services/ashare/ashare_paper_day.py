@@ -38,7 +38,6 @@ from gribuki_trade.domain.exit_plans import (
     ExitPlanEventType,
     exit_plan_document,
 )
-from gribuki_trade.domain.orders import Side
 from gribuki_trade.domain.paper_day import (
     NewPaperDayEvent,
     PaperDayEvent,
@@ -51,14 +50,12 @@ from gribuki_trade.domain.paper_day import (
 from gribuki_trade.domain.paper_trading import (
     ASharePaperFill,
     PaperAccountSnapshot,
-    PaperFillSource,
     PaperInstrumentType,
 )
 from gribuki_trade.domain.recommendations import (
     RecommendationDecision,
     RecommendationHorizon,
 )
-from gribuki_trade.features.ashare_screening import RankedAShareCandidate
 from gribuki_trade.features.ashare_surveillance import (
     IntradayCandidate,
     IntradayCandidateClass,
@@ -93,6 +90,7 @@ from gribuki_trade.reporting.contracts import (
     report_contract,
     validate_markdown_report_contract,
 )
+from gribuki_trade.services.ashare import ashare_paper_day_documents as _paper_day_documents
 from gribuki_trade.services.ashare import ashare_paper_day_llm_payloads as _paper_day_llm_payloads
 from gribuki_trade.services.ashare import ashare_paper_day_notifications as _paper_day_notifications
 from gribuki_trade.services.ashare import ashare_paper_day_projection as _paper_day_projection
@@ -199,6 +197,23 @@ _paper_notification_price_text = _paper_day_notifications._paper_notification_pr
 _paper_notification_title_and_detail = _paper_day_notifications._paper_notification_title_and_detail
 _paper_report_artifact_key = _paper_day_notifications._paper_report_artifact_key
 _PAPER_HEALTH_EVENTS = _paper_day_notifications._PAPER_HEALTH_EVENTS
+
+# 观察列表、候选、委托和成交文档由无副作用模块实现；这里保留历史名称，
+# 让旧的恢复代码和外部测试继续从 runner facade 访问同一份契约。
+PaperDayWatchEntry = _paper_day_documents.PaperDayWatchEntry
+_board_from_symbol = _paper_day_documents.board_from_symbol
+_candidate_document = _paper_day_documents.candidate_document
+_candidate_from_document = _paper_day_documents.candidate_from_document
+_candidate_previous_close = _paper_day_documents.candidate_previous_close
+_fill_document = _paper_day_documents.fill_document
+_fill_from_document = _paper_day_documents.fill_from_document
+_order_document = _paper_day_documents.order_document
+_order_from_document = _paper_day_documents.order_from_document
+_strict_positive_int = _paper_day_documents.strict_positive_int
+_watch_entry_document = _paper_day_documents.watch_entry_document
+_watch_entry_from_document = _paper_day_documents.watch_entry_from_document
+_watch_entry_from_intraday = _paper_day_documents.watch_entry_from_intraday
+_watch_entry_from_screen = _paper_day_documents.watch_entry_from_screen
 
 # 只有这个精确来源可以交叉验证降级的新浪分钟线，因为其 COMPLETE 契约会在
 # 候选排名前严格联结腾讯行情板块与腾讯批量报价端点，并逐标的校验 OHLC、
@@ -574,16 +589,6 @@ def intraday_llm_manifest_compatible(
     current_document.pop("preopen_context_contract", None)
     current_document["schema_version"] = 1
     return retained_document == current_document
-
-
-@dataclass(frozen=True, slots=True)
-class PaperDayWatchEntry:
-    symbol: str
-    name: str
-    board: AShareBoard
-    source: str
-    rank: int
-    score: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -5398,17 +5403,6 @@ class ASharePaperDayRunner:
         return rendered
 
 
-def _watch_entry_from_screen(item: RankedAShareCandidate) -> PaperDayWatchEntry:
-    return PaperDayWatchEntry(
-        symbol=item.symbol,
-        name=item.name,
-        board=item.board,
-        source="PREOPEN_SCREEN",
-        rank=item.rank or 999,
-        score=item.composite_score or 0.0,
-    )
-
-
 def _paper_day_event_has_empty_candidates(event: PaperDayEvent) -> bool:
     """仅当结果明确为空且内部一致时返回 true。"""
 
@@ -5717,207 +5711,6 @@ def _validate_risk_policy_migration_state(
         raise PaperDayRiskPolicyChangeError("RISK_POLICY_CHANGE_PENDING_ORDER")
     if _incomplete_fill_ids(events):
         raise PaperDayRiskPolicyChangeError("RISK_POLICY_CHANGE_INCOMPLETE_FILL")
-
-
-def _strict_positive_int(value: object) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ValueError("value must be a positive integer")
-    return value
-
-
-def _watch_entry_from_intraday(item: IntradayCandidate) -> PaperDayWatchEntry:
-    return PaperDayWatchEntry(
-        symbol=item.symbol,
-        name=item.name,
-        board=_board_from_symbol(item.symbol),
-        source="INTRADAY_SCAN",
-        rank=item.rank,
-        score=item.anomaly_score,
-    )
-
-
-def _watch_entry_document(item: PaperDayWatchEntry) -> dict[str, object]:
-    return {
-        "board": item.board.value,
-        "name": item.name,
-        "rank": item.rank,
-        "score": item.score,
-        "source": item.source,
-        "symbol": item.symbol,
-    }
-
-
-def _watch_entry_from_document(
-    value: object,
-    default_source: str,
-) -> PaperDayWatchEntry | None:
-    if not isinstance(value, dict):
-        return None
-    symbol = value.get("symbol")
-    name = value.get("name")
-    rank = value.get("rank")
-    score = value.get("score", value.get("composite_score"))
-    board = value.get("board")
-    source = value.get("source", default_source)
-    if not isinstance(symbol, str) or not isinstance(name, str):
-        return None
-    if isinstance(rank, bool) or not isinstance(rank, int):
-        rank = 999
-    if not isinstance(score, (int, float)) or isinstance(score, bool):
-        score = 0.0
-    try:
-        resolved_board = (
-            AShareBoard(board) if isinstance(board, str) else _board_from_symbol(symbol)
-        )
-    except ValueError:
-        return None
-    return PaperDayWatchEntry(
-        symbol=symbol,
-        name=name,
-        board=resolved_board,
-        source=source if isinstance(source, str) else default_source,
-        rank=rank,
-        score=float(score),
-    )
-
-
-def _candidate_document(item: IntradayCandidate) -> dict[str, object]:
-    return {
-        "anomaly_score": item.anomaly_score,
-        "candidate_class": item.candidate_class.value,
-        "change_percent": str(item.change_percent),
-        "factor_weight_coverage": item.factor_weight_coverage,
-        "last_price": str(item.last_price),
-        "name": item.name,
-        "previous_close": (None if item.previous_close is None else str(item.previous_close)),
-        "rank": item.rank,
-        "reason_codes": list(item.reason_codes),
-        "session_amount_cny": str(item.session_amount_cny),
-        "symbol": item.symbol,
-    }
-
-
-def _candidate_from_document(value: object) -> IntradayCandidate | None:
-    if not isinstance(value, dict):
-        return None
-    try:
-        return IntradayCandidate(
-            symbol=str(value["symbol"]),
-            name=str(value["name"]),
-            rank=int(str(value["rank"])),
-            candidate_class=IntradayCandidateClass(str(value["candidate_class"])),
-            anomaly_score=float(str(value["anomaly_score"])),
-            factor_weight_coverage=float(str(value["factor_weight_coverage"])),
-            last_price=Decimal(str(value["last_price"])),
-            change_percent=Decimal(str(value["change_percent"])),
-            session_amount_cny=Decimal(str(value["session_amount_cny"])),
-            factors=(),
-            reason_codes=tuple(str(item) for item in value.get("reason_codes", [])),
-            previous_close=_optional_positive_decimal(value.get("previous_close")),
-        )
-    except (KeyError, TypeError, ValueError):
-        return None
-
-
-def _candidate_previous_close(item: IntradayCandidate | None) -> Decimal | None:
-    if item is None:
-        return None
-    if item.previous_close is not None:
-        value = item.previous_close
-        return value if value.is_finite() and value > 0 else None
-    # 兼容恢复旧日志：这些日志写入时，候选尚未保留来源给出的精确前收盘价。
-    # 该推导可能继承提供方的百分比舍入，因此新事件始终持久化 ``previous_close``。
-    denominator = Decimal("1") + item.change_percent / Decimal("100")
-    if denominator <= 0:
-        return None
-    value = item.last_price / denominator
-    return value if value.is_finite() and value > 0 else None
-
-
-def _board_from_symbol(symbol: str) -> AShareBoard:
-    normalized = symbol.strip().upper()
-    if normalized.endswith(".BJ"):
-        return AShareBoard.BSE
-    code = normalized[:6]
-    if normalized.endswith(".SH"):
-        return AShareBoard.STAR if code.startswith(("688", "689")) else AShareBoard.SSE_MAIN
-    if normalized.endswith(".SZ"):
-        return AShareBoard.CHINEXT if code.startswith(("300", "301")) else AShareBoard.SZSE_MAIN
-    raise ValueError("unsupported A-share symbol")
-
-
-def _order_document(order: IntradayPaperOrder) -> dict[str, object]:
-    return {
-        "account_id": order.account_id,
-        "board": order.board.value,
-        "created_at": order.created_at,
-        "expires_at": order.expires_at,
-        "instrument_type": order.instrument_type.value,
-        "invalidation_price": order.invalidation_price,
-        "limit_price": order.limit_price,
-        "order_id": order.order_id,
-        "previous_close": order.previous_close,
-        "quantity": order.quantity,
-        "session_date": order.session_date,
-        "signal_bar_end": order.signal_bar_end,
-        "signal_price": order.signal_price,
-        "symbol": order.symbol,
-    }
-
-
-def _order_from_document(value: Mapping[str, object]) -> IntradayPaperOrder:
-    return IntradayPaperOrder(
-        order_id=str(value["order_id"]),
-        account_id=str(value["account_id"]),
-        symbol=str(value["symbol"]),
-        board=AShareBoard(str(value["board"])),
-        session_date=date.fromisoformat(str(value["session_date"])),
-        signal_bar_end=datetime.fromisoformat(str(value["signal_bar_end"])),
-        signal_price=Decimal(str(value["signal_price"])),
-        invalidation_price=Decimal(str(value["invalidation_price"])),
-        limit_price=Decimal(str(value["limit_price"])),
-        quantity=int(str(value["quantity"])),
-        created_at=datetime.fromisoformat(str(value["created_at"])),
-        expires_at=datetime.fromisoformat(str(value["expires_at"])),
-        previous_close=Decimal(str(value["previous_close"])),
-        instrument_type=PaperInstrumentType(str(value["instrument_type"])),
-    )
-
-
-def _fill_document(fill: ASharePaperFill) -> dict[str, object]:
-    return {
-        "account_id": fill.account_id,
-        "executed_at": fill.executed_at,
-        "external_order_id": fill.external_order_id,
-        "fill_id": fill.fill_id,
-        "instrument_type": fill.instrument_type.value,
-        "note": fill.note,
-        "price": fill.price,
-        "quantity": fill.quantity,
-        "side": fill.side.value,
-        "source": fill.source.value,
-        "symbol": fill.symbol,
-        "trading_date": fill.trading_date,
-    }
-
-
-def _fill_from_document(value: Mapping[str, object]) -> ASharePaperFill:
-    return ASharePaperFill(
-        account_id=str(value["account_id"]),
-        fill_id=str(value["fill_id"]),
-        symbol=str(value["symbol"]),
-        side=Side(str(value["side"])),
-        quantity=int(str(value["quantity"])),
-        price=Decimal(str(value["price"])),
-        instrument_type=PaperInstrumentType(str(value["instrument_type"])),
-        trading_date=date.fromisoformat(str(value["trading_date"])),
-        executed_at=datetime.fromisoformat(str(value["executed_at"])),
-        source=PaperFillSource(str(value["source"])),
-        external_order_id=(
-            None if value.get("external_order_id") is None else str(value["external_order_id"])
-        ),
-        note=None if value.get("note") is None else str(value["note"]),
-    )
 
 
 def _price_acceptance_document(

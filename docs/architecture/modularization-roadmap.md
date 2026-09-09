@@ -56,6 +56,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_quantity.py` | Pure lot/quantity rules and sell-quantity planning for A-share intraday PAPER execution |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_config.py` | Frozen schedule/risk configuration and policy manifest projections |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_llm_payloads.py` | Strict LLM audit payload recovery, type validation, and pure gate/text projections |
+| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_documents.py` | Watchlist/candidate/order/fill document codecs, A-share symbol resolution, and strict positive-integer validation |
 | `services/binance/binance_execution.py` | `services/binance/binance_execution_records.py` | Pure snapshot/fill/balance/order-list record projections and timestamp normalization |
 | `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_serialization.py` | Safe audit documents, stable JSON normalization, and hashes |
 | `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_policy.py` | Pure context/review identity, scalar validation, score bounds, and UTC normalization |
@@ -175,3 +176,10 @@ symbol, enum, and listen-key validation. The `futures.py` facade retains signed
 HTTP, credential handling, runtime authority, and order-changing operations.
 The focused parser, order-parameter, and order-book route passed 28 tests; the
 known Windows pytest-cache permission warning remains environment-only.
+
+The CLI A-share handler slice now moves source-health and watchlist read-only
+commands, along with close-screening and intraday-surveillance result projections,
+into `cli_commands/handlers/ashare.py`. The facade still owns command dispatch,
+provider orchestration, candidate/research persistence, and compatibility exports;
+the moved handlers resolve clock/path hooks through the facade where tests and
+embedded callers historically replaced them.
