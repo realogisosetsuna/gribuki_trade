@@ -676,3 +676,10 @@ Moved candidate-universe mutations and the research-review state machine into
 review stores and never authorize execution; the CLI facade remains the stable
 parser/dispatch and monkeypatch surface. CLI and module-layout tests, Ruff, and
 mypy pass.
+
+### 2026-09-09 — strategy-lab CLI handlers
+
+Moved research-only factor discovery and exit-policy evaluation commands into
+`cli_commands/handlers/strategy_lab.py`. The handler cannot access broker or
+promotion authority; the CLI facade retains dispatch, JSON printing, and
+historical import paths. CLI and module-layout tests, Ruff, and mypy pass.

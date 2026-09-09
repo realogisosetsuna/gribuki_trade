@@ -38,6 +38,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "cli_commands/handlers/ashare_review.py",
         ),
         (
+            "gribuki_trade.cli_commands.handlers.strategy_lab",
+            "cli_commands/handlers/strategy_lab.py",
+        ),
+        (
             "gribuki_trade.features.cross_market_models",
             "features/cross_market_models.py",
         ),
