@@ -434,3 +434,11 @@ data classes. `paper_day_summary.py` retains sidecar loading, aggregation,
 rendering/writing orchestration, and compatibility imports with unchanged type
 identity. The focused summary, account, LLM, and module-layout route passed
 before the next repository gate.
+
+The historical daily market-data adapter now separates provider routing into
+`adapters/market_data/akshare_daily_router.py`. That module owns normalized
+provider protocols, primary/fallback selection, synchronous and asynchronous
+diagnostic dispatch, and the controlled tail-stitch boundary. The original
+adapter retains AKShare endpoint calls, timeout handling, row parsing, and
+compatibility exports. The focused daily-adapter and module-layout route passed
+after the split.

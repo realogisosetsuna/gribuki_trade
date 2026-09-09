@@ -57,6 +57,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "adapters/market_data/akshare_daily_stitch.py",
         ),
         (
+            "gribuki_trade.adapters.market_data.akshare_daily_router",
+            "adapters/market_data/akshare_daily_router.py",
+        ),
+        (
             "gribuki_trade.adapters.market_data.akshare_payload",
             "adapters/market_data/akshare_payload.py",
         ),
