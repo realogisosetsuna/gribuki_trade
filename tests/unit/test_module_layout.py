@@ -44,6 +44,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         ),
         ("gribuki_trade.services.macro_models", "services/macro_models.py"),
         (
+            "gribuki_trade.services.adversarial_macro_feature_flag",
+            "services/adversarial_macro_feature_flag.py",
+        ),
+        (
             "gribuki_trade.adapters.binance.spot_order_params",
             "adapters/binance/spot_order_params.py",
         ),

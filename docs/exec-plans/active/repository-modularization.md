@@ -627,3 +627,11 @@ Extracted OneBot private-event parsing and versioned propose/confirm/cancel comm
 decoding into `services/live_trade_records_parsing.py`. The record service retains
 allowlists, ledger writes, confirmation, and protection-task orchestration while
 preserving historical parser imports. Focused tests, Ruff, mypy, and compile checks pass.
+
+
+### 2026-09-09 — adversarial feature flag adapter
+
+Extracted the BASELINE/SHADOW/ENFORCE progressive-release adapter and shadow
+observer delivery into `services/adversarial_macro_feature_flag.py`. The main
+facade retains adversarial and dual-track provider orchestration. Focused tests,
+Ruff, mypy, and compile checks pass.

@@ -62,6 +62,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/macro_research.py` | `services/macro_evidence_selection.py` | Point-in-time evidence filtering, relevance ranking, injection rejection, publisher identity, and corroboration policy |
 | `services/adversarial_macro.py` | `services/adversarial_macro_policy.py` | Role validation, peer envelopes, conservative aggregation, and round stability |
 | `services/adversarial_macro.py` | `services/adversarial_macro_boundaries.py` | Role request construction, failure-safe ABSTAIN analysis, and sanitized failure-call documents |
+| `services/adversarial_macro.py` | `services/adversarial_macro_feature_flag.py` | BASELINE/SHADOW/ENFORCE progressive-release adapter and shadow observer delivery |
 | `services/adversarial_macro.py` | `services/adversarial_macro_models.py` | Adversarial roles, immutable configuration, round/opinion/run records, and audit value objects |
 | `ingest/search_discovery.py` | `ingest/search_discovery_policy.py` | Pure result sanitization, publisher identity, discovery clustering, and confirmation basis selection |
 | `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_quantity.py` | Pure lot/quantity rules and sell-quantity planning for A-share intraday PAPER execution |
