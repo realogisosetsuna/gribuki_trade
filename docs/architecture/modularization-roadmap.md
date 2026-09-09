@@ -81,6 +81,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `trading/oms.py` | `trading/oms_schema.py` | SQLite DDL and idempotent schema migration, with connection ownership left to the OMS facade |
 | `adapters/ashare/screening.py` | `adapters/ashare/screening_factors.py` | Historical-bar model, raw factor calculations, and corporate-action guards |
 | `adapters/ashare/screening.py` | `adapters/ashare/screening_payload.py` | Provider row decoding, validation, coverage checks, and deterministic revision hashes |
+| `adapters/ashare/context.py` | `adapters/ashare/context_parsing.py` | Provider field resolution, ETF/security symbol normalization, scalar/date parsing, and source metadata mappings |
 | `adapters/binance/gateway.py` | `adapters/binance/request_builder.py` | Deterministic REST query/form encoding and signed request assembly |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_schedule.py` | Session timezone, phase boundaries, and scheduler sleep calculations |
 | `cli.py` | `cli_commands/live_sync_payloads.py` | Pure live-sync status, ingest, protection, cycle, and receipt result documents |

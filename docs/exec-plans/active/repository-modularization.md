@@ -410,3 +410,12 @@ The broker-neutral OMS command boundary now lives in
 claim and lease validation, and UNKNOWN recovery state projection; `oms.py`
 retains SQLite transactions, outbox leases, order events, and durable writes.
 The focused OMS command-policy route passed 17 tests before the next full gate.
+
+The A-share context adapter now has a dedicated pure parsing boundary in
+`adapters/ashare/context_parsing.py`. It owns provider column resolution,
+security/ETF symbol normalization, scalar and temporal parsing, and source
+metadata mappings. `context.py` retains provider calls, timeout/thread
+orchestration, and degradation projection. Focused context parsing and adapter
+tests passed; the repository gate then passed readiness, Ruff, mypy (356 source
+files), compileall, and 1835 tests with five environment-skipped tests, 41
+subtests, and the recurring Windows pytest-cache permission warning.
