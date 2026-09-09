@@ -54,6 +54,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `features/close_analysis.py` | `features/close_analysis_models.py` | Close-analysis configuration and immutable signal-family, horizon, and technical-assessment models |
 | `services/ashare_close_analysis.py` | `services/ashare_close_models.py`, `services/ashare_close_projection.py`, `services/ashare_close_notifications.py` | Point-in-time request/result contracts, pure evidence/technical projections, and deterministic report rendering/message splitting |
 | `services/adversarial_macro.py` | `services/adversarial_macro_serialization.py` | Canonical request/identity/analysis documents, hashes, and scalar normalization |
+| `services/macro_research.py` | `services/macro_models.py` | Evidence configuration, corroboration and selection results, plus immutable research run records |
 | `services/adversarial_macro.py` | `services/adversarial_macro_policy.py` | Role validation, peer envelopes, conservative aggregation, and round stability |
 | `services/adversarial_macro.py` | `services/adversarial_macro_boundaries.py` | Role request construction, failure-safe ABSTAIN analysis, and sanitized failure-call documents |
 | `services/adversarial_macro.py` | `services/adversarial_macro_models.py` | Adversarial roles, immutable configuration, round/opinion/run records, and audit value objects |
@@ -77,6 +78,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `adapters/binance/user_stream.py` | `adapters/binance/user_stream_parsing.py` | Spot user-data event models, signature encoding, strict frame/event parsing, and field validation |
 | `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_models.py` | Immutable configuration, PIT review context, journal acceptance, schedule, and gate outcome models |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_events.py` | Event store protocol, publisher, sidecar heartbeat/recovery, and notification outbox reconciliation |
+| `services/ashare/ashare_close_notifications.py` | `services/ashare/ashare_close_notification_splitting.py` | Pure report-contract envelopes, line/character payload splitting, and dual-track macro summary rendering |
 | `cli_commands/handlers/binance.py` | `cli_commands/binance_results.py` | Balance validation, testnet deltas, and reconciliation payload shaping |
 | `cli_commands/handlers/binance.py` | `cli_commands/handlers/binance_live.py` | LIVE Spot/Futures guards, account queries, order tests, execution, and private stream orchestration |
 | `cli.py` | `cli_commands/close_research_payloads.py` | Close-research archive/profile payload projections |

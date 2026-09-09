@@ -14,6 +14,7 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         ("gribuki_trade.adapters.paper", "adapters/simulated/paper.py"),
         ("gribuki_trade.services.ashare_paper_day", "services/ashare/ashare_paper_day.py"),
         ("gribuki_trade.services.binance_execution", "services/binance/binance_execution.py"),
+        ("gribuki_trade.services.macro_models", "services/macro_models.py"),
         (
             "gribuki_trade.adapters.binance.spot_order_params",
             "adapters/binance/spot_order_params.py",
@@ -183,6 +184,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "gribuki_trade.cli_commands.handlers.napcat",
             "cli_commands/handlers/napcat.py",
         ),
+        (
+            "gribuki_trade.services.ashare.ashare_close_notification_splitting",
+            "services/ashare/ashare_close_notification_splitting.py",
+        ),
     )
     for name, suffix in modules:
         module = importlib.import_module(name)
@@ -247,6 +252,26 @@ def test_napcat_handler_is_directly_importable() -> None:
         "_napcat_send_artifact",
     ):
         assert callable(getattr(handler, name))
+
+
+def test_close_notification_splitting_is_directly_importable() -> None:
+    """盘后通知分段辅助可独立导入，且不依赖通知 facade 初始化。"""
+
+    module = importlib.import_module(
+        "gribuki_trade.services.ashare.ashare_close_notification_splitting"
+    )
+    for name in (
+        "_split_contractual_instrument_report",
+        "_split_plain_text_payload",
+        "_dual_track_report_lines",
+        "_split_notification_text",
+    ):
+        assert callable(getattr(module, name))
+
+    facade = importlib.import_module(
+        "gribuki_trade.services.ashare.ashare_close_notifications"
+    )
+    assert facade._split_notification_text is module._split_notification_text
 
 
 def test_paper_day_summary_models_keep_facade_type_identity() -> None:

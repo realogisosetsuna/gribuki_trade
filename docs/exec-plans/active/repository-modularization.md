@@ -533,3 +533,20 @@ Extracted frozen exit-evaluation bars, episodes, datasets, cost models, outcomes
 metrics, and research-only trial registries into `strategy_lab/exit_models.py`.
 The evaluator facade retains deterministic replay, candidate evaluation, and
 walk-forward orchestration. Focused tests, Ruff, mypy, and compile checks pass.
+
+
+### 2026-09-09 — macro research models
+
+Extracted macro evidence configuration, corroboration and selection results, and
+immutable research run records into `services/macro_models.py`. The macro
+research facade retains evidence filtering, request hashing, analyzer execution,
+and compatibility exports. Focused tests, Ruff, mypy, and compile checks pass.
+
+### 2026-09-09 — close-notification splitting helpers
+
+Extracted pure contractual report envelopes, line/character payload splitting, and
+双轨宏观摘要行 from `services/ashare/ashare_close_notifications.py` into
+`services/ashare/ashare_close_notification_splitting.py`. The notification facade
+retains historical private helper aliases and report assembly; the new module has
+no network, storage, notifier, or service state dependency. Focused close-analysis
+and module-layout tests cover the compatibility boundary.
