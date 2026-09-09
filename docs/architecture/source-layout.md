@@ -54,7 +54,9 @@ tests/
     ├── gui/              Qt、integration gateway 和 NapCat 生命周期
     ├── runtime/          guard、临时目录和 PAPER 连续性
     ├── reporting/        sidecar、artifact 和报告契约
-    └── strategy_lab/     研究实验、factor DSL、walk-forward 和退出评估
+    ├── strategy_lab/     研究实验、factor DSL、walk-forward 和退出评估
+    ├── ingest/           新闻、搜索、官方文档采集、解析和去重
+    └── services/         按 candidate、research、macro、live 等流程分组
 ```
 
 其他测试领域按同一规则迁移到 `tests/unit/<领域>/`。测试文件保持

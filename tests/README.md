@@ -21,6 +21,8 @@
 | `runtime/` | 运行模式 guard、临时目录、唤醒和 PAPER 连续性 |
 | `reporting/` | sidecar、PAPER-day 报告、artifact 和报告契约 |
 | `strategy_lab/` | 研究实验、factor DSL、walk-forward 和退出策略评估 |
+| `ingest/` | 新闻、搜索、官方文档采集、解析和去重 |
+| `services/` | candidate、recommendation、research、macro、LLM、live 和通知编排 |
 
 其余测试组会按同一规则逐步迁移到 `tests/unit/<领域>/`。迁移只改变文件路径，
 不会改变模块导入或 pytest 节点中的测试函数名。

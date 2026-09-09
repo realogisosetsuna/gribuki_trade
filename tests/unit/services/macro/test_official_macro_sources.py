@@ -31,7 +31,7 @@ from gribuki_trade.ingest.official_macro import (
 )
 from gribuki_trade.ports.news import DocumentFetch, FetchCursor
 
-FIXTURES = Path(__file__).parents[1] / "fixtures" / "official_macro"
+FIXTURES = Path(__file__).parents[3] / "fixtures" / "official_macro"
 FIRST_SEEN = datetime(2026, 8, 14, 1, 0, tzinfo=UTC)
 
 
