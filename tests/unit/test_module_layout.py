@@ -167,6 +167,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "gribuki_trade.services.adversarial_macro_boundaries",
             "services/adversarial_macro_boundaries.py",
         ),
+        (
+            "gribuki_trade.cli_commands.handlers.napcat",
+            "cli_commands/handlers/napcat.py",
+        ),
     )
     for name, suffix in modules:
         module = importlib.import_module(name)
@@ -209,6 +213,28 @@ def test_binance_handler_modules_are_directly_importable() -> None:
             text=True,
         )
         assert result.returncode == 0, result.stderr
+
+
+def test_napcat_handler_is_directly_importable() -> None:
+    """NapCat handler 可独立导入，避免 CLI facade 循环依赖。"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import gribuki_trade.cli_commands.handlers.napcat"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    handler = importlib.import_module("gribuki_trade.cli_commands.handlers.napcat")
+    for name in (
+        "_napcat_configure",
+        "_napcat_status",
+        "_napcat_dispatch",
+        "_napcat_send_test",
+        "_napcat_send_artifact",
+    ):
+        assert callable(getattr(handler, name))
 
 
 def test_paper_day_summary_models_keep_facade_type_identity() -> None:

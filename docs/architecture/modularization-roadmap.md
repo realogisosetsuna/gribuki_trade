@@ -201,3 +201,10 @@ into `cli_commands/handlers/ashare.py`. The facade still owns command dispatch,
 provider orchestration, candidate/research persistence, and compatibility exports;
 the moved handlers resolve clock/path hooks through the facade where tests and
 embedded callers historically replaced them.
+
+The CLI notification slice now places NapCat/OneBot configuration, health checks,
+finite outbox polling, explicit test messages, and durable Markdown artifact
+delivery in `cli_commands/handlers/napcat.py`. The handler is directly
+importable and resolves secret/configuration hooks through a lazy CLI facade, so
+the historical `gribuki_trade.cli` functions and monkeypatch points remain
+compatible while command dispatch stays in the facade.

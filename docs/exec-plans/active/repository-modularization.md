@@ -484,3 +484,10 @@ The complete gate then passed readiness, Ruff, mypy (362 source files),
 compileall, and 1839 tests with five environment-skipped tests and 41 subtests;
 the run used a fresh temporary root because the long-lived Windows pytest-cache
 directory continued to emit its known permission warning.
+
+The NapCat/OneBot CLI family now lives in
+`cli_commands/handlers/napcat.py`. It owns runtime configuration, health/status
+checks, finite outbox polling, explicit notification tests, and durable Markdown
+artifact delivery. A lazy CLI facade preserves historical secret/configuration
+monkeypatch points while allowing direct handler imports without a circular
+dependency. Focused NapCat and module-layout tests passed after the extraction.
