@@ -452,3 +452,10 @@ structured broker-rejection regression coverage. The complete repository gate
 then passed readiness, Ruff, mypy (359 source files), compileall, and 1838 tests
 with five environment-skipped tests, 41 subtests, and the recurring Windows
 pytest-cache permission warning.
+
+The Spot Binance user-data stream now separates event parsing into
+`adapters/binance/user_stream_parsing.py`. It owns immutable event models,
+signature payload encoding, frame/envelope decoding, and strict field validation;
+the stream facade retains WebSocket authentication, reconnect, buffering, and
+rotation. The facade re-exports the parser's public types and functions, and the
+focused user-stream/execution route passed after the split.

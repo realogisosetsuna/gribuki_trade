@@ -70,6 +70,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `reporting/paper_day_summary.py` | `reporting/paper_day_projection_models.py`, `reporting/paper_day_account_projection.py` | Immutable sidecar models and pure account/order/fill/notification projections |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_summary_models.py` | Immutable executive, risk, price/quantity, execution, watchlist, and source-state summary models |
 | `adapters/market_data/akshare_daily.py` | `adapters/market_data/akshare_daily_router.py` | Provider protocol, fallback routing, source diagnostics, and controlled tail-stitch coordination |
+| `adapters/binance/user_stream.py` | `adapters/binance/user_stream_parsing.py` | Spot user-data event models, signature encoding, strict frame/event parsing, and field validation |
 | `cli_commands/handlers/binance.py` | `cli_commands/binance_results.py` | Balance validation, testnet deltas, and reconciliation payload shaping |
 | `cli_commands/handlers/binance.py` | `cli_commands/handlers/binance_live.py` | LIVE Spot/Futures guards, account queries, order tests, execution, and private stream orchestration |
 | `cli.py` | `cli_commands/close_research_payloads.py` | Close-research archive/profile payload projections |

@@ -126,6 +126,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         ("gribuki_trade.adapters.binance.errors", "adapters/binance/errors.py"),
         ("gribuki_trade.adapters.binance.rate_limit", "adapters/binance/rate_limit.py"),
         (
+            "gribuki_trade.adapters.binance.user_stream_parsing",
+            "adapters/binance/user_stream_parsing.py",
+        ),
+        (
             "gribuki_trade.storage.live_record_work_policy",
             "storage/live_record_work_policy.py",
         ),
