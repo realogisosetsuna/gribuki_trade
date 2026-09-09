@@ -610,3 +610,12 @@ reports, and calculation-internal pair records into
 `features/cross_market_models.py`. The relation facade retains input validation,
 Pearson/EWMA/OLS calculations, and failure projection. Focused tests, Ruff,
 mypy, and compile checks pass.
+
+
+### 2026-09-09 — exit lifecycle boundary models
+
+Extracted lifecycle errors, the append-only event-store protocol, QUICK/DEEP
+application results, and barrier observations into
+`services/exit_plan_lifecycle_models.py`. The lifecycle facade retains event
+replay, idempotent append, and exit-plan orchestration. Focused tests, Ruff,
+mypy, and compile checks pass.
