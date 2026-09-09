@@ -99,6 +99,10 @@ broker order authority. Inspect `services/ashare_paper*`,
 ## Secrets and generated state
 
 Credentials are delegated to `security/secrets.py` and OS keyring adapters.
+`KeyringSecretProvider` also keeps a user-bound encrypted fallback on Windows
+using DPAPI under `%LOCALAPPDATA%/gribuki-trade/secrets.json`. The fallback is
+written atomically, never contains plaintext values, and is used only when the
+same-user keyring is unavailable or has been reset after a profile migration.
 Runtime databases, reports, caches and temporary files belong under
 `runtime/` and are not source-of-truth code. `test_security_secrets.py`,
 `test_integration_settings.py`, and `test_temp_root.py` verify these rules.

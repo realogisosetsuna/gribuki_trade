@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import ctypes
+import json
+import os
 from collections.abc import Mapping
+from contextlib import suppress
 from importlib import import_module
+from pathlib import Path
 from threading import RLock
 from typing import Protocol, cast, runtime_checkable
 
@@ -113,7 +119,13 @@ class KeyringSecretProvider:
 
     def get_secret(self, name: str) -> str | None:
         checked_name = _validate_name(name)
-        backend = self._backend()
+        try:
+            backend = self._backend()
+        except SecretProviderUnavailable:
+            value = _file_secret_store(self._service_name).get(checked_name)
+            if value is not None:
+                return value
+            raise
         try:
             value = backend.get_password(self._service_name, checked_name)
         except Exception:
@@ -121,31 +133,53 @@ class KeyringSecretProvider:
             pass
         else:
             if value is None or isinstance(value, str):
-                return value
+                if value is not None:
+                    # 在已有 keyring 凭证被读取时补写 DPAPI 副本，避免升级后还需重新录入。
+                    with suppress(OSError, SecretProviderError):
+                        _file_secret_store(self._service_name).set(checked_name, value)
+                    return value
+                # keyring 可能在用户配置迁移后被重置或替换；DPAPI 回退可让同一
+                # Windows 用户继续使用凭证。
+                return _file_secret_store(self._service_name).get(checked_name)
         raise SecretProviderError("system keyring could not retrieve the requested secret")
 
     def set_secret(self, name: str, value: str) -> None:
         checked_name = _validate_name(name)
         checked_value = _validate_value(value)
-        backend = self._backend()
+        try:
+            backend = self._backend()
+        except SecretProviderUnavailable:
+            try:
+                _file_secret_store(self._service_name).set(checked_name, checked_value)
+            except OSError:
+                raise SecretProviderUnavailable(
+                    "the system keyring and encrypted local secret store are unavailable"
+                ) from None
+            return
         try:
             backend.set_password(self._service_name, checked_name, checked_value)
         except Exception:
             pass
         else:
+            # 同时保存用户绑定的加密副本，避免 keyring 后端变化或重启后再次录入凭证。
+            with suppress(OSError):
+                _file_secret_store(self._service_name).set(checked_name, checked_value)
             return
         raise SecretProviderError("system keyring could not store the requested secret")
 
     def delete_secret(self, name: str) -> bool:
         checked_name = _validate_name(name)
-        backend = self._backend()
+        try:
+            backend = self._backend()
+        except SecretProviderUnavailable:
+            return _file_secret_store(self._service_name).delete(checked_name)
         try:
             backend.delete_password(self._service_name, checked_name)
         except Exception as error:
             if _is_missing_secret_error(backend, error):
                 return False
         else:
-            return True
+            return _file_secret_store(self._service_name).delete(checked_name) or True
         # 不串联或保留可能包含后端数据的异常。
         raise SecretProviderError("system keyring could not delete the requested secret")
 
@@ -172,3 +206,123 @@ def _is_missing_secret_error(backend: _KeyringBackend, error: Exception) -> bool
     errors = getattr(backend, "errors", None)
     missing_type = getattr(errors, "PasswordDeleteError", None)
     return isinstance(missing_type, type) and isinstance(error, missing_type)
+
+
+class _EncryptedFileSecretStore:
+    """基于 Windows DPAPI 的 keyring 回退，保证配置迁移和重启后的凭证可用。"""
+
+    def __init__(self, service_name: str, path: Path) -> None:
+        self._service_name = service_name
+        self._path = path
+
+    def _load(self) -> dict[str, str]:
+        try:
+            raw = json.loads(self._path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, ValueError, TypeError):
+            return {}
+        return raw if isinstance(raw, dict) else {}
+
+    def _save(self, values: dict[str, str]) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self._path.with_suffix(self._path.suffix + ".tmp")
+        temporary.write_text(json.dumps(values, sort_keys=True), encoding="utf-8")
+        with suppress(OSError):
+            os.chmod(temporary, 0o600)
+        os.replace(temporary, self._path)
+
+    def get(self, name: str) -> str | None:
+        encoded = self._load().get(name)
+        if not isinstance(encoded, str):
+            return None
+        try:
+            return _dpapi_unprotect(base64.b64decode(encoded), self._service_name, name)
+        except (ValueError, OSError):
+            return None
+
+    def set(self, name: str, value: str) -> None:
+        protected = _dpapi_protect(value, self._service_name, name)
+        values = self._load()
+        values[name] = base64.b64encode(protected).decode("ascii")
+        self._save(values)
+
+    def delete(self, name: str) -> bool:
+        values = self._load()
+        existed = name in values
+        values.pop(name, None)
+        if existed:
+            self._save(values)
+        return existed
+
+
+def _file_secret_store(service_name: str) -> _EncryptedFileSecretStore:
+    explicit = os.environ.get("GRIBUKI_TRADE_SECRET_FILE")
+    if explicit:
+        path = Path(explicit)
+    elif os.name == "nt":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        path = (
+            Path(local_app_data or Path.home() / "AppData" / "Local")
+            / "gribuki-trade"
+            / "secrets.json"
+        )
+    else:
+        path = Path.home() / ".local" / "share" / "gribuki-trade" / "secrets.json"
+    return _EncryptedFileSecretStore(service_name, path)
+
+
+def _dpapi_entropy(service_name: str, name: str) -> bytes:
+    return f"gribuki-trade:{service_name}:{name}".encode()
+
+
+def _dpapi_protect(value: str, service_name: str, name: str) -> bytes:
+    if os.name != "nt":
+        raise OSError("Windows DPAPI is unavailable")
+    return _dpapi_call(
+        "CryptProtectData", value.encode("utf-8"), _dpapi_entropy(service_name, name)
+    )
+
+
+def _dpapi_unprotect(value: bytes, service_name: str, name: str) -> str:
+    if os.name != "nt":
+        raise OSError("Windows DPAPI is unavailable")
+    return _dpapi_call(
+        "CryptUnprotectData", value, _dpapi_entropy(service_name, name)
+    ).decode("utf-8")
+
+
+def _dpapi_call(function: str, payload: bytes, entropy: bytes) -> bytes:
+    class _Blob(ctypes.Structure):
+        _fields_ = [("cbData", ctypes.c_uint32), ("pbData", ctypes.POINTER(ctypes.c_ubyte))]
+
+    crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    source = ctypes.create_string_buffer(payload)
+    entropy_buffer = ctypes.create_string_buffer(entropy)
+    input_blob = _Blob(len(payload), ctypes.cast(source, ctypes.POINTER(ctypes.c_ubyte)))
+    entropy_blob = _Blob(len(entropy), ctypes.cast(entropy_buffer, ctypes.POINTER(ctypes.c_ubyte)))
+    output_blob = _Blob()
+    operation = getattr(crypt32, function)
+    operation.argtypes = [
+        ctypes.POINTER(_Blob),
+        ctypes.c_void_p,
+        ctypes.POINTER(_Blob),
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.POINTER(_Blob),
+    ]
+    operation.restype = ctypes.c_int
+    if not operation(
+        ctypes.byref(input_blob),
+        None,
+        ctypes.byref(entropy_blob),
+        None,
+        None,
+        0,
+        ctypes.byref(output_blob),
+    ):
+        raise OSError(ctypes.get_last_error())
+    try:
+        return ctypes.string_at(output_blob.pbData, output_blob.cbData)
+    finally:
+        kernel32.LocalFree(output_blob.pbData)

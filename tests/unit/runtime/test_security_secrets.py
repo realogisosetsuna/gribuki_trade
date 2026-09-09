@@ -1,4 +1,6 @@
 import io
+import json
+import tempfile
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import TestCase
 from unittest.mock import Mock, patch
@@ -63,7 +65,13 @@ class KeyringSecretProviderTests(TestCase):
         backend.get_password.return_value = SENSITIVE_VALUE
         provider = KeyringSecretProvider("test-service")
 
-        with patch("gribuki_trade.security.secrets.import_module", return_value=backend):
+        with (
+            tempfile.TemporaryDirectory() as directory, patch.dict(
+                "os.environ", {"GRIBUKI_TRADE_SECRET_FILE": f"{directory}/secrets.json"}
+            ),
+            patch("gribuki_trade.security.secrets.import_module", return_value=backend),
+            patch("gribuki_trade.security.secrets._dpapi_protect", return_value=b"cipher"),
+        ):
             provider.set_secret("api-token", SENSITIVE_VALUE)
             result = provider.get_secret("api-token")
             deleted = provider.delete_secret("api-token")
@@ -94,6 +102,43 @@ class KeyringSecretProviderTests(TestCase):
                 self.fail("expected a sanitized provider error")
 
         self.assertNotIn(SENSITIVE_VALUE, rendered)
+
+    def test_successful_write_keeps_encrypted_user_bound_fallback(self) -> None:
+        backend = Mock()
+        provider = KeyringSecretProvider("test-service")
+        with tempfile.TemporaryDirectory() as directory:
+            path = f"{directory}/secrets.json"
+            with (
+                patch.dict("os.environ", {"GRIBUKI_TRADE_SECRET_FILE": path}),
+                patch("gribuki_trade.security.secrets.import_module", return_value=backend),
+                patch(
+                    "gribuki_trade.security.secrets._dpapi_protect",
+                    return_value=b"ciphertext",
+                ),
+            ):
+                provider.set_secret("api-token", SENSITIVE_VALUE)
+            with open(path, encoding="utf-8") as stored:
+                payload = json.load(stored)
+            self.assertNotIn(SENSITIVE_VALUE, json.dumps(payload))
+            self.assertEqual(payload["api-token"], "Y2lwaGVydGV4dA==")
+
+    def test_missing_keyring_value_reads_encrypted_fallback(self) -> None:
+        backend = Mock()
+        backend.get_password.return_value = None
+        provider = KeyringSecretProvider("test-service")
+        with tempfile.TemporaryDirectory() as directory:
+            path = f"{directory}/secrets.json"
+            with open(path, "w", encoding="utf-8") as stored:
+                json.dump({"api-token": "Y2lwaGVydGV4dA=="}, stored)
+            with (
+                patch.dict("os.environ", {"GRIBUKI_TRADE_SECRET_FILE": path}),
+                patch("gribuki_trade.security.secrets.import_module", return_value=backend),
+                patch(
+                    "gribuki_trade.security.secrets._dpapi_unprotect",
+                    return_value=SENSITIVE_VALUE,
+                ),
+            ):
+                self.assertEqual(provider.get_secret("api-token"), SENSITIVE_VALUE)
 
 
 class SecretRepresentationTests(TestCase):
