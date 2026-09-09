@@ -813,3 +813,9 @@ high-cohesion unit tests under `tests/unit/ashare/`, `tests/unit/binance/`, and
 `tests/unit/trading/`, and synchronized architecture, AGENTS, and Binance
 capability references. Recursive pytest collection remains unchanged; facade
 identity and layout tests cover the new source grouping.
+
+The macro-service grouping slice similarly moves macro evidence selection,
+research, official-rate/global-risk evidence, and adversarial analysis under
+`services/macro/`. The old root paths remain facades; focused macro and layout
+tests pass, and provider calls, research-only policy, and failure-closed
+analysis boundaries remain unchanged.

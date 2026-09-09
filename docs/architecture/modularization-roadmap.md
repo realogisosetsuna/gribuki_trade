@@ -258,3 +258,8 @@ live orchestration, record storage, and private-event parsing under
 facades that resolve to the same implementation modules. The grouping changes
 package navigation only; ledger writes, leases, outbox delivery, and recovery
 boundaries remain in the live service implementations.
+
+Macro evidence selection, research, official-rate/global-risk evidence, and
+adversarial analysis are now grouped under `services/macro/`. The former root
+modules remain compatibility facades, so existing import and monkeypatch
+identity contracts stay valid while new implementations have a clear home.

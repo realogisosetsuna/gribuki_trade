@@ -108,12 +108,12 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         ),
         (
             "gribuki_trade.services.macro_evidence_selection",
-            "services/macro_evidence_selection.py",
+            "services/macro/macro_evidence_selection.py",
         ),
-        ("gribuki_trade.services.macro_models", "services/macro_models.py"),
+        ("gribuki_trade.services.macro_models", "services/macro/macro_models.py"),
         (
             "gribuki_trade.services.adversarial_macro_feature_flag",
-            "services/adversarial_macro_feature_flag.py",
+            "services/macro/adversarial_macro_feature_flag.py",
         ),
         (
             "gribuki_trade.adapters.binance.spot_order_params",
@@ -123,7 +123,7 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         ("gribuki_trade.reporting.paper_day_rendering", "reporting/paper_day_rendering.py"),
         (
             "gribuki_trade.services.adversarial_macro_serialization",
-            "services/adversarial_macro_serialization.py",
+            "services/macro/adversarial_macro_serialization.py",
         ),
         ("gribuki_trade.strategy_lab.exit_simulation", "strategy_lab/exit_simulation.py"),
         (
@@ -231,7 +231,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "gribuki_trade.ingest.search_discovery_policy",
             "ingest/search_discovery_policy.py",
         ),
-        ("gribuki_trade.services.adversarial_macro_policy", "services/adversarial_macro_policy.py"),
+        (
+            "gribuki_trade.services.adversarial_macro_policy",
+            "services/macro/adversarial_macro_policy.py",
+        ),
         (
             "gribuki_trade.cli_commands.live_sync_payloads",
             "cli_commands/live_sync_payloads.py",
@@ -291,7 +294,7 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         ),
         (
             "gribuki_trade.services.adversarial_macro_boundaries",
-            "services/adversarial_macro_boundaries.py",
+            "services/macro/adversarial_macro_boundaries.py",
         ),
         (
             "gribuki_trade.storage.paper_orders_codec",
@@ -647,4 +650,26 @@ def test_live_services_keep_legacy_facades() -> None:
     for name in names:
         facade = importlib.import_module(f"gribuki_trade.services.{name}")
         implementation = importlib.import_module(f"gribuki_trade.services.live.{name}")
+        assert facade is implementation
+
+
+def test_macro_services_keep_legacy_facades() -> None:
+    """宏观服务按职责归档后，历史模块仍指向同一实现对象。"""
+
+    names = (
+        "adversarial_macro",
+        "adversarial_macro_boundaries",
+        "adversarial_macro_feature_flag",
+        "adversarial_macro_models",
+        "adversarial_macro_policy",
+        "adversarial_macro_serialization",
+        "macro_evidence_selection",
+        "macro_models",
+        "macro_research",
+        "global_risk_evidence",
+        "official_rates_evidence",
+    )
+    for name in names:
+        facade = importlib.import_module(f"gribuki_trade.services.{name}")
+        implementation = importlib.import_module(f"gribuki_trade.services.macro.{name}")
         assert facade is implementation

@@ -28,6 +28,7 @@ gribuki_trade/
 │   ├── binance/  Binance 执行、SHADOW 和无人值守流程
 │   └── ashare/   A 股研究、PAPER 和盘后流程
 │   └── live/     实盘观察、保护输入、订单记录和恢复编排
+│   └── macro/    宏观证据选择、研究和对抗分析
 ├── trading/      Broker-neutral OMS、仓位和订单状态转换
 ├── storage/      SQLite store、事件日志、lease 和 outbox
 ├── runtime/      PAPER/SHADOW/LIVE guard、连续性和临时目录
@@ -90,3 +91,7 @@ python -m pytest --temp-dir runtime/layout -q tests/unit/test_module_layout.py
 
 实盘服务实现统一位于 `services/live/`；`services/live_*.py` 仅保留兼容旧
 导入路径的 facade。新的实盘观察、保护和记录代码应直接放入 `services/live/`。
+
+宏观研究与对抗分析实现统一位于 `services/macro/`；根目录的宏观服务文件
+仅保留兼容旧导入路径的 facade。新的宏观证据选择、分析策略和研究编排应
+直接放入 `services/macro/`。
