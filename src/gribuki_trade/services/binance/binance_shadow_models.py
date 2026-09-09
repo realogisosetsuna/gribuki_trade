@@ -1,4 +1,4 @@
-"""Binance shadow-session configuration, watermark, and result value objects."""
+"""Binance 影子会话的配置、安全水印与结果值对象。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Immutable results returned by the unattended USDⓈ-M execution service."""
+"""无人值守 USDⓈ-M 合约执行服务返回的不可变结果对象。"""
 
 from __future__ import annotations
 
