@@ -755,3 +755,11 @@ The module resolves mutable CLI hooks lazily, so historical imports and
 monkeypatch seams remain stable; ledger, candidate, research, and notification
 stores keep their existing transaction boundaries. Focused CLI and
 module-layout tests pass, and no LIVE trading authority changed.
+
+### 2026-09-10 — Source layout guide
+
+Added `docs/architecture/source-layout.md` with the directory tree, ownership
+rules for adapters/services/storage/trading/reporting/CLI code, and the
+compatibility-facade policy. The guide links to the concrete facade mapping so
+new contributors can locate an implementation without searching the entire
+source tree.

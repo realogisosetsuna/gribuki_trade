@@ -72,6 +72,27 @@ def _required_local_secret(name: str) -> str:
 def _ashare_close_research_once(*args: Any, **kwargs: Any) -> Any:
     return _cli()._ashare_close_research_once(*args, **kwargs)
 
+
+__all__ = [
+    "_CLIExistingCloseResearch",
+    "_FixedPostCloseSessions",
+    "_ashare_post_close",
+    "_ashare_post_close_report",
+    "_ashare_post_close_run",
+    "_ashare_post_close_status",
+    "_deliver_post_close_artifact",
+    "_post_close_delivery_summary",
+    "_post_close_napcat_ready",
+    "_post_close_process_lock",
+    "_post_close_section_excerpt",
+    "_post_close_sha256",
+    "_read_post_close_json",
+    "_run_post_close_orchestrator",
+    "_validate_post_close_target",
+    "_validated_post_close_artifact",
+]
+
+
 class _FixedPostCloseSessions:
     """在单次运行中复用一份已经核验的日历结果。"""
 

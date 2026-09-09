@@ -13,6 +13,9 @@
 | `reporting` / `gui` | Report contracts/artifacts and PySide6 presentation | `reporting/`, `gui/` | `test_report_contract*`, `test_report_artifacts.py`, `test_gui_*` |
 | `strategy_lab` / `backtest` | Offline experiments, factor DSL, walk-forward evaluation and costs | `strategy_lab/`, `backtest/` | `test_strategy_lab_*`, `test_crypto_backtest.py`, `test_recommendation_outcomes.py` |
 
+目录职责、新代码归属规则和兼容 facade 约定见
+[`source-layout.md`](source-layout.md)。本表记录具体 facade 到实现模块的映射。
+
 The A-share PAPER-day runner keeps scheduling and durable side effects in
 `services/ashare_paper_day.py`. Its deterministic audit and notification
 projections live in `services/ashare_paper_day_projection.py`; the runner
