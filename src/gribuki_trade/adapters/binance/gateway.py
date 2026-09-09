@@ -70,6 +70,10 @@ from .rules import (
     decimal_from_api,
     decimal_to_fixed,
 )
+from .spot_order_list_parsing import (
+    parse_order_list_snapshot,
+    parse_order_snapshots,
+)
 from .spot_order_params import (
     CLIENT_ORDER_ID as _CLIENT_ORDER_ID,
 )
@@ -1440,40 +1444,7 @@ class BinanceSpotGateway:
     def _order_list_from_payload(
         self, payload: object, *, fallback_symbol: str
     ) -> BinanceOrderListSnapshot:
-        mapping = self._require_mapping(payload, "order list")
-        reports = mapping.get("orderReports", mapping.get("orders", []))
-        if not isinstance(reports, list):
-            raise BinanceProtocolError("Binance order-list reports are malformed")
-        orders = tuple(
-            self._snapshot_from_payload(item, fallback_symbol=fallback_symbol)
-            for item in reports
-            if isinstance(item, Mapping)
-        )
-        try:
-            list_id = None if mapping.get("orderListId") is None else int(mapping["orderListId"])
-            transaction = (
-                None if mapping.get("transactionTime") is None else int(mapping["transactionTime"])
-            )
-        except (TypeError, ValueError):
-            raise BinanceProtocolError("Binance order-list response is malformed") from None
-        return BinanceOrderListSnapshot(
-            order_list_id=list_id,
-            contingency_type=None
-            if mapping.get("contingencyType") is None
-            else str(mapping["contingencyType"]),
-            list_status_type=None
-            if mapping.get("listStatusType") is None
-            else str(mapping["listStatusType"]),
-            list_order_status=None
-            if mapping.get("listOrderStatus") is None
-            else str(mapping["listOrderStatus"]),
-            list_client_order_id=None
-            if mapping.get("listClientOrderId") is None
-            else str(mapping["listClientOrderId"]),
-            symbol=str(mapping.get("symbol", fallback_symbol)).upper(),
-            orders=orders,
-            transaction_time_ms=transaction,
-        )
+        return parse_order_list_snapshot(payload, fallback_symbol=fallback_symbol)
 
     async def _request_json(
         self,
@@ -1617,17 +1588,7 @@ class BinanceSpotGateway:
         *,
         fallback_symbol: str,
     ) -> tuple[BinanceOrderSnapshot, ...]:
-        if not isinstance(payload, list):
-            raise BinanceProtocolError("Binance order-list response must be a list")
-        try:
-            return tuple(
-                self._snapshot_from_payload(item, fallback_symbol=fallback_symbol)
-                for item in payload
-            )
-        except BinanceProtocolError:
-            raise
-        except (TypeError, ValueError, BinanceValidationError):
-            raise BinanceProtocolError("Binance order-list response is malformed") from None
+        return parse_order_snapshots(payload, fallback_symbol=fallback_symbol)
 
     @staticmethod
     def _parse_trade(item: object, *, fallback_symbol: str) -> BinanceTrade:

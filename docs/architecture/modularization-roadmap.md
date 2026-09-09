@@ -30,6 +30,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 |---|---|---|
 | `cli.py` | `cli_commands/parsers/`, `cli_commands/handlers/binance.py`, `cli_commands/handlers/ashare.py`, `cli_commands/runtime.py`, `cli_parsing.py`, `cli_output.py` | Command-family registration, Binance and read-only A-share workflow handlers, shared runtime/default handling, argparse converters, Decimal formatting, and atomic JSON output |
 | `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py`, `adapters/binance/spot_order_params.py` | Spot wire parsing, order snapshot/status mapping, scalar validation, signing/redaction, and pure Spot/OCO/OTO/OTOCO parameter encoding |
+| `adapters/binance/gateway.py` | `adapters/binance/spot_order_list_parsing.py` | Pure OCO/OTO/OTOCO order-list and bulk-order snapshot decoding; gateway retains signed transport, order authority, tracking, and reconciliation |
 | `trading/futures_oms.py` | `trading/futures_oms_codec.py` | Futures SQLite codecs, JSON/Decimal/time conversion, event identity |
 | `trading/futures_oms.py` | `trading/futures_oms_schema.py` | Futures OMS SQLite DDL and indexes with caller-owned transaction scope |
 | `trading/futures_oms.py` | `trading/futures_oms_policy.py` | Pure order-status projection, protection-plan version policy, and restart-recovery query parameters |
@@ -59,6 +60,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `cli.py` | `cli_commands/handlers/ashare_post_close.py` | A-share post-close command state machine, existing-close-research adapter, artifact validation, and durable NapCat outbox delivery; CLI facade retains historical handlers and monkeypatch seams |
 | `services/ashare_paper_day.py` | `services/ashare_paper_day_projection.py` | LLM gate and DEEP exit audit/notification projections |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_serialization.py` | K-line/technical-bar codecs, exit-barrier/time helpers, UTC normalization, canonical hashes, and event JSONL/file primitives |
+| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_reasons.py` | Entry-rejection and single-minute match reason-code mappings plus pure display fallbacks; runner facade keeps historical names and execution orchestration |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_codec.py` | Sidecar JSON and JSONL event decoding for reports |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_sidecar_codec.py` | Deterministic sidecar tuple/counter codecs and final-result identity filtering |
 | `adapters/akshare_daily.py` | `adapters/akshare_daily_parsing.py` | Symbol/date normalization, frame parsing, and DailyBar validation |

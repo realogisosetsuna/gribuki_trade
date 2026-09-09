@@ -34,6 +34,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "services/ashare/ashare_paper_day_models.py",
         ),
         (
+            "gribuki_trade.services.ashare.ashare_paper_day_reasons",
+            "services/ashare/ashare_paper_day_reasons.py",
+        ),
+        (
             "gribuki_trade.cli_commands.handlers.ashare_review",
             "cli_commands/handlers/ashare_review.py",
         ),
@@ -52,6 +56,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         (
             "gribuki_trade.adapters.binance.stream_models",
             "adapters/binance/stream_models.py",
+        ),
+        (
+            "gribuki_trade.adapters.binance.spot_order_list_parsing",
+            "adapters/binance/spot_order_list_parsing.py",
         ),
         (
             "gribuki_trade.adapters.ashare.derivatives_parsing",
@@ -504,6 +512,16 @@ def test_model_extractions_keep_facade_type_identity() -> None:
             ),
         ),
         (
+            "gribuki_trade.services.ashare.ashare_paper_day",
+            "gribuki_trade.services.ashare.ashare_paper_day_reasons",
+            (
+                "_ENTRY_REJECTION_EXPLANATIONS",
+                "_MATCH_REASON_EXPLANATIONS",
+                "_entry_rejection_display",
+                "_match_reason_display",
+            ),
+        ),
+        (
             "gribuki_trade.gui.integrations",
             "gribuki_trade.gui.integration_gateway",
             ("NapCatHealth", "DeepSeekHealth", "IntegrationGateway", "DefaultIntegrationGateway"),
@@ -528,6 +546,11 @@ def test_model_extractions_keep_facade_type_identity() -> None:
                 "BinanceDepthEvent",
                 "BinanceMarketEvent",
             ),
+        ),
+        (
+            "gribuki_trade.adapters.binance.gateway",
+            "gribuki_trade.adapters.binance.spot_order_list_parsing",
+            ("parse_order_list_snapshot", "parse_order_snapshots"),
         ),
         (
             "gribuki_trade.adapters.ashare.derivatives",

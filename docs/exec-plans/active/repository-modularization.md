@@ -763,3 +763,11 @@ rules for adapters/services/storage/trading/reporting/CLI code, and the
 compatibility-facade policy. The guide links to the concrete facade mapping so
 new contributors can locate an implementation without searching the entire
 source tree.
+
+### 2026-09-10 — Binance Spot order-list parsing
+
+Extracted OCO/OTO/OTOCO order-list and bulk-order snapshot decoding into
+`adapters/binance/spot_order_list_parsing.py`. The Spot gateway retains signed
+transport, credentials, order tracking, execution authority, and uncertain
+result reconciliation; historical parser names remain available through the
+gateway facade.
