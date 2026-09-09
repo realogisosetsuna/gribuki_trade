@@ -75,6 +75,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "services/ashare/ashare_intraday_llm_policy.py",
         ),
         (
+            "gribuki_trade.services.ashare.ashare_intraday_llm_models",
+            "services/ashare/ashare_intraday_llm_models.py",
+        ),
+        (
             "gribuki_trade.reporting.paper_day_llm_projection",
             "reporting/paper_day_llm_projection.py",
         ),

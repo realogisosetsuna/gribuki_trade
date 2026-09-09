@@ -461,3 +461,10 @@ rotation. The facade re-exports the parser's public types and functions, and the
 focused user-stream/execution route passed after the split.
 The parser's sanitization regression now also covers JSON-quoted `apiKey`,
 `secret`, and `signature` values in subscription errors.
+
+The A-share intraday LLM service now moves its immutable configuration,
+point-in-time context/review, journal acceptance, schedule, and gate outcome
+models into `services/ashare/ashare_intraday_llm_models.py`. The original module
+retains the synchronous gate algorithm and asynchronous coordinator while
+re-exporting historical models and serialization helpers. The focused intraday
+LLM policy/serialization and module-layout route passed after the split.
