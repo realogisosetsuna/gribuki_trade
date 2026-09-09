@@ -42,6 +42,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "cli_commands/handlers/strategy_lab.py",
         ),
         (
+            "gribuki_trade.gui.integration_gateway",
+            "gui/integration_gateway.py",
+        ),
+        (
             "gribuki_trade.features.cross_market_models",
             "features/cross_market_models.py",
         ),
@@ -455,6 +459,11 @@ def test_model_extractions_keep_facade_type_identity() -> None:
             "gribuki_trade.services.ashare.ashare_paper_day",
             "gribuki_trade.services.ashare.ashare_paper_day_models",
             ("PaperDayResult",),
+        ),
+        (
+            "gribuki_trade.gui.integrations",
+            "gribuki_trade.gui.integration_gateway",
+            ("NapCatHealth", "DeepSeekHealth", "IntegrationGateway", "DefaultIntegrationGateway"),
         ),
     )
     for facade_name, model_name, names in boundaries:

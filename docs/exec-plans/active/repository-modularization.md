@@ -683,3 +683,11 @@ Moved research-only factor discovery and exit-policy evaluation commands into
 `cli_commands/handlers/strategy_lab.py`. The handler cannot access broker or
 promotion authority; the CLI facade retains dispatch, JSON printing, and
 historical import paths. CLI and module-layout tests, Ruff, and mypy pass.
+
+### 2026-09-10 — GUI integration gateway
+
+Extracted NapCat/LLM health models, the integration protocol, and credential-backed
+health/configuration operations into `gui/integration_gateway.py`. The Qt facade
+retains widgets, background jobs, settings, and process controls; historical
+imports and the HTTP monkeypatch seam remain compatible. Focused GUI tests, Ruff,
+and mypy pass.

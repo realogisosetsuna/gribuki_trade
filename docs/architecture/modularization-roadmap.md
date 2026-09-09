@@ -50,6 +50,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_models.py` | Immutable PAPER-day completion result; the runner retains scheduling, state recovery, execution, persistence, and notification orchestration |
 | `cli.py` | `cli_commands/handlers/ashare_review.py` | Candidate-universe mutations and research-review state-machine handlers; the CLI facade retains dispatch and compatibility exports |
 | `cli.py` | `cli_commands/handlers/strategy_lab.py` | Research-only factor discovery, exit-policy evaluation, and result projection handlers |
+| `gui/integrations.py` | `gui/integration_gateway.py` | NapCat/LLM health models, gateway protocol, and credential-backed health/configuration operations; Qt panel remains in the GUI facade |
 | `services/ashare_paper_day.py` | `services/ashare_paper_day_projection.py` | LLM gate and DEEP exit audit/notification projections |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_serialization.py` | K-line/technical-bar codecs, exit-barrier/time helpers, UTC normalization, canonical hashes, and event JSONL/file primitives |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_codec.py` | Sidecar JSON and JSONL event decoding for reports |
