@@ -193,6 +193,13 @@ the OMS projection passed; the subsequent full suite passed 1778 tests with five
 environment-skipped tests, 41 subtests, and the same Windows pytest-cache warning.
 Ruff and mypy passed for 343 source files.
 
+The durable live-record store now delegates A-share T+1/FIFO protection-lot
+quantity policy and retry/dead-work projection to pure policy modules. The
+intraday LLM facade also delegates stable context/review identities and scalar
+validation to `ashare_intraday_llm_policy.py`. Focused live-record, intraday LLM,
+module-layout, and source-comment tests passed 46 tests; Ruff and mypy passed for
+345 source files.
+
 The latest increment separates live-sync result payloads from the CLI facade,
 strict PAPER-day LLM audit payload recovery from the nested runner, Binance error
 and rate-limit protocol helpers from the REST gateway, and live-record work-queue
@@ -261,6 +268,13 @@ the service facade.
 The adversarial slice passed the full repository gate as well: readiness, Ruff,
 mypy (338 source files), compileall, and 1765 tests passed, with five
 environment skips and 41 subtests.
+
+The live-record protection slice now isolates A-share T+1 sellable-quantity and
+FIFO buy-lot allocation in `storage/live_record_protection_policy.py`; the
+work-policy module also exposes a pure retry/dead-state projection. The store
+facade continues to own SQLite reads, allocation writes, lease fencing, and
+transaction boundaries. Focused validation covers the new policy tests together
+with live-record, module-layout, and Chinese-source checks.
 
 The current provider/UI follow-up passed 106 focused tests, then the full suite
 passed 1718 tests with five environment-skipped tests and 41 subtests. Ruff,

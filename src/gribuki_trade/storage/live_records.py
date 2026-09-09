@@ -51,12 +51,19 @@ from gribuki_trade.storage.live_record_models import (
     _row_to_tracking,
     _row_to_work,
 )
+from gribuki_trade.storage.live_record_protection_policy import (
+    SellLot,
+    SellLotAllocationError,
+    allocate_sell_lots,
+    sellable_quantity_for_t1,
+)
 from gribuki_trade.storage.live_record_schema import ensure_live_record_schema
 from gribuki_trade.storage.live_record_work_policy import (
     build_claim_due_work_query,
     normalize_lease_for,
     normalize_work_claim,
     normalize_work_failure,
+    project_work_failure,
 )
 
 
@@ -593,13 +600,11 @@ class SQLiteLiveRecordStore:
             ).fetchone()
         if row is None:
             raise LiveRecordStateError("PROTECTION_NOT_FOUND")
-        acquired = _parse_time(str(row["acquired_at"]))
-        from zoneinfo import ZoneInfo
-
-        shanghai = ZoneInfo("Asia/Shanghai")
-        if acquired.astimezone(shanghai).date() >= moment.astimezone(shanghai).date():
-            return 0
-        return int(row["remaining_quantity"])
+        return sellable_quantity_for_t1(
+            _parse_time(str(row["acquired_at"])),
+            int(row["remaining_quantity"]),
+            as_of=moment,
+        )
 
     def claim_due_work(
         self,
@@ -996,7 +1001,11 @@ class SQLiteLiveRecordStore:
                 return work
             if work.status is not LiveWorkStatus.RUNNING:
                 raise LiveRecordStateError("WORK_NOT_CLAIMED")
-            dead = not retryable or work.attempts >= policy.maximum_attempts
+            projection = project_work_failure(
+                attempts=work.attempts,
+                retryable=retryable,
+                policy=policy,
+            )
             connection.execute(
                 """
                 UPDATE live_work_items SET
@@ -1005,14 +1014,14 @@ class SQLiteLiveRecordStore:
                 WHERE work_id = ?
                 """,
                 (
-                    LiveWorkStatus.DEAD.value if dead else LiveWorkStatus.RETRY.value,
-                    _time(moment if dead else moment + policy.retry_after),
+                    projection.status.value,
+                    _time(projection.available_at),
                     _time(moment),
                     code,
                     work_id,
                 ),
             )
-            if dead and work.kind in {
+            if projection.dead and work.kind in {
                 LiveWorkKind.BUILD_PROTECTION,
                 LiveWorkKind.BUILD_DEEP_PROTECTION,
             }:
@@ -1185,8 +1194,6 @@ class SQLiteLiveRecordStore:
         fill: ConfirmedLiveFill,
         allocated_at: datetime,
     ) -> tuple[tuple[str, str, int], ...]:
-        remaining = fill.quantity
-        closed: list[tuple[str, str, int]] = []
         rows = connection.execute(
             """
             SELECT * FROM live_protection_tracking
@@ -1195,11 +1202,22 @@ class SQLiteLiveRecordStore:
             """,
             (fill.account_id, fill.symbol),
         ).fetchall()
-        for row in rows:
-            if remaining == 0:
-                break
-            available = int(row["remaining_quantity"])
-            allocated = min(available, remaining)
+        lots = tuple(
+            SellLot(
+                protection_id=str(row["protection_id"]),
+                buy_command_id=str(row["buy_command_id"]),
+                remaining_quantity=int(row["remaining_quantity"]),
+            )
+            for row in rows
+        )
+        try:
+            allocations = allocate_sell_lots(fill.quantity, lots)
+        except SellLotAllocationError as error:
+            raise LiveRecordIntegrityError(
+                "position projection and buy lots disagree"
+            ) from error
+        closed: list[tuple[str, str, int]] = []
+        for allocation in allocations:
             connection.execute(
                 """
                 INSERT INTO live_sell_allocations (
@@ -1208,8 +1226,8 @@ class SQLiteLiveRecordStore:
                 """,
                 (
                     fill.command_id,
-                    str(row["buy_command_id"]),
-                    allocated,
+                    allocation.buy_command_id,
+                    allocation.quantity,
                     _time(allocated_at),
                 ),
             )
@@ -1219,9 +1237,13 @@ class SQLiteLiveRecordStore:
                 SET remaining_quantity = remaining_quantity - ?
                 WHERE protection_id = ? AND remaining_quantity >= ?
                 """,
-                (allocated, str(row["protection_id"]), allocated),
+                (
+                    allocation.quantity,
+                    allocation.protection_id,
+                    allocation.quantity,
+                ),
             )
-            if allocated == available:
+            if allocation.closes_lot:
                 connection.execute(
                     """
                     UPDATE live_work_items SET
@@ -1231,18 +1253,15 @@ class SQLiteLiveRecordStore:
                       AND kind IN ('BUILD_PROTECTION','BUILD_DEEP_PROTECTION')
                       AND status IN ('PENDING','RETRY','RUNNING')
                     """,
-                    (_time(allocated_at), str(row["protection_id"])),
+                    (_time(allocated_at), allocation.protection_id),
                 )
                 closed.append(
                     (
-                        str(row["protection_id"]),
-                        str(row["buy_command_id"]),
-                        allocated,
+                        allocation.protection_id,
+                        allocation.buy_command_id,
+                        allocation.quantity,
                     )
                 )
-            remaining -= allocated
-        if remaining:
-            raise LiveRecordIntegrityError("position projection and buy lots disagree")
         return tuple(closed)
 
     def _insert_work(

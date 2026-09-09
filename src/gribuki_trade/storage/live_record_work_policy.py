@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final
 
-from gribuki_trade.domain.live_records import LiveWorkKind
+from gribuki_trade.domain.live_records import LiveWorkKind, LiveWorkStatus
 from gribuki_trade.storage.live_record_codec import (
     _aware_utc,
     _error_code,
@@ -39,6 +39,15 @@ class WorkFailurePolicy:
     retry_after: timedelta
     maximum_attempts: int
     lease_attempt: int
+
+
+@dataclass(frozen=True)
+class WorkFailureProjection:
+    """一次失败报告对应的纯状态、可用时间和终态判断。"""
+
+    status: LiveWorkStatus
+    available_at: datetime
+    dead: bool
 
 
 def normalize_lease_for(value: timedelta) -> timedelta:
@@ -142,12 +151,32 @@ def normalize_work_failure(
         lease_attempt=_lease_attempt(lease_attempt),
     )
 
+
+def project_work_failure(
+    *,
+    attempts: int,
+    retryable: bool,
+    policy: WorkFailurePolicy,
+) -> WorkFailureProjection:
+    """根据当前尝试次数和重试策略投影下一工作状态。"""
+
+    if isinstance(attempts, bool) or not isinstance(attempts, int) or attempts < 1:
+        raise ValueError("attempts must be a positive integer")
+    dead = not retryable or attempts >= policy.maximum_attempts
+    return WorkFailureProjection(
+        status=LiveWorkStatus.DEAD if dead else LiveWorkStatus.RETRY,
+        available_at=policy.moment if dead else policy.moment + policy.retry_after,
+        dead=dead,
+    )
+
 __all__: Final = [
     "WorkClaimPolicy",
     "WorkFailurePolicy",
+    "WorkFailureProjection",
     "build_claim_due_work_query",
     "normalize_lease_for",
     "normalize_work_claim",
     "normalize_work_failure",
     "normalize_work_ids",
+    "project_work_failure",
 ]

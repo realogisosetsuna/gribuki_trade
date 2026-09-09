@@ -65,6 +65,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "services/ashare/ashare_intraday_llm_serialization.py",
         ),
         (
+            "gribuki_trade.services.ashare.ashare_intraday_llm_policy",
+            "services/ashare/ashare_intraday_llm_policy.py",
+        ),
+        (
             "gribuki_trade.reporting.paper_day_llm_projection",
             "reporting/paper_day_llm_projection.py",
         ),
@@ -109,6 +113,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         (
             "gribuki_trade.storage.live_record_work_policy",
             "storage/live_record_work_policy.py",
+        ),
+        (
+            "gribuki_trade.storage.live_record_protection_policy",
+            "storage/live_record_protection_policy.py",
         ),
         (
             "gribuki_trade.services.binance.binance_execution_records",

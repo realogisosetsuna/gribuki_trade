@@ -58,6 +58,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_llm_payloads.py` | Strict LLM audit payload recovery, type validation, and pure gate/text projections |
 | `services/binance/binance_execution.py` | `services/binance/binance_execution_records.py` | Pure snapshot/fill/balance/order-list record projections and timestamp normalization |
 | `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_serialization.py` | Safe audit documents, stable JSON normalization, and hashes |
+| `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_policy.py` | Pure context/review identity, scalar validation, score bounds, and UTC normalization |
 | `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_policy.py` | Risk config, price acceptance, board price bands, and validation |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_llm_projection.py` | LLM sidecar data classes and pure projection statistics |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_projection_models.py`, `reporting/paper_day_account_projection.py` | Immutable sidecar models and pure account/order/fill/notification projections |
@@ -77,6 +78,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_schedule.py` | Session timezone, phase boundaries, and scheduler sleep calculations |
 | `cli.py` | `cli_commands/live_sync_payloads.py` | Pure live-sync status, ingest, protection, cycle, and receipt result documents |
 | `storage/live_records.py` | `storage/live_record_work_policy.py` | Work-claim SQL construction and lease/failure parameter normalization |
+| `storage/live_records.py` | `storage/live_record_protection_policy.py` | T+1 sellable-quantity and FIFO protection-lot allocation projections |
 
 ## Next slices
 
@@ -85,7 +87,7 @@ The next large files are grouped by the responsibilities they mix:
 | Area | Large files | Extraction order |
 |---|---|---|
 | A-share execution | `services/ashare_paper_day.py`, remaining `services/ashare_intraday_paper.py` orchestration | projections/configuration → calendar/session logic → orchestration |
-| Durable state | `storage/live_records.py` | row models/schema/codecs are split; lease helpers and transaction methods remain |
+| Durable state | `storage/live_records.py` | row models/schema/codecs, T+1/FIFO protection policy, and lease policy are split; transaction methods remain |
 | Broker-neutral execution | `trading/oms.py` | schema/migration is split; command/outbox/fill transaction methods remain |
 | A-share screening | `adapters/ashare/screening.py` | pure factor calculations are split; provider calls and degradation policy remain |
 | Research | remaining `services/adversarial_macro.py` orchestration and other strategy/research facades | pure calculations → dataset/manifest IO → orchestration |

@@ -6,12 +6,13 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from gribuki_trade.domain.live_records import LiveWorkKind
+from gribuki_trade.domain.live_records import LiveWorkKind, LiveWorkStatus
 from gribuki_trade.storage.live_record_work_policy import (
     build_claim_due_work_query,
     normalize_lease_for,
     normalize_work_claim,
     normalize_work_failure,
+    project_work_failure,
 )
 
 _NOW = datetime(2026, 8, 14, 6, 0, tzinfo=UTC)
@@ -92,6 +93,28 @@ def test_failure_policy_rejects_invalid_retry_and_attempts() -> None:
             maximum_attempts=1,
             lease_attempt=1,
         )
+
+
+def test_failure_projection_selects_retry_or_dead_without_storage() -> None:
+    policy = normalize_work_failure(
+        failed_at=_NOW,
+        error_code="FAILED",
+        retry_after=timedelta(seconds=30),
+        maximum_attempts=3,
+        lease_attempt=1,
+    )
+
+    retry = project_work_failure(attempts=1, retryable=True, policy=policy)
+    dead = project_work_failure(attempts=3, retryable=True, policy=policy)
+    immediate_dead = project_work_failure(attempts=1, retryable=False, policy=policy)
+
+    assert retry.status is LiveWorkStatus.RETRY
+    assert retry.available_at == _NOW + timedelta(seconds=30)
+    assert retry.dead is False
+    assert dead.status is LiveWorkStatus.DEAD
+    assert dead.available_at == _NOW
+    assert dead.dead is True
+    assert immediate_dead.status is LiveWorkStatus.DEAD
     with pytest.raises(ValueError, match="maximum_attempts must be positive"):
         normalize_work_failure(
             failed_at=_NOW,

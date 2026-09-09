@@ -15,7 +15,6 @@ DEEP 退出计划负责，不能绕过硬止损、T+1 和价格边界。
 from __future__ import annotations
 
 import asyncio
-import re
 import time
 from collections import deque
 from collections.abc import Callable
@@ -32,6 +31,25 @@ from gribuki_trade.domain.recommendations import (
 )
 from gribuki_trade.features.technical import TechnicalSignal
 from gribuki_trade.ports.llm_analyzer import AnalyzerAuditIdentity
+from gribuki_trade.services.ashare import ashare_intraday_llm_policy as _policy
+from gribuki_trade.services.ashare.ashare_intraday_llm_policy import (
+    aware_utc as _aware_utc,
+)
+from gribuki_trade.services.ashare.ashare_intraday_llm_policy import (
+    bounded_score as _bounded_score,
+)
+from gribuki_trade.services.ashare.ashare_intraday_llm_policy import (
+    canonical_symbol as _canonical_symbol,
+)
+from gribuki_trade.services.ashare.ashare_intraday_llm_policy import (
+    context_id as _context_id,
+)
+from gribuki_trade.services.ashare.ashare_intraday_llm_policy import (
+    review_id as _review_id,
+)
+from gribuki_trade.services.ashare.ashare_intraday_llm_policy import (
+    stable_failure_code as _stable_failure_code,
+)
 from gribuki_trade.services.ashare.ashare_intraday_llm_serialization import (
     JSONScalar,  # noqa: F401 - historical type alias
     JSONValue,  # noqa: F401 - historical type alias
@@ -50,9 +68,8 @@ from gribuki_trade.services.macro_research import (
     MacroResearchService,
 )
 
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_SYMBOL = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
-_FAILURE_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,79}$")
+_SHA256 = _policy._SHA256
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -940,56 +957,6 @@ class IntradayLLMCoordinator:
             raise ValueError("intraday LLM review input hashes do not match context")
 
 
-def _context_id(
-    *,
-    session_date: date,
-    symbol: str,
-    preopen_context_id: str,
-    scan_revision: str,
-    candidate_scope_sha256: str,
-    evidence_as_of: datetime,
-    valid_until: datetime,
-    plan_manifest_sha256: str,
-    config_sha256: str,
-) -> str:
-    digest = intraday_llm_document_sha256(
-        {
-            "candidate_scope_sha256": candidate_scope_sha256,
-            "config_sha256": config_sha256,
-            "evidence_as_of": evidence_as_of,
-            "plan_manifest_sha256": plan_manifest_sha256,
-            "preopen_context_id": preopen_context_id,
-            "scan_revision": scan_revision,
-            "schema_version": 1,
-            "session_date": session_date,
-            "symbol": symbol,
-            "valid_until": valid_until,
-        }
-    )
-    return "intraday-llm-context-" + digest[:40]
-
-
-def _review_id(
-    *,
-    context_id: str,
-    analysis: MacroAnalysis,
-    completed_at: datetime,
-    failure_code: str | None,
-) -> str:
-    digest = intraday_llm_document_sha256(
-        {
-            "analysis_id": analysis.analysis_id,
-            "completed_at": completed_at,
-            "context_id": context_id,
-            "failure_code": failure_code,
-            "macro_impact": analysis.macro_impact,
-            "model_version": analysis.model_version,
-            "schema_version": 1,
-        }
-    )
-    return "intraday-llm-review-" + digest[:40]
-
-
 def _failed_analysis(plan: MacroResearchPlan, failure_code: str) -> MacroAnalysis:
     code = _stable_failure_code(failure_code)
     return MacroAnalysis(
@@ -1111,27 +1078,3 @@ def _gate_outcome(
             values.get("dual_audit_record_sha256"),
         ),
     )
-
-
-def _stable_failure_code(value: str) -> str:
-    normalized = value.strip().upper()
-    if not _FAILURE_CODE.fullmatch(normalized):
-        raise ValueError("failure code must use stable uppercase identifier form")
-    return normalized
-
-
-def _bounded_score(value: Decimal) -> Decimal:
-    return max(Decimal("-1"), min(Decimal("1"), value))
-
-
-def _canonical_symbol(value: str) -> str:
-    normalized = value.strip().upper()
-    if not _SYMBOL.fullmatch(normalized):
-        raise ValueError("symbol must use canonical 000001.SZ form")
-    return normalized
-
-
-def _aware_utc(value: datetime, name: str) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError(f"{name} must be timezone-aware")
-    return value.astimezone(UTC)
