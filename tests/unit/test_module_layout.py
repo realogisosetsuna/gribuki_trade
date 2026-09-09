@@ -104,6 +104,7 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "adapters/binance/spot_order_params.py",
         ),
         ("gribuki_trade.reporting.paper_day_renderer", "reporting/paper_day_renderer.py"),
+        ("gribuki_trade.reporting.paper_day_rendering", "reporting/paper_day_rendering.py"),
         (
             "gribuki_trade.services.adversarial_macro_serialization",
             "services/adversarial_macro_serialization.py",
@@ -518,6 +519,16 @@ def test_model_extractions_keep_facade_type_identity() -> None:
                 "SSE_ETF_SHARE_SOURCE_ID",
                 "_parse_option_rows",
                 "_parse_etf_share_row",
+            ),
+        ),
+        (
+            "gribuki_trade.reporting.paper_day_renderer",
+            "gribuki_trade.reporting.paper_day_rendering",
+            (
+                "_explained_codes",
+                "_risk_policy_audit_lines",
+                "_price_range",
+                "_daily_band",
             ),
         ),
         (

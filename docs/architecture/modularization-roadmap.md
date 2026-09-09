@@ -109,6 +109,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_notifications.py` | Stable notification kind, artifact identity, and report text projections |
 | `gui/integrations.py` | `gui/napcat_process.py` | NapCat launch-command validation and owned process lifecycle |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_renderer.py` | Pure Markdown rendering and audit sections from immutable projections |
+| `reporting/paper_day_renderer.py` | `reporting/paper_day_rendering.py` | Pure audit sections, table formatting, and artifact projection helpers; the renderer facade retains report section ordering and contract validation |
 | `storage/live_records.py` | `storage/live_record_models.py` | Durable-row dataclasses and pure SQLite row-to-domain decoding |
 | `storage/live_records.py` | `storage/live_record_schema.py` | Live-record DDL, append-only triggers, and idempotent schema migration |
 | `trading/oms.py` | `trading/oms_schema.py` | SQLite DDL and idempotent schema migration, with connection ownership left to the OMS facade |

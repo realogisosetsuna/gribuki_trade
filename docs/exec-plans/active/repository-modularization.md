@@ -726,3 +726,12 @@ checks, scalar validation, and row projections into
 `adapters/ashare/derivatives_parsing.py`. The adapter facade retains HTTP client
 ownership, request limits, timeout/transport mapping, and the historical public
 exports. Adapter and module-layout tests plus Ruff, mypy, and compile checks pass.
+
+### 2026-09-10 — PAPER-day report rendering helpers
+
+Moved the pure audit sections, table/value formatting, and artifact-link
+projection helpers from `reporting/paper_day_renderer.py` to
+`reporting/paper_day_rendering.py`. The renderer facade still owns full report
+section ordering, immutable event JSON serialization, and Markdown contract
+validation; historical private helper identities remain available. Focused
+renderer and module-layout tests plus Ruff, mypy, and compile checks pass.
