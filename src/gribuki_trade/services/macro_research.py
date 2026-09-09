@@ -25,15 +25,21 @@ from gribuki_trade.ports.llm_analyzer import (
 )
 from gribuki_trade.services.macro_evidence_selection import (
     _TECHNICAL_ONLY_ADDITIONAL_PUBLISHERS,
-    select_macro_evidence,
+)
+from gribuki_trade.services.macro_evidence_selection import (
+    select_macro_evidence as select_macro_evidence,
 )
 from gribuki_trade.services.macro_models import (
     EvidenceCorroboration as EvidenceCorroboration,
 )
 from gribuki_trade.services.macro_models import (
-    EvidenceSelection,
-    MacroEvidenceConfig,
-    MacroResearchRun,
+    EvidenceSelection as EvidenceSelection,
+)
+from gribuki_trade.services.macro_models import (
+    MacroEvidenceConfig as MacroEvidenceConfig,
+)
+from gribuki_trade.services.macro_models import (
+    MacroResearchRun as MacroResearchRun,
 )
 
 
