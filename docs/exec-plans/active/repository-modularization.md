@@ -376,3 +376,12 @@ importing the SQLite facade. `live_records.py` retains transaction, lease,
 projection, migration orchestration, and historical private helper aliases.
 Focused validation passed 11 live-record integrity/model/work-policy tests;
 Ruff and mypy passed for the changed source files.
+
+The Binance Spot execution policy boundary now isolates environment declaration,
+UTC clock normalization, order account/symbol validation, and REST snapshot
+merging in `services/binance/binance_execution_policy.py`. The execution service
+continues to own broker calls, OMS transactions, user-stream processing,
+reconciliation, and LIVE guards. Focused execution and policy validation passed
+17 tests. The combined repository gate then passed readiness, Ruff, mypy (352
+source files), compileall, and 1825 tests with five environment-skipped tests,
+41 subtests, and the recurring Windows pytest-cache permission warning.

@@ -43,6 +43,18 @@ from gribuki_trade.trading import (
     TradingCommandType,
 )
 
+from .binance_execution_policy import (
+    environment_of as _environment_of,
+)
+from .binance_execution_policy import (
+    merge_exchange_orders as _merge_exchange_orders_policy,
+)
+from .binance_execution_policy import (
+    normalize_now as _normalize_now,
+)
+from .binance_execution_policy import (
+    validate_order as _validate_order_policy,
+)
 from .binance_execution_records import (
     average_price as _average_price,
 )
@@ -51,9 +63,6 @@ from .binance_execution_records import (
 )
 from .binance_execution_records import (
     datetime_from_ms as _datetime_from_ms,
-)
-from .binance_execution_records import (
-    exchange_order_rank as _exchange_order_rank,
 )
 from .binance_execution_records import (
     fill_from_trade as _fill_from_trade,
@@ -785,15 +794,7 @@ class BinanceSpotTestnetExecutionService:
     def _merge_exchange_orders(
         self, orders: Sequence[BinanceOrderSnapshot]
     ) -> dict[str, BinanceOrderSnapshot]:
-        merged: dict[str, BinanceOrderSnapshot] = {}
-        for order in orders:
-            client_order_id = order.client_order_id
-            if client_order_id is None:
-                continue
-            current = merged.get(client_order_id)
-            if current is None or _exchange_order_rank(order) >= _exchange_order_rank(current):
-                merged[client_order_id] = order
-        return merged
+        return _merge_exchange_orders_policy(orders)
 
     def _local_client_order_id(self, event: BinanceExecutionReport) -> str | None:
         if self._is_owned_order(event.client_order_id):
@@ -835,10 +836,7 @@ class BinanceSpotTestnetExecutionService:
             )
 
     def _validate_order(self, order: OrderIntent) -> None:
-        if order.account_id != self._account_id:
-            raise ValueError("order account_id does not match the execution service")
-        if order.symbol != order.symbol.upper() or order.symbol not in self._symbol_set:
-            raise ValueError("order symbol is not in the Binance execution allow-list")
+        _validate_order_policy(order, account_id=self._account_id, symbols=self._symbol_set)
 
     def _require_started(self) -> None:
         if not self._started:
@@ -859,20 +857,12 @@ class BinanceSpotTestnetExecutionService:
         )
 
     def _now(self) -> datetime:
-        value = self._clock()
-        if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("clock must return a timezone-aware datetime")
-        return value.astimezone(UTC)
+        return _normalize_now(self._clock())
 
 
 def _require_testnet(component: object, label: str) -> None:
-    value = getattr(component, "environment", None)
     try:
-        environment = (
-            value
-            if isinstance(value, BinanceEnvironment)
-            else BinanceEnvironment(str(value).upper())
-        )
+        environment = _environment_of(component, label, allow_live=True)
     except ValueError:
         raise BinanceTestnetOnlyError(
             f"{label} must explicitly advertise Binance TESTNET"
@@ -884,13 +874,8 @@ def _require_testnet(component: object, label: str) -> None:
 
 
 def _require_binance_environment(component: object, label: str, *, allow_live: bool) -> None:
-    value = getattr(component, "environment", None)
     try:
-        environment = (
-            value
-            if isinstance(value, BinanceEnvironment)
-            else BinanceEnvironment(str(value).upper())
-        )
+        environment = _environment_of(component, label, allow_live=allow_live)
     except ValueError:
         raise BinanceTestnetOnlyError(
             f"{label} must explicitly advertise Binance TESTNET or LIVE"
