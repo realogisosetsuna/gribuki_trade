@@ -661,3 +661,10 @@ Extracted `FuturesStartupReconciliation` into
 facade retains lease ownership, startup reconciliation, private-user-stream
 processing, and execution side effects. Historical imports and type identity are
 preserved.
+
+### 2026-09-09 — A-share PAPER result model
+
+Extracted the immutable `PaperDayResult` completion record into
+`services/ashare/ashare_paper_day_models.py`. The large runner facade continues to
+own scheduling, state recovery, paper execution, durable writes, and notification
+orchestration; historical facade exports and type identity are preserved.

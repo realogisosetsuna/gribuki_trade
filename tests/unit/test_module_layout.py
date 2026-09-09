@@ -30,6 +30,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "services/binance/binance_futures_unattended_models.py",
         ),
         (
+            "gribuki_trade.services.ashare.ashare_paper_day_models",
+            "services/ashare/ashare_paper_day_models.py",
+        ),
+        (
             "gribuki_trade.features.cross_market_models",
             "features/cross_market_models.py",
         ),
@@ -438,6 +442,11 @@ def test_model_extractions_keep_facade_type_identity() -> None:
             "gribuki_trade.services.binance.binance_futures_unattended",
             "gribuki_trade.services.binance.binance_futures_unattended_models",
             ("FuturesStartupReconciliation",),
+        ),
+        (
+            "gribuki_trade.services.ashare.ashare_paper_day",
+            "gribuki_trade.services.ashare.ashare_paper_day_models",
+            ("PaperDayResult",),
         ),
     )
     for facade_name, model_name, names in boundaries:

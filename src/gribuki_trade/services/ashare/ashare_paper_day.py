@@ -134,6 +134,7 @@ from gribuki_trade.services.ashare.ashare_paper_day_events import (
     PaperDayEventPublisher,
     PaperDayStore,
 )
+from gribuki_trade.services.ashare.ashare_paper_day_models import PaperDayResult
 from gribuki_trade.services.ashare.ashare_paper_day_schedule import (
     SHANGHAI,
     scheduler_sleep_seconds,
@@ -575,25 +576,6 @@ class _PreopenRecoverySeed:
     raw_universe_count: int
     eligible_count: int
     entries: tuple[PaperDayWatchEntry, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class PaperDayResult:
-    run_id: str
-    session_date: date
-    completed: bool
-    event_count: int
-    notification_required: int
-    notification_sent: int
-    notification_gaps: int
-    final_snapshot: PaperAccountSnapshot
-    report_path: Path
-    artifact_delivery_status: str = "NOT_CONFIGURED"
-    artifact_delivery_complete: bool = False
-    daily_review_delivery_complete: bool = False
-    text_notification_required: int = 0
-    text_notification_sent: int = 0
-    text_notification_gaps: int = 0
 
 
 class ASharePaperDayRunner:
