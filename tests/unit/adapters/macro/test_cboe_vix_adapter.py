@@ -23,7 +23,7 @@ from gribuki_trade.ports.global_risk import (
     VIXDailyHistory,
 )
 
-FIXTURE = Path(__file__).parents[1] / "fixtures" / "cboe" / "vix_history.csv"
+FIXTURE = Path(__file__).parents[3] / "fixtures" / "cboe" / "vix_history.csv"
 FROZEN_CSV = FIXTURE.read_bytes()
 FETCHED_AT = datetime(2026, 8, 14, 7, 1, tzinfo=UTC)
 

@@ -263,3 +263,12 @@ Macro evidence selection, research, official-rate/global-risk evidence, and
 adversarial analysis are now grouped under `services/macro/`. The former root
 modules remain compatibility facades, so existing import and monkeypatch
 identity contracts stay valid while new implementations have a clear home.
+
+The unit-test hierarchy now mirrors these boundaries. Durable-boundary contracts
+are under `tests/unit/storage/`, including candidate/event/exit stores,
+live-record integrity and lease policies, PAPER recovery, research/review stores,
+outbox, source health, Spot order-list persistence, SQLite runtime, and strategy
+experiments. Provider contracts are under
+`tests/unit/adapters/market_data/`, with adjacent A-share, macro, and simulated
+adapter tests under their own single-level directories. The moves preserve
+pytest node behavior and keep `tests/fixtures/` as the single fixture root.

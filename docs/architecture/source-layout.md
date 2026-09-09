@@ -46,7 +46,9 @@ tests/
 └── unit/
     ├── ashare/           A 股研究、PAPER、盘前和盘后
     ├── binance/          Spot、USDⓈ-M Futures、流和执行
-    └── trading/          OMS、订单和仓位策略
+    ├── trading/          OMS、订单和仓位策略
+    ├── storage/          SQLite store、事件、outbox、租约和恢复
+    └── adapters/         按 market_data、ashare、macro、simulated 分组的适配器契约
 ```
 
 其他测试领域按同一规则迁移到 `tests/unit/<领域>/`。测试文件保持
@@ -88,6 +90,12 @@ python -m pytest --temp-dir runtime/layout -q tests/unit/test_module_layout.py
 
 完整的 facade 到实现映射见 [`module-map.md`](module-map.md)，重构顺序和已完成
 切片见 [`modularization-roadmap.md`](modularization-roadmap.md)。
+
+测试目录与源码边界保持同构：持久化不变量放在
+`tests/unit/storage/`；行情和供应商协议放在
+`tests/unit/adapters/<领域>/`，其中领域目录最多再增加一层。测试搬迁只改变
+路径，不改变导入、fixture 内容或 pytest 收集规则；`tests/README.md` 提供各组
+的定位命令和最近的测试地图。
 
 实盘服务实现统一位于 `services/live/`；`services/live_*.py` 仅保留兼容旧
 导入路径的 facade。新的实盘观察、保护和记录代码应直接放入 `services/live/`。

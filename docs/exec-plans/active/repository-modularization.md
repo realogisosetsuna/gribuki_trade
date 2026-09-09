@@ -819,3 +819,13 @@ research, official-rate/global-risk evidence, and adversarial analysis under
 `services/macro/`. The old root paths remain facades; focused macro and layout
 tests pass, and provider calls, research-only policy, and failure-closed
 analysis boundaries remain unchanged.
+
+### 2026-09-10 — Unit-test hierarchy
+
+Moved 23 durable-boundary tests from the flat `tests/unit/` root to
+`tests/unit/storage/`. Moved market-data adapter contracts to
+`tests/unit/adapters/market_data/`, and grouped the remaining direct adapter
+contracts under `adapters/ashare/`, `adapters/macro/`, and `adapters/simulated/`.
+The CBOE fixture path now resolves from the repository-level `tests/fixtures/`
+root after the directory move. No source behavior, fixture payload, import path,
+or pytest collection rule changed.

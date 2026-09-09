@@ -163,6 +163,11 @@ Local rules are deliberately limited to `src/gribuki_trade/runtime/`,
 `storage/`, `trading/`, `strategy_lab/`, and `adapters/binance/`. Check the
 nearest local `AGENTS.md` before changing one of those subtrees.
 
+测试边界与源码边界同步：`tests/unit/storage/` 覆盖 SQLite store、事件、outbox、
+租约和恢复契约；`tests/unit/adapters/market_data/` 覆盖行情 provider/payload，
+并以 `adapters/ashare/`、`adapters/macro/`、`adapters/simulated/` 放置对应领域
+的适配器契约。测试文件保持 `test_<module>.py` 命名，pytest 继续递归收集。
+
 ## Directory layout for provider and service code
 
 The provider boundary is grouped by business role. `adapters/binance/` and
