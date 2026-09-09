@@ -29,6 +29,7 @@ gribuki_trade/
 │   └── ashare/   A 股研究、PAPER 和盘后流程
 │   └── live/     实盘观察、保护输入、订单记录和恢复编排
 │   └── macro/    宏观证据选择、研究和对抗分析
+│   └── exit/     退出计划生命周期和保护状态
 ├── trading/      Broker-neutral OMS、仓位和订单状态转换
 ├── storage/      SQLite store、事件日志、lease 和 outbox
 ├── runtime/      PAPER/SHADOW/LIVE guard、连续性和临时目录
@@ -52,7 +53,8 @@ tests/
     ├── cli/              CLI 参数、handler 和结果投影
     ├── gui/              Qt、integration gateway 和 NapCat 生命周期
     ├── runtime/          guard、临时目录和 PAPER 连续性
-    └── reporting/        sidecar、artifact 和报告契约
+    ├── reporting/        sidecar、artifact 和报告契约
+    └── strategy_lab/     研究实验、factor DSL、walk-forward 和退出评估
 ```
 
 其他测试领域按同一规则迁移到 `tests/unit/<领域>/`。测试文件保持
@@ -107,3 +109,6 @@ python -m pytest --temp-dir runtime/layout -q tests/unit/test_module_layout.py
 宏观研究与对抗分析实现统一位于 `services/macro/`；根目录的宏观服务文件
 仅保留兼容旧导入路径的 facade。新的宏观证据选择、分析策略和研究编排应
 直接放入 `services/macro/`。
+
+退出计划生命周期实现统一位于 `services/exit/`；根目录的
+`exit_plan_lifecycle*.py` 仅保留兼容旧导入路径的 facade。

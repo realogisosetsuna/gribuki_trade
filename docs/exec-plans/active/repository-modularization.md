@@ -837,3 +837,8 @@ continuity contracts to `tests/unit/runtime/`, and report/artifact contracts to
 `tests/unit/reporting/`. The report golden fixture now resolves from the shared
 `tests/fixtures/` root after moving one directory deeper; all other tests retain
 their fixture and import behavior.
+
+
+The strategy-lab unit contracts now live under `tests/unit/strategy_lab/`;
+research-only, walk-forward, exit-policy, factor, and experiment serialization
+tests keep their existing fixtures and import paths.
