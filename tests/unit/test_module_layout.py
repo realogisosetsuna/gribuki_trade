@@ -160,6 +160,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "reporting/paper_day_projection_models.py",
         ),
         (
+            "gribuki_trade.reporting.paper_day_execution_projection",
+            "reporting/paper_day_execution_projection.py",
+        ),
+        (
             "gribuki_trade.adapters.ashare.screening_payload",
             "adapters/ashare/screening_payload.py",
         ),

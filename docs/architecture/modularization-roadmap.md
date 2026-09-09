@@ -69,6 +69,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `reporting/paper_day_summary.py` | `reporting/paper_day_llm_projection.py` | LLM sidecar data classes and pure projection statistics |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_projection_models.py`, `reporting/paper_day_account_projection.py` | Immutable sidecar models and pure account/order/fill/notification projections |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_summary_models.py` | Immutable executive, risk, price/quantity, execution, watchlist, and source-state summary models |
+| `reporting/paper_day_summary.py` | `reporting/paper_day_execution_projection.py` | Pure watchlist, risk-policy, price/quantity, execution-acceptance, stable-reason, and source-transition event projections |
 | `adapters/market_data/akshare_daily.py` | `adapters/market_data/akshare_daily_router.py` | Provider protocol, fallback routing, source diagnostics, and controlled tail-stitch coordination |
 | `adapters/binance/user_stream.py` | `adapters/binance/user_stream_parsing.py` | Spot user-data event models, signature encoding, strict frame/event parsing, and field validation |
 | `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_models.py` | Immutable configuration, PIT review context, journal acceptance, schedule, and gate outcome models |

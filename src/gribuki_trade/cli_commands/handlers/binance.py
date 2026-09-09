@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import Any
 
 from gribuki_trade.cli_commands import binance_results as _results
@@ -59,7 +60,6 @@ def _testnet_gateway() -> _cli.BinanceSpotGateway:
     return _cli.BinanceSpotGateway(
         environment=_cli.BinanceEnvironment.TESTNET, credentials=credentials
     )
-
 
 
 async def _binance_history_sync(
@@ -550,7 +550,7 @@ async def _binance_testnet_cycle(symbol: str, target_notional: _cli.Decimal) -> 
         }
     finally:
         if submission_started and order is not None:
-            with _cli.suppress(Exception):
+            with suppress(Exception):
                 snapshot = await gateway.query_order(order.client_order_id)
                 if snapshot.status in {
                     _cli.OrderStatus.ACCEPTED,
@@ -638,11 +638,9 @@ async def _binance_testnet_oms_cycle(
         reconciliation, reconciliation_attempts = await _cli._retry_testnet_reconciliation(service)
         final = store.require_order(order.client_order_id)
         commands = tuple(
-            
-                command
-                for command in store.commands()
-                if command.client_order_id == order.client_order_id
-            
+            command
+            for command in store.commands()
+            if command.client_order_id == order.client_order_id
         )
         return {
             "client_order_id": order.client_order_id,
@@ -688,14 +686,14 @@ async def _binance_testnet_oms_cycle(
                 _cli.OrderStatus.ACCEPTED,
                 _cli.OrderStatus.PARTIALLY_FILLED,
             }:
-                with _cli.suppress(Exception):
+                with suppress(Exception):
                     await service.cancel(order.client_order_id)
                     await service.reconcile_startup()
         if service is not None and service.started:
-            with _cli.suppress(Exception):
+            with suppress(Exception):
                 await service.stop()
         elif user_stream is not None:
-            with _cli.suppress(Exception):
+            with suppress(Exception):
                 await user_stream.aclose()
         if consumer is not None:
             consumer.cancel()
@@ -750,7 +748,6 @@ async def _wait_for_testnet_fill_reports(
                 raise RuntimeError(
                     f"Binance Testnet order became terminal before filling: {report.status.value}"
                 )
-
 
 
 async def _binance_testnet_oms_fill(
@@ -829,11 +826,9 @@ async def _binance_testnet_oms_fill(
             raise RuntimeError("Binance Testnet reported FILLED without a persisted fill")
         after_account = await gateway.account()
         commands = tuple(
-            
-                command
-                for command in store.commands()
-                if command.client_order_id == order.client_order_id
-            
+            command
+            for command in store.commands()
+            if command.client_order_id == order.client_order_id
         )
         fee_totals: dict[str, _cli.Decimal] = {}
         for fill in fills:
@@ -893,21 +888,21 @@ async def _binance_testnet_oms_fill(
         if order is not None and service is not None and service.started:
             current = store.order(order.client_order_id)
             if current is not None and current.status is _cli.OrderStatus.UNKNOWN:
-                with _cli.suppress(Exception):
+                with suppress(Exception):
                     await _cli._retry_testnet_reconciliation(service)
                 current = store.order(order.client_order_id)
             if current is not None and current.status in {
                 _cli.OrderStatus.ACCEPTED,
                 _cli.OrderStatus.PARTIALLY_FILLED,
             }:
-                with _cli.suppress(Exception):
+                with suppress(Exception):
                     await service.cancel(order.client_order_id)
                     await _cli._retry_testnet_reconciliation(service)
         if service is not None and service.started:
-            with _cli.suppress(Exception):
+            with suppress(Exception):
                 await service.stop()
         elif user_stream is not None:
-            with _cli.suppress(Exception):
+            with suppress(Exception):
                 await user_stream.aclose()
         if consumer is not None:
             consumer.cancel()
@@ -927,7 +922,6 @@ async def _wait_for_testnet_execution(
             report = await reports.get()
             if report.execution_type == execution_type:
                 return report
-
 
 
 async def _retry_testnet_reconciliation(

@@ -491,3 +491,11 @@ checks, finite outbox polling, explicit notification tests, and durable Markdown
 artifact delivery. A lazy CLI facade preserves historical secret/configuration
 monkeypatch points while allowing direct handler imports without a circular
 dependency. Focused NapCat and module-layout tests passed after the extraction.
+
+### 2026-09-09 — PAPER-day execution projections
+
+Extracted pure event interpretation from `reporting/paper_day_summary.py` into
+`reporting/paper_day_execution_projection.py`. The new module owns watchlist,
+risk policy, price/quantity acceptance, stable rejection, and source transition
+projections; the facade retains compatibility aliases and file/report assembly.
+Focused tests, Ruff, mypy, and compile checks pass.
