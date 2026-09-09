@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib
+import subprocess
+import sys
 
 
 def test_adapters_and_services_resolve_to_domain_directories() -> None:
@@ -179,6 +181,22 @@ def test_cli_handler_families_are_independent_execution_modules() -> None:
     ):
         assert callable(getattr(ashare, name))
     assert callable(binance._binance_live_status)
+
+
+def test_binance_handler_modules_are_directly_importable() -> None:
+    """处理器可在不预先导入 CLI facade 的情况下单独导航。"""
+
+    for module_name in (
+        "gribuki_trade.cli_commands.handlers.binance_live",
+        "gribuki_trade.cli_commands.handlers.binance",
+    ):
+        result = subprocess.run(
+            [sys.executable, "-c", f"import {module_name}"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
 
 
 def test_paper_day_summary_models_keep_facade_type_identity() -> None:

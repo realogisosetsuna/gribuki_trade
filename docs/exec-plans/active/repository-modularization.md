@@ -426,6 +426,10 @@ account, order-test, submit/cancel, and private-stream orchestration. The
 original `handlers/binance.py` keeps testnet, history-sync, backtest, and shadow
 workflows while re-exporting the LIVE names for `cli.py` compatibility. The
 focused CLI and module-layout route passed 173 tests after the split.
+The follow-up compatibility check moved facade lookup behind a lazy proxy so both
+handler modules are directly importable, and restored structured `BinanceAPIError`
+and `ValueError` payloads for Futures order failures instead of dereferencing a
+nonexistent exception attribute.
 
 The PAPER-day summary model boundary now lives in
 `reporting/paper_day_summary_models.py`. It owns the immutable executive,
@@ -442,3 +446,9 @@ diagnostic dispatch, and the controlled tail-stitch boundary. The original
 adapter retains AKShare endpoint calls, timeout handling, row parsing, and
 compatibility exports. The focused daily-adapter and module-layout route passed
 after the split.
+
+The subsequent Binance LIVE compatibility fix added direct-import coverage and
+structured broker-rejection regression coverage. The complete repository gate
+then passed readiness, Ruff, mypy (359 source files), compileall, and 1838 tests
+with five environment-skipped tests, 41 subtests, and the recurring Windows
+pytest-cache permission warning.

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from gribuki_trade import cli as _runtime_cli
 from gribuki_trade.cli_commands import binance_results as _results
 
 # LIVE 处理器在独立模块实现；这里重新导出，保持 cli.py 和既有嵌入调用方的历史导入路径。
@@ -23,12 +22,14 @@ from .binance_live import (
     _binance_live_order_test,
     _binance_live_status,
     _build_live_order,
+    _LazyCliFacade,
     _live_futures_service,
     _live_gateway,
     _live_guard,
 )
 
 __all__ = (
+    "_LazyCliFacade",
     "_binance_live_balance",
     "_binance_live_futures_balance",
     "_binance_live_futures_order",
@@ -48,9 +49,8 @@ _binance_balance_decimal = _results._binance_balance_decimal
 _testnet_balance_diff = _results._testnet_balance_diff
 _testnet_reconciliation_payload = _results._testnet_reconciliation_payload
 
-# 处理器通过 CLI 外观解析兼容钩子，确保测试和嵌入调用方可以替换网关，
-# 同时避免直接耦合券商实现。
-_cli: Any = _runtime_cli
+# 处理器通过延迟 CLI facade 解析兼容钩子，避免处理器被单独导入时循环依赖。
+_cli: Any = _LazyCliFacade()
 
 
 def _testnet_gateway() -> _cli.BinanceSpotGateway:

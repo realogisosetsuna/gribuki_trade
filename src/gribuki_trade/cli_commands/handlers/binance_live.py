@@ -8,13 +8,21 @@ from __future__ import annotations
 
 from typing import Any
 
-from gribuki_trade import cli as _runtime_cli
 from gribuki_trade.cli_commands import binance_results as _results
 
 _binance_balance_decimal = _results._binance_balance_decimal
 
-# 通过同一个 CLI facade 对象读取依赖，保留既有 monkeypatch 与嵌入入口。
-_cli: Any = _runtime_cli
+class _LazyCliFacade:
+    """延迟解析 CLI facade，允许处理器在 facade 之前被单独导入。"""
+
+    def __getattr__(self, name: str) -> Any:
+        from gribuki_trade import cli
+
+        return getattr(cli, name)
+
+
+# 通过同一个延迟 facade 读取依赖，保留既有 monkeypatch 与嵌入入口。
+_cli: Any = _LazyCliFacade()
 
 def _live_guard() -> _cli.LiveTradingGuard:
     """创建 Binance 账户别名对应的进程内 LIVE 守卫。"""
@@ -469,23 +477,23 @@ async def _binance_live_futures_order_test(
             "response_fields": sorted(result),
             "symbol": symbol.upper(),
         }
-    except _cli.BinanceAPIError:
+    except _cli.BinanceAPIError as exc:
         return {
             "base_url": service.client.base_url,
             "environment": service.client.stage.value,
             "order_test": "rejected",
             "creates_order": False,
-            "error_code": _cli.exc.code,
-            "reason": str(_cli.exc),
+            "error_code": exc.code,
+            "reason": str(exc),
             "symbol": symbol.upper(),
         }
-    except ValueError:
+    except ValueError as exc:
         return {
             "base_url": service.client.base_url,
             "environment": service.client.stage.value,
             "order_test": "rejected",
             "creates_order": False,
-            "reason": str(_cli.exc),
+            "reason": str(exc),
             "symbol": symbol.upper(),
         }
     finally:
@@ -535,7 +543,7 @@ async def _binance_live_futures_order(
             "symbol": symbol.upper(),
             "result": result,
         }
-    except _cli.BinanceAPIError:
+    except _cli.BinanceAPIError as exc:
         return {
             "action": action,
             "base_url": service.client.base_url,
@@ -543,10 +551,10 @@ async def _binance_live_futures_order(
             "product": service.client.product.value,
             "symbol": symbol.upper(),
             "status": "BROKER_REJECTED",
-            "error_code": _cli.exc.code,
-            "reason": str(_cli.exc),
+            "error_code": exc.code,
+            "reason": str(exc),
         }
-    except ValueError:
+    except ValueError as exc:
         return {
             "action": action,
             "base_url": service.client.base_url,
@@ -554,7 +562,7 @@ async def _binance_live_futures_order(
             "product": service.client.product.value,
             "symbol": symbol.upper(),
             "status": "LOCAL_REJECTED",
-            "reason": str(_cli.exc),
+            "reason": str(exc),
         }
     finally:
         await service.disconnect()
