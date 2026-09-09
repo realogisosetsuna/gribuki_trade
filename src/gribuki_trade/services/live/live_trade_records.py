@@ -55,6 +55,7 @@ __all__ = [
     "LiveTradeRecordService",
     "parse_live_inbound_command",
     "parse_onebot_private_message",
+    "project_live_account",
 ]
 
 
