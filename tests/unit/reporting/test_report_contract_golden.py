@@ -13,7 +13,7 @@ from gribuki_trade.reporting.contracts import (
     render_stable_text_report,
 )
 
-FIXTURES = Path(__file__).parents[1] / "fixtures" / "report_contracts"
+FIXTURES = Path(__file__).parents[2] / "fixtures" / "report_contracts"
 
 
 @pytest.mark.parametrize(

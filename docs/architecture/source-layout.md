@@ -48,7 +48,11 @@ tests/
     ├── binance/          Spot、USDⓈ-M Futures、流和执行
     ├── trading/          OMS、订单和仓位策略
     ├── storage/          SQLite store、事件、outbox、租约和恢复
-    └── adapters/         按 market_data、ashare、macro、simulated 分组的适配器契约
+    ├── adapters/         按 market_data、ashare、macro、simulated 分组的适配器契约
+    ├── cli/              CLI 参数、handler 和结果投影
+    ├── gui/              Qt、integration gateway 和 NapCat 生命周期
+    ├── runtime/          guard、临时目录和 PAPER 连续性
+    └── reporting/        sidecar、artifact 和报告契约
 ```
 
 其他测试领域按同一规则迁移到 `tests/unit/<领域>/`。测试文件保持

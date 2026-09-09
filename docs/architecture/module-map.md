@@ -167,6 +167,9 @@ nearest local `AGENTS.md` before changing one of those subtrees.
 租约和恢复契约；`tests/unit/adapters/market_data/` 覆盖行情 provider/payload，
 并以 `adapters/ashare/`、`adapters/macro/`、`adapters/simulated/` 放置对应领域
 的适配器契约。测试文件保持 `test_<module>.py` 命名，pytest 继续递归收集。
+CLI、GUI、运行时和报告契约分别位于 `tests/unit/cli/`、`tests/unit/gui/`、
+`tests/unit/runtime/` 与 `tests/unit/reporting/`；这些目录只承载对应边界的
+测试，不改变 `src/gribuki_trade/` 的兼容 facade。
 
 ## Directory layout for provider and service code
 

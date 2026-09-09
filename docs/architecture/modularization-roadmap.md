@@ -272,3 +272,11 @@ experiments. Provider contracts are under
 `tests/unit/adapters/market_data/`, with adjacent A-share, macro, and simulated
 adapter tests under their own single-level directories. The moves preserve
 pytest node behavior and keep `tests/fixtures/` as the single fixture root.
+
+
+The next test hierarchy increment mirrors the remaining presentation and
+runtime boundaries: CLI contracts are under `tests/unit/cli/`, GUI and NapCat
+contracts under `tests/unit/gui/`, PAPER/SHADOW/LIVE and continuity contracts
+under `tests/unit/runtime/`, and report/artifact contracts under
+`tests/unit/reporting/`. Each directory keeps one level of domain grouping and
+does not alter source imports or compatibility facades.

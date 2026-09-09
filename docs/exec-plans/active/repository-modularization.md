@@ -829,3 +829,11 @@ contracts under `adapters/ashare/`, `adapters/macro/`, and `adapters/simulated/`
 The CBOE fixture path now resolves from the repository-level `tests/fixtures/`
 root after the directory move. No source behavior, fixture payload, import path,
 or pytest collection rule changed.
+
+
+The following presentation/runtime batch moves CLI contracts to
+`tests/unit/cli/`, GUI/NapCat contracts to `tests/unit/gui/`, guard and
+continuity contracts to `tests/unit/runtime/`, and report/artifact contracts to
+`tests/unit/reporting/`. The report golden fixture now resolves from the shared
+`tests/fixtures/` root after moving one directory deeper; all other tests retain
+their fixture and import behavior.

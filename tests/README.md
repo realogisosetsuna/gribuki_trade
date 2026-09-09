@@ -16,6 +16,10 @@
 | `adapters/ashare/` | A 股供应商接口及 instrument profile 适配契约 |
 | `adapters/macro/` | CBOE VIX 和官方利率数据适配契约 |
 | `adapters/simulated/` | 手工 ticket、PAPER broker 和 PAPER account 适配契约 |
+| `cli/` | CLI 参数、命令 handler 和结果投影 |
+| `gui/` | Qt smoke、integration gateway 和 NapCat 生命周期 |
+| `runtime/` | 运行模式 guard、临时目录、唤醒和 PAPER 连续性 |
+| `reporting/` | sidecar、PAPER-day 报告、artifact 和报告契约 |
 
 其余测试组会按同一规则逐步迁移到 `tests/unit/<领域>/`。迁移只改变文件路径，
 不会改变模块导入或 pytest 节点中的测试函数名。
@@ -32,6 +36,8 @@ python -m pytest --temp-dir runtime/tmp tests/unit/ashare -q
 python -m pytest --temp-dir runtime/tmp tests/unit/trading -q
 python -m pytest --temp-dir runtime/tmp tests/unit/storage -q
 python -m pytest --temp-dir runtime/tmp tests/unit/adapters/market_data -q
+python -m pytest --temp-dir runtime/tmp tests/unit/cli tests/unit/gui -q
+python -m pytest --temp-dir runtime/tmp tests/unit/runtime tests/unit/reporting -q
 
 # 按模块名筛选
 python -m pytest --temp-dir runtime/tmp tests/unit/binance/test_binance_futures_parsing.py -q
