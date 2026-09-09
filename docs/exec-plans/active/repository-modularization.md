@@ -347,8 +347,8 @@ model and watchlist, candidate, order, and fill codecs, while the runner retains
 calendar, recovery, persistence, transaction, scheduling, and notification side
 effects through explicit compatibility aliases. The new CLI-handler and PAPER-day
 document routes passed together with the existing serialization and runner tests;
-the complete repository gate passed readiness, Ruff, mypy (348 source files),
-compileall, and 1819 tests with five environment-skipped tests, 41 subtests, and
+the complete repository gate passed readiness, Ruff, mypy (351 source files),
+compileall, and 1823 tests with five environment-skipped tests, 41 subtests, and
 the recurring Windows pytest-cache permission warning.
 
 The Spot gateway response boundary was tightened further: `spot_parsing.py` now
@@ -357,3 +357,22 @@ existing scalar, market-data, trade, and commission parsers. `gateway.py` keeps
 HTTP signing, credentials, runtime authority, tracked-order state, and the
 compatibility static methods. The focused Spot gateway route passed 31 tests after
 this change.
+
+The CLI parser registration boundary is now tightened further. The new
+`cli_commands/parsers/ashare_common.py` owns the shared A-share global-news feed
+choices and optional OneBot notification-target arguments. The market-data,
+close-research, and post-close parser modules retain their command-specific
+defaults and options while reusing this pure registration contract. The CLI
+facade, dispatch paths, provider calls, and runtime validation are unchanged.
+The focused parser route passed 25 tests; the recurring Windows pytest-cache
+permission warning remains environment-only.
+
+The remaining pure integrity boundary of `storage/live_records.py` is now
+isolated in `storage/live_record_integrity.py`. It owns strict JSON object and
+field validation used by legacy projection recovery, plus append-only event
+payload and hash-chain verification. `storage/live_record_errors.py` owns the
+shared store error hierarchy so the pure module can fail closed without
+importing the SQLite facade. `live_records.py` retains transaction, lease,
+projection, migration orchestration, and historical private helper aliases.
+Focused validation passed 11 live-record integrity/model/work-policy tests;
+Ruff and mypy passed for the changed source files.

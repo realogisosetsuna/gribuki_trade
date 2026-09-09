@@ -11,6 +11,8 @@ from gribuki_trade.cli_commands.parser_support import (
     _positive_integer,
 )
 
+from .ashare_common import GLOBAL_NEWS_FEEDS, add_optional_notify_target_arguments
+
 
 def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """注册 close_research 命令族。"""
@@ -39,8 +41,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
         "--model",
         help="provider model ID; defaults to deepseek-v4-flash or gpt-5.6",
     )
-    research.add_argument("--notify-target-kind", choices=("private", "group"))
-    research.add_argument("--notify-target-id")
+    add_optional_notify_target_arguments(research)
     close_research = commands.add_parser(
         "ashare-close-research-once",
         help="deeply analyze completed A-share daily data and news for the next session",
@@ -83,12 +84,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     close_research.add_argument(
         "--news-feed",
         action="append",
-        choices=(
-            "global_eastmoney",
-            "global_cailianpress",
-            "global_sina",
-            "global_10jqka",
-        ),
+        choices=GLOBAL_NEWS_FEEDS,
         dest="news_feeds",
         help="repeat to override the default four global AKShare feeds",
     )
@@ -136,8 +132,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
         action="store_true",
         help="evaluate reduce triggers for an already-held position",
     )
-    close_research.add_argument("--notify-target-kind", choices=("private", "group"))
-    close_research.add_argument("--notify-target-id")
+    add_optional_notify_target_arguments(close_research)
     close_batch = commands.add_parser(
         "ashare-close-research-batch",
         help=(
@@ -167,12 +162,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     close_batch.add_argument(
         "--news-feed",
         action="append",
-        choices=(
-            "global_eastmoney",
-            "global_cailianpress",
-            "global_sina",
-            "global_10jqka",
-        ),
+        choices=GLOBAL_NEWS_FEEDS,
         dest="news_feeds",
     )
     close_batch.add_argument("--refresh-news", action=argparse.BooleanOptionalAction, default=True)
@@ -194,8 +184,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
         dest="held_symbols",
         help="repeat for symbols that should evaluate position-reduction rules",
     )
-    close_batch.add_argument("--notify-target-kind", choices=("private", "group"))
-    close_batch.add_argument("--notify-target-id")
+    add_optional_notify_target_arguments(close_batch)
     close_batch.add_argument(
         "--output",
         help="optional JSON destination written atomically; stdout is always retained",
@@ -251,8 +240,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
         "--model",
         help="provider model ID; defaults to deepseek-v4-flash or gpt-5.6",
     )
-    research_watch.add_argument("--notify-target-kind", choices=("private", "group"))
-    research_watch.add_argument("--notify-target-id")
+    add_optional_notify_target_arguments(research_watch)
     research_watch.add_argument(
         "--candidate-db",
         help="merge ACTIVE symbols from the unified candidate event store",

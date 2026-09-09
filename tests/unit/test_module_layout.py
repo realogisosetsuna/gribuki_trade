@@ -126,6 +126,8 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "gribuki_trade.storage.live_record_protection_policy",
             "storage/live_record_protection_policy.py",
         ),
+        ("gribuki_trade.storage.live_record_errors", "storage/live_record_errors.py"),
+        ("gribuki_trade.storage.live_record_integrity", "storage/live_record_integrity.py"),
         (
             "gribuki_trade.services.binance.binance_execution_records",
             "services/binance/binance_execution_records.py",

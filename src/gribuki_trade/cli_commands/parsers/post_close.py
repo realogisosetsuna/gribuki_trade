@@ -10,6 +10,8 @@ from gribuki_trade.cli_commands.parser_support import (
     _positive_integer,
 )
 
+from .ashare_common import GLOBAL_NEWS_FEEDS
+
 
 def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """注册 post_close 命令族。"""
@@ -49,12 +51,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     post_close.add_argument(
         "--news-feed",
         action="append",
-        choices=(
-            "global_eastmoney",
-            "global_cailianpress",
-            "global_sina",
-            "global_10jqka",
-        ),
+        choices=GLOBAL_NEWS_FEEDS,
         dest="news_feeds",
     )
     post_close.add_argument(

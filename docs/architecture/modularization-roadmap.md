@@ -80,8 +80,10 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `adapters/binance/gateway.py` | `adapters/binance/request_builder.py` | Deterministic REST query/form encoding and signed request assembly |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_schedule.py` | Session timezone, phase boundaries, and scheduler sleep calculations |
 | `cli.py` | `cli_commands/live_sync_payloads.py` | Pure live-sync status, ingest, protection, cycle, and receipt result documents |
+| `cli_commands/parsers/*.py` | `cli_commands/parsers/ashare_common.py` | Shared A-share news-feed choices and optional notification-target argument registration |
 | `storage/live_records.py` | `storage/live_record_work_policy.py` | Work-claim SQL construction and lease/failure parameter normalization |
 | `storage/live_records.py` | `storage/live_record_protection_policy.py` | T+1 sellable-quantity and FIFO protection-lot allocation projections |
+| `storage/live_records.py` | `storage/live_record_integrity.py`, `storage/live_record_errors.py` | Legacy JSON recovery validation, append-only event hash-chain verification, and shared durable-store error types |
 
 ## Next slices
 

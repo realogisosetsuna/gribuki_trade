@@ -9,6 +9,8 @@ from gribuki_trade.cli_commands.parser_support import (
     _positive_integer,
 )
 
+from .ashare_common import ALL_NEWS_FEEDS, GLOBAL_NEWS_FEEDS
+
 
 def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """注册 market_data 命令族。"""
@@ -37,13 +39,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     )
     news.add_argument(
         "--feed",
-        choices=(
-            "individual_eastmoney",
-            "global_eastmoney",
-            "global_cailianpress",
-            "global_sina",
-            "global_10jqka",
-        ),
+        choices=ALL_NEWS_FEEDS,
         default="global_sina",
     )
     news.add_argument("--symbol")
@@ -56,12 +52,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     news_watch.add_argument(
         "--feed",
         action="append",
-        choices=(
-            "global_eastmoney",
-            "global_cailianpress",
-            "global_sina",
-            "global_10jqka",
-        ),
+        choices=GLOBAL_NEWS_FEEDS,
         dest="feeds",
     )
     news_watch.add_argument("--symbol", action="append", dest="symbols")

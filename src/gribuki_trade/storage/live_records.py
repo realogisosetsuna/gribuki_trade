@@ -8,10 +8,9 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import sqlite3
 import threading
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -43,6 +42,18 @@ from gribuki_trade.storage.live_record_codec import (
     _protection_work_id,
     _time,
 )
+from gribuki_trade.storage.live_record_errors import (
+    LiveRecordConflictError,
+    LiveRecordIntegrityError,
+    LiveRecordStateError,
+    LiveRecordStoreError,
+)
+from gribuki_trade.storage.live_record_integrity import (
+    _json_object,
+    _mapping,
+    _text,
+    _verify,
+)
 from gribuki_trade.storage.live_record_models import (
     LiveConfirmationCommit,
     StoredLiveCommand,
@@ -65,26 +76,6 @@ from gribuki_trade.storage.live_record_work_policy import (
     normalize_work_failure,
     project_work_failure,
 )
-
-
-class LiveRecordStoreError(RuntimeError):
-    """实盘账本持久化失败的基类。"""
-
-
-class LiveRecordConflictError(LiveRecordStoreError):
-    """幂等键、命令号或外部成交事实发生冲突。"""
-
-
-class LiveRecordIntegrityError(LiveRecordStoreError):
-    """只追加哈希链或事务投影不再自洽。"""
-
-
-class LiveRecordStateError(LiveRecordStoreError):
-    """命令状态、发送者、指纹或持仓不允许本次状态迁移。"""
-
-    def __init__(self, code: str) -> None:
-        self.code = _error_code(code)
-        super().__init__(f"live-record state transition rejected ({self.code})")
 
 
 class SQLiteLiveRecordStore:
@@ -1475,48 +1466,6 @@ class SQLiteLiveRecordStore:
     def _ensure_open(self) -> None:
         if self._closed:
             raise RuntimeError("live-record store is closed")
-
-
-
-def _json_object(payload: str) -> dict[str, object]:
-    value = json.loads(payload)
-    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
-        raise LiveRecordIntegrityError("stored live-record payload is invalid")
-    return cast(dict[str, object], value)
-
-
-def _mapping(document: Mapping[str, object], name: str) -> dict[str, object]:
-    value = document.get(name)
-    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
-        raise LiveRecordIntegrityError("stored live-record mapping is invalid")
-    return cast(dict[str, object], value)
-
-
-def _text(document: Mapping[str, object], name: str) -> str:
-    value = document.get(name)
-    if not isinstance(value, str) or not value:
-        raise LiveRecordIntegrityError("stored live-record text is invalid")
-    return value
-
-
-def _verify(events: Sequence[LiveRecordEvent]) -> None:
-    previous_hash: str | None = None
-    for event in events:
-        digest = hashlib.sha256(event.payload_json.encode("utf-8")).hexdigest()
-        if digest != event.payload_sha256 or event.previous_hash != previous_hash:
-            raise LiveRecordIntegrityError("live-record hash chain is invalid")
-        candidate = NewLiveRecordEvent(
-            event_id=event.event_id,
-            account_id=event.account_id,
-            event_type=event.event_type,
-            occurred_at=event.occurred_at,
-            idempotency_key=event.idempotency_key,
-            payload_json=event.payload_json,
-        )
-        if _event_hash(candidate, digest, previous_hash) != event.event_hash:
-            raise LiveRecordIntegrityError("live-record event hash is invalid")
-        previous_hash = event.event_hash
-
 
 __all__ = [
     "LiveConfirmationCommit",
