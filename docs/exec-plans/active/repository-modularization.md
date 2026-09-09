@@ -644,3 +644,12 @@ redundancy-filter value objects into `strategy_lab/discovery_models.py`. The
 discovery facade retains candidate enumeration and redundancy correlation
 calculations while preserving historical imports. Focused tests, Ruff, mypy, and
 compile checks pass.
+
+### 2026-09-09 — Binance shadow-session models
+
+Extracted the shadow runtime's immutable configuration, safety watermark, market
+quote, adapter snapshot, and session statistics into
+`services/binance/binance_shadow_models.py`. The facade retains stream integrity
+checks, strategy decision adaptation, paper execution, and restart recovery;
+historical imports continue to resolve to the same classes. Focused shadow,
+module-layout, Ruff, mypy, and compile checks pass.
