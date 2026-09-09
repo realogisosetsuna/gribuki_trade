@@ -106,6 +106,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "gribuki_trade.services.ashare.ashare_paper_day_schedule",
             "services/ashare/ashare_paper_day_schedule.py",
         ),
+        (
+            "gribuki_trade.services.ashare.ashare_paper_day_events",
+            "services/ashare/ashare_paper_day_events.py",
+        ),
         ("gribuki_trade.trading.futures_oms_schema", "trading/futures_oms_schema.py"),
         ("gribuki_trade.trading.futures_oms_policy", "trading/futures_oms_policy.py"),
         ("gribuki_trade.trading.oms_position_policy", "trading/oms_position_policy.py"),

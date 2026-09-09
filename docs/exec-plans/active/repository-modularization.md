@@ -473,3 +473,14 @@ The complete gate after the intraday LLM model split passed readiness, Ruff,
 mypy (361 source files), compileall, and 1839 tests with five
 environment-skipped tests, 41 subtests, and the recurring Windows pytest-cache
 permission warning.
+
+The PAPER-day event publisher now lives in
+`services/ashare/ashare_paper_day_events.py` with its narrow event-store protocol.
+It owns journal publication, sidecar heartbeat/rebuild, delivery projection, and
+notification outbox reconciliation. The runner retains the historical class
+exports and sidecar append injection hook, preserving the nonfatal collision and
+journal-repair regression path. Focused publisher/runner/store tests passed.
+The complete gate then passed readiness, Ruff, mypy (362 source files),
+compileall, and 1839 tests with five environment-skipped tests and 41 subtests;
+the run used a fresh temporary root because the long-lived Windows pytest-cache
+directory continued to emit its known permission warning.
