@@ -23,6 +23,10 @@
 | `strategy_lab/` | 研究实验、factor DSL、walk-forward 和退出策略评估 |
 | `ingest/` | 新闻、搜索、官方文档采集、解析和去重 |
 | `services/` | candidate、recommendation、research、macro、LLM、live 和通知编排 |
+| `analysis/` | close、cross-market、crypto、exit、technical 和 cost 纯计算 |
+| `adapters/schwab/` | Schwab OAuth、client、transport 和 runtime 契约 |
+| `adapters/notifiers/` | OneBot/NapCat 通知 adapter 契约 |
+| `meta/` | 仓库布局、agent-readiness 和源码语言约束 |
 
 其余测试组会按同一规则逐步迁移到 `tests/unit/<领域>/`。迁移只改变文件路径，
 不会改变模块导入或 pytest 节点中的测试函数名。

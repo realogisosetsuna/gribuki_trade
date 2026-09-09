@@ -842,3 +842,11 @@ their fixture and import behavior.
 The strategy-lab unit contracts now live under `tests/unit/strategy_lab/`;
 research-only, walk-forward, exit-policy, factor, and experiment serialization
 tests keep their existing fixtures and import paths.
+
+
+The final flat unit-test families are grouped under `tests/unit/analysis/` for
+pure close/cross-market/crypto/exit/technical/cost contracts,
+`tests/unit/adapters/ashare/` and `adapters/schwab/` for provider boundaries,
+`tests/unit/adapters/notifiers/` for OneBot payloads, `tests/unit/runtime/` for
+configuration/secrets/watchlists, `tests/unit/reporting/` for PAPER-day sidecars,
+and `tests/unit/meta/` for layout/readiness/source-comment checks.

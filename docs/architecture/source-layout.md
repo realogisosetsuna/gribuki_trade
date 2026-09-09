@@ -56,7 +56,11 @@ tests/
     ├── reporting/        sidecar、artifact 和报告契约
     ├── strategy_lab/     研究实验、factor DSL、walk-forward 和退出评估
     ├── ingest/           新闻、搜索、官方文档采集、解析和去重
-    └── services/         按 candidate、research、macro、live 等流程分组
+    ├── services/         按 candidate、research、macro、live 等流程分组
+    ├── analysis/         close、cross-market、crypto、exit、technical 和 cost 纯计算
+    ├── adapters/schwab/  Schwab OAuth、client、transport 和 runtime 契约
+    ├── adapters/notifiers/ OneBot/NapCat 通知 adapter 契约
+    └── meta/             仓库布局、agent-readiness 和源码语言约束
 ```
 
 其他测试领域按同一规则迁移到 `tests/unit/<领域>/`。测试文件保持
