@@ -251,3 +251,10 @@ decoding, canonical JSON, hash-chain verification, and scalar normalization in
 `storage/paper_orders_codec.py`. The SQLite facade retains schema initialization,
 WAL transactions, leases, idempotent appends, and restart recovery while its
 historical model and exception identities remain stable.
+
+The live-service grouping slice now places market tracking, protection inputs,
+live orchestration, record storage, and private-event parsing under
+`services/live/`. The former `services/live_*.py` paths are compatibility
+facades that resolve to the same implementation modules. The grouping changes
+package navigation only; ledger writes, leases, outbox delivery, and recovery
+boundaries remain in the live service implementations.

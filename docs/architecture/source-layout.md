@@ -27,6 +27,7 @@ gribuki_trade/
 ├── services/     应用流程、恢复、审批和失败策略
 │   ├── binance/  Binance 执行、SHADOW 和无人值守流程
 │   └── ashare/   A 股研究、PAPER 和盘后流程
+│   └── live/     实盘观察、保护输入、订单记录和恢复编排
 ├── trading/      Broker-neutral OMS、仓位和订单状态转换
 ├── storage/      SQLite store、事件日志、lease 和 outbox
 ├── runtime/      PAPER/SHADOW/LIVE guard、连续性和临时目录
@@ -86,3 +87,6 @@ python -m pytest --temp-dir runtime/layout -q tests/unit/test_module_layout.py
 
 完整的 facade 到实现映射见 [`module-map.md`](module-map.md)，重构顺序和已完成
 切片见 [`modularization-roadmap.md`](modularization-roadmap.md)。
+
+实盘服务实现统一位于 `services/live/`；`services/live_*.py` 仅保留兼容旧
+导入路径的 facade。新的实盘观察、保护和记录代码应直接放入 `services/live/`。

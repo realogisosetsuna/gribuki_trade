@@ -803,3 +803,13 @@ and pure helper identities remain available. Added independent projection tests,
 module-layout identity coverage, and architecture mappings. Focused PAPER-day,
 artifact-delivery, renderer, and module-layout tests pass; no transaction or
 broker boundary moved.
+
+### 2026-09-10 — Live-service and unit-test hierarchy
+
+Moved live market tracking, protection inputs, orchestration, record handling,
+and private-event parsing implementations into `services/live/`; the old flat
+`services/live_*.py` paths remain compatibility facades. Grouped the first 75
+high-cohesion unit tests under `tests/unit/ashare/`, `tests/unit/binance/`, and
+`tests/unit/trading/`, and synchronized architecture, AGENTS, and Binance
+capability references. Recursive pytest collection remains unchanged; facade
+identity and layout tests cover the new source grouping.

@@ -100,11 +100,11 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         ("gribuki_trade.services.binance_execution", "services/binance/binance_execution.py"),
         (
             "gribuki_trade.services.live_trade_orchestration_models",
-            "services/live_trade_orchestration_models.py",
+            "services/live/live_trade_orchestration_models.py",
         ),
         (
             "gribuki_trade.services.live_trade_records_parsing",
-            "services/live_trade_records_parsing.py",
+            "services/live/live_trade_records_parsing.py",
         ),
         (
             "gribuki_trade.services.macro_evidence_selection",
@@ -631,3 +631,20 @@ def test_model_extractions_keep_facade_type_identity() -> None:
         model = importlib.import_module(model_name)
         for name in names:
             assert getattr(facade, name) is getattr(model, name)
+
+
+def test_live_services_keep_legacy_facades() -> None:
+    """实盘服务按业务目录归档后，历史模块仍指向同一实现对象。"""
+
+    names = (
+        "live_market_tracking",
+        "live_protection_inputs",
+        "live_trade_orchestration",
+        "live_trade_orchestration_models",
+        "live_trade_records",
+        "live_trade_records_parsing",
+    )
+    for name in names:
+        facade = importlib.import_module(f"gribuki_trade.services.{name}")
+        implementation = importlib.import_module(f"gribuki_trade.services.live.{name}")
+        assert facade is implementation
