@@ -691,3 +691,12 @@ health/configuration operations into `gui/integration_gateway.py`. The Qt facade
 retains widgets, background jobs, settings, and process controls; historical
 imports and the HTTP monkeypatch seam remain compatible. Focused GUI tests, Ruff,
 and mypy pass.
+
+### 2026-09-10 — search provider boundary
+
+Extracted Tavily/SearXNG HTTP and JSON provider implementations, endpoint
+validation, response decoding, and typed provider errors into
+`ingest/search_providers.py`. `search_discovery.py` now owns multi-provider
+concurrency, failure backoff, clustering, publisher confirmation, and event
+construction while preserving historical provider exports. Focused discovery,
+module-layout, Ruff, and mypy checks pass.

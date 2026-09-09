@@ -46,6 +46,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "gui/integration_gateway.py",
         ),
         (
+            "gribuki_trade.ingest.search_providers",
+            "ingest/search_providers.py",
+        ),
+        (
             "gribuki_trade.features.cross_market_models",
             "features/cross_market_models.py",
         ),
@@ -464,6 +468,16 @@ def test_model_extractions_keep_facade_type_identity() -> None:
             "gribuki_trade.gui.integrations",
             "gribuki_trade.gui.integration_gateway",
             ("NapCatHealth", "DeepSeekHealth", "IntegrationGateway", "DefaultIntegrationGateway"),
+        ),
+        (
+            "gribuki_trade.ingest.search_discovery",
+            "gribuki_trade.ingest.search_providers",
+            (
+                "TavilySearchProvider",
+                "SearXNGSearchProvider",
+                "SearchProviderError",
+                "SearchProviderRateLimited",
+            ),
         ),
     )
     for facade_name, model_name, names in boundaries:
