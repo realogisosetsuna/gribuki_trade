@@ -9,6 +9,22 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
     """兼容入口必须实际指向按职责归档的实现目录。"""
 
     modules = (
+        (
+            "gribuki_trade.strategy_lab.ashare_evaluator_models",
+            "strategy_lab/ashare_evaluator_models.py",
+        ),
+        (
+            "gribuki_trade.strategy_lab.experiment_models",
+            "strategy_lab/experiment_models.py",
+        ),
+        (
+            "gribuki_trade.features.cross_market_models",
+            "features/cross_market_models.py",
+        ),
+        (
+            "gribuki_trade.services.exit_plan_lifecycle_models",
+            "services/exit_plan_lifecycle_models.py",
+        ),
         ("gribuki_trade.adapters.akshare", "adapters/market_data/akshare.py"),
         ("gribuki_trade.adapters.ashare_screening", "adapters/ashare/screening.py"),
         ("gribuki_trade.adapters.paper", "adapters/simulated/paper.py"),
@@ -362,3 +378,35 @@ def test_cli_handlers_are_separate_from_argument_registration() -> None:
     for family in ("ashare", "binance"):
         module = importlib.import_module(f"gribuki_trade.cli_commands.handlers.{family}")
         assert module.__file__ is not None
+
+
+def test_model_extractions_keep_facade_type_identity() -> None:
+    """跨领域模型拆分后，旧 facade 与新模块必须导出相同类型对象。"""
+
+    boundaries = (
+        (
+            "gribuki_trade.strategy_lab.ashare_evaluator",
+            "gribuki_trade.strategy_lab.ashare_evaluator_models",
+            ("PITStrategyScore", "CompletedAShareDailyBar", "AShareDailyEvaluatorConfig"),
+        ),
+        (
+            "gribuki_trade.strategy_lab.experiments",
+            "gribuki_trade.strategy_lab.experiment_models",
+            ("DataManifest", "StrategyWeights", "PerformanceMetrics", "StrategyExperiment"),
+        ),
+        (
+            "gribuki_trade.features.cross_market_relations",
+            "gribuki_trade.features.cross_market_models",
+            ("TargetCloseObservation", "CrossMarketFactorSeries", "CrossMarketRelationsReport"),
+        ),
+        (
+            "gribuki_trade.services.exit_plan_lifecycle",
+            "gribuki_trade.services.exit_plan_lifecycle_models",
+            ("ExitPlanEventStore", "ExitBarrierObservation", "ExitPlanLifecycleError"),
+        ),
+    )
+    for facade_name, model_name, names in boundaries:
+        facade = importlib.import_module(facade_name)
+        model = importlib.import_module(model_name)
+        for name in names:
+            assert getattr(facade, name) is getattr(model, name)

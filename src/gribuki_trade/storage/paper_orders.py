@@ -538,3 +538,15 @@ class SQLitePaperOrderStore:
     def _ensure_open(self) -> None:
         if self._closed:
             raise RuntimeError("paper order store is closed")
+
+
+__all__ = [
+    "PaperOrderEvent",
+    "PaperOrderEventType",
+    "PaperOrderStoreConflictError",
+    "PaperOrderStoreError",
+    "PaperOrderStoreIntegrityError",
+    "PaperOrderStoreLeaseError",
+    "PaperRunRecord",
+    "SQLitePaperOrderStore",
+]

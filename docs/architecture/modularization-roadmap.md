@@ -38,6 +38,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `trading/oms.py` | `trading/oms_command_policy.py` | Command scope normalization, lease validation, and UNKNOWN recovery projection |
 | `storage/paper_day.py` | `storage/paper_day_codec.py` | PAPER-day row decoding, event digests, identifiers, and lease argument validation |
 | `storage/live_records.py` | `storage/live_record_codec.py` | Live-record scalar validation, canonical JSON, event/protection/work identifiers, and event hashes |
+| `storage/paper_orders.py` | `storage/paper_orders_codec.py` | Immutable event/run models, row decoding, canonical JSON, hash-chain verification, and scalar normalization |
 | `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_serialization.py`, `strategy_lab/exit_simulation.py`, `strategy_lab/exit_walk_forward.py` | Exit documents, pure daily replay/cost metrics, and trading-day walk-forward fold/index planning |
 | `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_models.py` | Frozen bars/episodes/datasets, costs, outcomes, metrics, and research-only trial registry models |
 | `strategy_lab/ashare_evaluator.py` | `strategy_lab/ashare_evaluator_models.py` | A-share execution/action enums, point-in-time scores, completed bars, observations, evaluator configuration, and result records |

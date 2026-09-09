@@ -449,3 +449,29 @@ def _normalized_pairs(
         if not isinstance(value, str) or not value or len(value) > 2_000:
             raise ValueError(f"{name} values must be bounded non-empty strings")
     return normalized
+
+
+__all__ = [
+    "CostScenario",
+    "DataManifest",
+    "ExperimentObjective",
+    "FoldEvaluation",
+    "HoldoutEvaluation",
+    "PerformanceMetrics",
+    "ScenarioEvaluation",
+    "StrategyEvaluator",
+    "StrategyExperiment",
+    "StrategyManifest",
+    "StrategyWeights",
+    "TrialResult",
+    "WalkForwardConfig",
+    "WalkForwardFold",
+    "WalkForwardPlan",
+    "WeightConstraints",
+    "WeightGridConfig",
+    "build_walk_forward_plan",
+    "generate_simplex_weight_grid",
+    "validate_weights",
+    "run_walk_forward_experiment",
+    "experiment_to_json",
+]
