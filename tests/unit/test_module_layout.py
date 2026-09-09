@@ -35,6 +35,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "services/live_trade_orchestration_models.py",
         ),
         (
+            "gribuki_trade.services.live_trade_records_parsing",
+            "services/live_trade_records_parsing.py",
+        ),
+        (
             "gribuki_trade.services.macro_evidence_selection",
             "services/macro_evidence_selection.py",
         ),

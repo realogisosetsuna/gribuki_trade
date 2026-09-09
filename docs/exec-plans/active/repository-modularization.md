@@ -619,3 +619,11 @@ application results, and barrier observations into
 `services/exit_plan_lifecycle_models.py`. The lifecycle facade retains event
 replay, idempotent append, and exit-plan orchestration. Focused tests, Ruff,
 mypy, and compile checks pass.
+
+
+### 2026-09-09 — live record inbound parsing
+
+Extracted OneBot private-event parsing and versioned propose/confirm/cancel command
+decoding into `services/live_trade_records_parsing.py`. The record service retains
+allowlists, ledger writes, confirmation, and protection-task orchestration while
+preserving historical parser imports. Focused tests, Ruff, mypy, and compile checks pass.

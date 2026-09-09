@@ -73,6 +73,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/binance/binance_execution.py` | `services/binance/binance_execution_records.py` | Pure snapshot/fill/balance/order-list record projections and timestamp normalization |
 | `services/binance/binance_execution.py` | `services/binance/binance_execution_models.py` | Execution gateway and private-stream protocols, testnet guard error, and startup reconciliation result |
 | `services/live_trade_orchestration.py` | `services/live_trade_orchestration_models.py` | Live protection input contracts, provider protocol, work-run summary, tracking observation, and stable input errors |
+| `services/live_trade_records.py` | `services/live_trade_records_parsing.py` | OneBot private-event parsing and versioned propose/confirm/cancel command decoding |
 | `services/exit_plan_lifecycle.py` | `services/exit_plan_lifecycle_models.py` | Lifecycle errors, append-only event-store protocol, QUICK/DEEP application results, and barrier observations |
 | `services/binance/binance_execution.py` | `services/binance/binance_execution_policy.py` | Environment, clock, order allow-list, and exchange-snapshot merge policy |
 | `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_serialization.py` | Safe audit documents, stable JSON normalization, and hashes |
