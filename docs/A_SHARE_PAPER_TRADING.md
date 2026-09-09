@@ -6,15 +6,15 @@
 
 - `domain/paper_trading.py`：成交、费用、持仓、账户快照和账本事件值对象。
 - `ports/paper_ledger.py`：服务所依赖的最小持久化协议。
-- `storage/paper_ledger.py`：SQLite WAL、append-only、逐账户哈希链实现。
-- `services/ashare_paper.py`：开户、成交录入、交易日 rollover、状态重放。
+- `storage/paper/paper_ledger.py`：SQLite WAL、append-only、逐账户哈希链实现。
+- `services/ashare/paper_day/ashare_paper.py`：开户、成交录入、交易日 rollover、状态重放。
 - `domain/paper_orders.py`：六态限价委托、显式价格区间、撮合 bar 和结果值对象。
-- `services/ashare_paper_matching.py`：FIFO、成交量参与率和 next-bar 保守撮合。
-- `storage/paper_orders.py`：append-only 委托/run 事件、hash chain、run identity 和 writer lease。
-- `services/ashare_paper_recovery.py`：跨订单库与资金账本的可恢复 saga。
-- `services/ashare_intraday_paper.py`：盘中价格接受区间、板块数量、组合风险与下一完整分钟 IOC。
+- `services/ashare/paper_day/ashare_paper_matching.py`：FIFO、成交量参与率和 next-bar 保守撮合。
+- `storage/paper/paper_orders.py`：append-only 委托/run 事件、hash chain、run identity 和 writer lease。
+- `services/ashare/paper_day/ashare_paper_recovery.py`：跨订单库与资金账本的可恢复 saga。
+- `services/ashare/intraday/ashare_intraday_paper.py`：盘中价格接受区间、板块数量、组合风险与下一完整分钟 IOC。
 - `domain/paper_day.py`、`storage/paper/paper_day.py`：单日 manifest、append-only journal、事件哈希链和单 writer lease。
-- `services/ashare_paper_day.py`：盘前、盘中、收盘、outbox 与 sidecar 的单进程全天编排。
+- `services/ashare/paper_day/ashare_paper_day.py`：盘前、盘中、收盘、outbox 与 sidecar 的单进程全天编排。
 - `reporting/paper_day/paper_day_summary.py`：只从 sidecar 生成可审计增强摘要，不打开运行中的数据库。
 - `backtest/costs.py`：模拟盘与回测共用的费用计算器；现已包含可配置过户费。
 

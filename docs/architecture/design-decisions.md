@@ -32,7 +32,7 @@ offline and immutable. The evaluator output carries `research_only` and
 unsafe expressions and promotion bypasses.
 
 Evidence paths: `src/gribuki_trade/strategy_lab/`,
-`src/gribuki_trade/backtest/`, and `tests/unit/test_strategy_lab_factors.py`.
+`src/gribuki_trade/backtest/`, and `tests/unit/strategy_lab/test_strategy_lab_factors.py`.
 
 ## Keep research artifact codecs separate from evaluators
 

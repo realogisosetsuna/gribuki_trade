@@ -135,7 +135,7 @@ PIT 是全仓最重要的数据边界：
 - 数据陈旧、覆盖不足、字段缺失或 revision 不一致时降级或弃权，不把缺失补成“中性 0 分”。
 
 标准事件模型见 [events.py](../src/gribuki_trade/domain/events.py)，事件库存储见
-[event_store.py](../src/gribuki_trade/storage/event_store.py)。同一自然事件出现新内容时追加 revision，
+[event_store.py](../src/gribuki_trade/storage/research/event_store.py)。同一自然事件出现新内容时追加 revision，
 不覆盖旧版本；`latest_as_of()` 会返回决策时点真正可见的最新 revision，而不是今天的最终版本。
 
 ### 5.2 原始证据与来源血缘
@@ -183,9 +183,9 @@ PAPER durable order store 与资金账本是两个数据库，使用确定性 fi
 
 入口为 `ashare-market-screen-once`，实现见：
 
-- [全市场数据适配器](../src/gribuki_trade/adapters/ashare_screening.py)
+- [全市场数据适配器](../src/gribuki_trade/adapters/ashare/screening/screening.py)
 - [筛选特征](../src/gribuki_trade/features/ashare_screening.py)
-- [筛选服务](../src/gribuki_trade/services/ashare_screening.py)
+- [筛选服务](../src/gribuki_trade/services/ashare/research/ashare_screening.py)
 
 当前流程只在收盘后运行股票全市场筛选：
 
@@ -210,7 +210,7 @@ revision；不能用今天的网页快照重建过去的全市场排名。
 ### 6.2 盘中异常发现与“有信号但没有订单”
 
 入口为 `ashare-intraday-scan-once`，核心见
-[ashare_surveillance.py](../src/gribuki_trade/services/ashare_surveillance.py)。当前交易时段为
+[ashare_surveillance.py](../src/gribuki_trade/services/ashare/research/ashare_surveillance.py)。当前交易时段为
 09:30–11:30、13:00–15:00，使用当前全市场网页快照，检查快照新鲜度、沪深京覆盖、有效横截面
 样本和可用因子权重。
 
@@ -234,7 +234,7 @@ PAPER-day 中“买入信号触发”与“创建订单”是两个阶段。出�
 ### 6.3 统一候选库与有限轮跟踪
 
 候选模型见 [candidates.py](../src/gribuki_trade/domain/candidates.py)，SQLite 存储见
-[candidate_store.py](../src/gribuki_trade/storage/candidate_store.py)。候选支持：
+[candidate_store.py](../src/gribuki_trade/storage/research/candidate_store.py)。候选支持：
 
 - `LOW/NORMAL/HIGH/URGENT` 优先级；
 - `ACTIVE/COOLING/EXPIRED/REMOVED` 状态；
@@ -265,9 +265,9 @@ PAPER-day 中“买入信号触发”与“创建订单”是两个阶段。出�
 
 ## 7. 双轨 LLM 生产机制
 
-生产装配见 [llm_production.py](../src/gribuki_trade/services/llm_production.py)，对抗协议见
-[adversarial_macro.py](../src/gribuki_trade/services/adversarial_macro.py)，审计存储见
-[adversarial_audit.py](../src/gribuki_trade/storage/adversarial_audit.py)。
+生产装配见 [llm_production.py](../src/gribuki_trade/services/llm/llm_production.py)，对抗协议见
+[adversarial_macro.py](../src/gribuki_trade/services/macro/adversarial_macro.py)，审计存储见
+[adversarial_audit.py](../src/gribuki_trade/storage/execution/adversarial_audit.py)。
 
 ### 7.1 同一冻结证据上的两条轨道
 
@@ -323,8 +323,8 @@ GUI 共享的非秘密配置。API key 由同一 OS 用户的 keyring 提供。
 ## 8. QUICK/DEEP 退出计划
 
 退出计划领域模型见 [exit_plans.py](../src/gribuki_trade/domain/exit_plans.py)，生命周期服务见
-[exit_plan_lifecycle.py](../src/gribuki_trade/services/exit_plan_lifecycle.py)，持久化见
-[exit_plans.py（存储）](../src/gribuki_trade/storage/exit_plans.py)。
+[exit_plan_lifecycle.py](../src/gribuki_trade/services/exit/exit_plan_lifecycle.py)，持久化见
+[exit_plans.py（存储）](../src/gribuki_trade/storage/execution/exit_plans.py)。
 
 ### 8.1 QUICK：成交前的临时保险
 
@@ -368,13 +368,13 @@ PAPER-day 当前对 `REDUCE` 和退出 barrier 只写 journal、生成通知，�
 
 ### 9.1 四层结构
 
-1. [PAPER 账户服务](../src/gribuki_trade/services/ashare_paper.py)：现金、持仓、均价、实现盈亏、费用、
+1. [PAPER 账户服务](../src/gribuki_trade/services/ashare/paper_day/ashare_paper.py)：现金、持仓、均价、实现盈亏、费用、
    T+1 批次和 fill 幂等；
-2. [日线保守撮合器](../src/gribuki_trade/services/ashare_paper_matching.py)：六态限价单、NEXT_BAR/GTD、
+2. [日线保守撮合器](../src/gribuki_trade/services/ashare/paper_day/ashare_paper_matching.py)：六态限价单、NEXT_BAR/GTD、
    部分成交、价格带、成交量参与和保守滑点；当前主要是 Python API；
-3. [durable 恢复层](../src/gribuki_trade/services/ashare_paper_recovery.py)：订单事件、writer lease、
+3. [durable 恢复层](../src/gribuki_trade/services/ashare/paper_day/ashare_paper_recovery.py)：订单事件、writer lease、
    跨库 fill saga；
-4. [PAPER-day 编排器](../src/gribuki_trade/services/ashare_paper_day.py)：单进程、按日隔离的盘前、盘中、
+4. [PAPER-day 编排器](../src/gribuki_trade/services/ashare/paper_day/ashare_paper_day.py)：单进程、按日隔离的盘前、盘中、
    撮合、保护、通知和报告流程。
 
 ### 9.2 PAPER-day 运行内容
@@ -455,11 +455,11 @@ CLI 在运行准备阶段从 BaoStock 读取会话日前后自然日窗口，验
 `live-sync` 的关键代码为：
 
 - [实盘观察领域模型](../src/gribuki_trade/domain/live_records.py)
-- [入站成交服务](../src/gribuki_trade/services/live_trade_records.py)
+- [入站成交服务](../src/gribuki_trade/services/live/live_trade_records.py)
 - [实盘观察存储](../src/gribuki_trade/storage/live_records/live_records.py)
-- [保护工作编排](../src/gribuki_trade/services/live_trade_orchestration.py)
-- [单轮行情跟踪](../src/gribuki_trade/services/live_market_tracking.py)
-- [真实保护输入装配](../src/gribuki_trade/services/live_protection_inputs.py)
+- [保护工作编排](../src/gribuki_trade/services/live/live_trade_orchestration.py)
+- [单轮行情跟踪](../src/gribuki_trade/services/live/live_market_tracking.py)
+- [真实保护输入装配](../src/gribuki_trade/services/live/live_protection_inputs.py)
 
 ### 10.1 两消息确认协议
 
@@ -556,7 +556,7 @@ Windows 任务、服务或常驻监听器。
 - 盘后日报和逐持仓复核：
   [post_close.py](../src/gribuki_trade/reporting/post_close.py)；
 - 单标的深研：
-  [ashare_close_analysis.py](../src/gribuki_trade/services/ashare_close_analysis.py)；
+  [ashare_close_analysis.py](../src/gribuki_trade/services/ashare/close/ashare_close_analysis.py)；
 - Markdown/PNG 产物安全写入：
   [artifacts.py](../src/gribuki_trade/reporting/artifacts.py)。
 
@@ -611,7 +611,7 @@ Windows 任务、服务或常驻监听器。
 
 ### 13.2 失败隔离、退避与跨进程探针
 
-[news_collection.py](../src/gribuki_trade/services/news_collection.py) 对每个来源独立并发采集：
+[news_collection.py](../src/gribuki_trade/services/communications/news_collection.py) 对每个来源独立并发采集：
 
 - `asyncio.gather(..., return_exceptions=True)` 防止单源异常取消整批；
 - HTTP 层处理有限重试、`Retry-After` 和条件请求；
@@ -705,7 +705,7 @@ walk-forward 先按入场交易日分组，再映射到 episode，防止同日�
 ## 16. 通知与 durable outbox
 
 OneBot 适配器见 [onebot.py](../src/gribuki_trade/adapters/notifiers/onebot.py)，outbox 见
-[outbox.py](../src/gribuki_trade/storage/outbox.py)。
+[outbox.py](../src/gribuki_trade/storage/execution/outbox.py)。
 
 出站语义是 at-least-once：
 
@@ -1054,9 +1054,9 @@ git diff --check
 - 本机研究与 NapCat：[LOCAL_RESEARCH_SETUP.md](LOCAL_RESEARCH_SETUP.md)
 - CLI 装配：[cli.py](../src/gribuki_trade/cli.py)
 - 六类报告契约：[contracts.py](../src/gribuki_trade/reporting/contracts.py)
-- 双轨生产装配：[llm_production.py](../src/gribuki_trade/services/llm_production.py)
-- PAPER-day 编排：[ashare_paper_day.py](../src/gribuki_trade/services/ashare_paper_day.py)
-- 实盘观察编排：[live_trade_orchestration.py](../src/gribuki_trade/services/live_trade_orchestration.py)
+- 双轨生产装配：[llm_production.py](../src/gribuki_trade/services/llm/llm_production.py)
+- PAPER-day 编排：[ashare_paper_day.py](../src/gribuki_trade/services/ashare/paper_day/ashare_paper_day.py)
+- 实盘观察编排：[live_trade_orchestration.py](../src/gribuki_trade/services/live/live_trade_orchestration.py)
 - 退出计划 evaluator：[exit_evaluator.py](../src/gribuki_trade/strategy_lab/exit_evaluator.py)
 
 当历史计划、旧文档和当前代码状态发生冲突时，应以领域不变量、CLI 当前 parser、持久化 schema

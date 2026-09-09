@@ -23,10 +23,10 @@ Tavily/SearXNG 搜索发现，以及搜索事件进入宏观证据后的评分�
 
 - [全市场筛选端口](../src/gribuki_trade/ports/ashare_screening.py)
 - [确定性硬过滤与因子排名](../src/gribuki_trade/features/ashare_screening.py)
-- [三层编排服务](../src/gribuki_trade/services/ashare_screening.py)
-- [AKShare 收盘快照与历史因子适配器](../src/gribuki_trade/adapters/ashare_screening.py)
-- [PAPER-day 盘前降级适配器](../src/gribuki_trade/adapters/ashare_preopen_screening.py)
-- [盘前种子编排服务](../src/gribuki_trade/services/ashare_preopen_screening.py)
+- [三层编排服务](../src/gribuki_trade/services/ashare/research/ashare_screening.py)
+- [AKShare 收盘快照与历史因子适配器](../src/gribuki_trade/adapters/ashare/screening/screening.py)
+- [PAPER-day 盘前降级适配器](../src/gribuki_trade/adapters/ashare/screening/preopen_screening.py)
+- [盘前种子编排服务](../src/gribuki_trade/services/ashare/research/ashare_preopen_screening.py)
 
 当前数据流是：
 

@@ -31,7 +31,7 @@ The changes are grounded in the existing source tree and tests. The readiness
 check passes; Ruff and mypy pass; focused structural, comment, runtime and OMS
 tests pass (22 tests, 3 subtests). The full suite reports 1,492 passed, 5
 skipped and one pre-existing time-sensitive failure in
-`tests/unit/test_live_trade_orchestration.py`.
+`tests/unit/services/live/test_live_trade_orchestration.py`.
 
 ## Follow-up
 

@@ -11,4 +11,4 @@ before changing experiments or evaluators.
   `promotion_authorized=False`; never promote results to PAPER or LIVE.
 - Keep the factor DSL bounded and reject arbitrary Python execution.
 
-Run `tests/unit/test_strategy_lab_*.py` and the relevant backtest tests.
+Run `tests/unit/strategy_lab/test_strategy_lab_*.py` and the relevant backtest tests.

@@ -303,7 +303,7 @@ deterministic recommendation gate
 | 发布门禁 | `policy/recommendation_gate.py` | 无证据不发布入场候选；负面宏观可降级；结论有 TTL |
 | 研究编排 | `services/ashare_research.py`、`services/research_watch.py` | 完成 K 线、证据和可选宏观分析到推荐；一次运行或有界多标的周期；单股失败隔离；无 broker/account/order 依赖 |
 | 推荐评估 | `backtest/recommendation_outcomes.py` | 从下一可交易日开盘开始评估，区分 pending/unevaluable，计入佣金、印花税和滑点；不把同日未来收盘价当入场价 |
-| 通知 | `adapters/notifiers/onebot.py`、`storage/outbox.py`、`services/notification_dispatch.py` | loopback、token、目标白名单、纯文本、幂等、租约、退避、TTL、死信和有限轮询派发 |
+| 通知 | `adapters/notifiers/onebot.py`、`storage/execution/outbox.py`、`services/notification_dispatch.py` | loopback、token、目标白名单、纯文本、幂等、租约、退避、TTL、死信和有限轮询派发 |
 | GUI | `gui/main_window.py` | PAPER 壳与只读“资讯 / 建议”页；尚未绑定后台调度器 |
 
 ### 3.2 数据语义合同

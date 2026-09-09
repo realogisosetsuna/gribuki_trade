@@ -12,5 +12,12 @@ before changing this adapter.
 - Do not expose API keys, secrets or signatures in errors or representations.
 - Uncertain execution must reconcile before retrying.
 
-Run `python -m pytest tests/unit -k binance` after changes; this avoids shell
-glob differences while covering the Binance test family.
+Canonical implementation routes are `auth/`, `transport/`, `spot/`,
+`futures/`, and `market_data/`. Root-level flat modules are no longer import
+paths. Server-clock calibration lives in `transport/time_sync.py`; it adjusts
+client signing timestamps in memory and must not set the operating-system
+clock or persist credentials.
+
+Run `python -m pytest --temp-dir runtime/binance-tests -q tests/unit/binance`
+after changes. For credential persistence also run
+`tests/unit/runtime/test_security_secrets.py`.

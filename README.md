@@ -52,9 +52,9 @@ Gribuki Trade 是一个面向个人研究的 Python 交易工作台，当前以 
 
 入口是 `ashare-market-screen-once`，核心位于：
 
-- [全市场数据适配器](src/gribuki_trade/adapters/ashare_screening.py)
+- [全市场数据适配器](src/gribuki_trade/adapters/ashare/screening/screening.py)
 - [硬过滤与横截面因子](src/gribuki_trade/features/ashare_screening.py)
-- [三层编排服务](src/gribuki_trade/services/ashare_screening.py)
+- [三层编排服务](src/gribuki_trade/services/ashare/research/ashare_screening.py)
 
 第一层在当前交易日 15:05（Asia/Shanghai）之后抓取全 A 股票快照：东方财富为主源，腾讯为独立回退，并补沪、深、北交所上市元数据。默认至少需要 4,500 条记录且三个交易所均有覆盖，否则整轮失败关闭。
 
@@ -91,7 +91,7 @@ L1 不做“缺失即中性”，而是用明确门槛过滤：
 
 ### 2. 盘中全市场异常发现
 
-盘中链由 [适配器](src/gribuki_trade/adapters/ashare_surveillance.py)、[纯评分函数](src/gribuki_trade/features/ashare_surveillance.py) 和 [服务](src/gribuki_trade/services/ashare_surveillance.py) 组成，仅在 09:30–11:30、13:00–15:00 工作。
+盘中链由 [适配器](src/gribuki_trade/adapters/ashare/market/surveillance.py)、[纯评分函数](src/gribuki_trade/features/ashare_surveillance.py) 和 [服务](src/gribuki_trade/services/ashare/research/ashare_surveillance.py) 组成，仅在 09:30–11:30、13:00–15:00 工作。
 
 它同样使用东方财富主源和腾讯回退，默认要求：
 
@@ -106,7 +106,7 @@ L1 不做“缺失即中性”，而是用明确门槛过滤：
 
 ### 3. 统一候选库与有界跟踪
 
-[候选领域模型](src/gribuki_trade/domain/candidates.py)、[候选服务](src/gribuki_trade/services/candidate_universe.py) 和 [SQLite 存储](src/gribuki_trade/storage/candidate_store.py) 把手工关注、收盘筛选、盘中异常、策略和人工复核合并为一套事件语义。
+[候选领域模型](src/gribuki_trade/domain/candidates.py)、[候选服务](src/gribuki_trade/services/research/candidate_universe.py) 和 [SQLite 存储](src/gribuki_trade/storage/research/candidate_store.py) 把手工关注、收盘筛选、盘中异常、策略和人工复核合并为一套事件语义。
 
 候选具有：
 
@@ -121,11 +121,11 @@ L1 不做“缺失即中性”，而是用明确门槛过滤：
 
 ### 4. 特定标的收盘深研、新闻与宏观融合
 
-入口是 `ashare-close-research-once` 或有上限的 `ashare-close-research-batch`。主要编排在 [收盘研究服务](src/gribuki_trade/services/ashare_close_analysis.py)。
+入口是 `ashare-close-research-once` 或有上限的 `ashare-close-research-batch`。主要编排在 [收盘研究服务](src/gribuki_trade/services/ashare/close/ashare_close_analysis.py)。
 
 #### 时间与行情
 
-[交易日会话解析器](src/gribuki_trade/services/ashare_close_sessions.py) 使用 BaoStock 交易日历识别最近完成日和下一交易日；交易日 15:05 前不会偷看当天收盘线。
+[交易日会话解析器](src/gribuki_trade/services/ashare/close/ashare_close_sessions.py) 使用 BaoStock 交易日历识别最近完成日和下一交易日；交易日 15:05 前不会偷看当天收盘线。
 
 未复权日线使用分层路由：BaoStock 优先、AKShare 备用；ETF 另走合适的基金端点；两源只在最近重叠区间严格一致时允许受控尾部拼接；网络源失败后才使用本地不可变 market-evidence 归档。最近完成交易日缺失、历史不足、未来数据、乱序、复权模式错误或明显企业行动断点都会 `ABSTAIN`。
 
@@ -160,7 +160,7 @@ L1 不做“缺失即中性”，而是用明确门槛过滤：
 
 [原始文档与标准事件](src/gribuki_trade/domain/events.py) 分别记录 `published_at`、`first_seen_at`、`available_at`、内容哈希、解析版本和修订链。每个来源独立超时和降级；未来证据、过期证据、重复故事、低相关内容和提示注入不会进入模型。
 
-[宏观研究服务](src/gribuki_trade/services/macro_research.py) 默认从最近 14 日选择最多 24 条、每源最多 6 条证据。官方与许可来源优先；单一公共媒体线索只有获得独立来源印证后才能被对抗轨作为事实引用。默认 [DeepSeek 适配器](src/gribuki_trade/adapters/llm/deepseek_chat.py) 使用 `deepseek-v4-flash`，也可由 GUI 选择 OpenAI。所有生产语义分析都在同一冻结 EvidencePack 上并行运行 baseline 与结构化对抗轨；生产选择优先采用对抗结果，任一必需角色失败、证据引用错误或跨轨实质冲突会失败关闭或降级。两轨结论、模型、证据覆盖和审计哈希同时进入报告。
+[宏观研究服务](src/gribuki_trade/services/macro/macro_research.py) 默认从最近 14 日选择最多 24 条、每源最多 6 条证据。官方与许可来源优先；单一公共媒体线索只有获得独立来源印证后才能被对抗轨作为事实引用。默认 [DeepSeek 适配器](src/gribuki_trade/adapters/llm/deepseek_chat.py) 使用 `deepseek-v4-flash`，也可由 GUI 选择 OpenAI。所有生产语义分析都在同一冻结 EvidencePack 上并行运行 baseline 与结构化对抗轨；生产选择优先采用对抗结果，任一必需角色失败、证据引用错误或跨轨实质冲突会失败关闭或降级。两轨结论、模型、证据覆盖和审计哈希同时进入报告。
 
 #### 最终融合
 
@@ -174,10 +174,10 @@ L1 不做“缺失即中性”，而是用明确门槛过滤：
 
 A 股 PAPER 刻意拆成四层，避免把记账、两种撮合时间尺度和崩溃恢复混为一谈：
 
-1. [持久成交账本](src/gribuki_trade/services/ashare_paper.py) 有 CLI：保存现金、持仓、均价、已实现盈亏、`today_buy/available_to_sell` T+1、佣金/最低佣金/过户费/卖出印花税。人工与模拟 fill 共用契约；`fill_id` 幂等，事件带逐账户 SHA-256 链并由同一投影重放。
-2. [保守日线撮合器](src/gribuki_trade/services/ashare_paper_matching.py) 是 Python API：支持 `PENDING/PARTIALLY_FILLED/FILLED/CANCELLED/REJECTED/EXPIRED`、NEXT_TRADING_BAR/GTD、限价触及、100 股买入整手、卖出尾仓、FIFO、默认 1% bar 成交量参与、跨 bar 部分成交和不穿限价的保守滑点。调用方必须提供完整未复权 bar 和明确价格区间；停牌、缺 OHLC、零量、缺价格带或越界全部不成交。
-3. [durable 恢复层](src/gribuki_trade/services/ashare_paper_recovery.py) 与 [订单事件库](src/gribuki_trade/storage/paper_orders.py) 保存完整 `RUN_STARTED` 输入、状态、fill 和完成事件，并使用 writer lease。资金账本和订单库是两个 SQLite 数据库，因此采用确定性 `fill_id` + 恢复 saga，而不宣称跨库 ACID；调用方必须先 `recover()`。
-4. [PAPER-day 编排器](src/gribuki_trade/services/ashare_paper_day.py) 有 `ashare-paper-day run/status/report/summary` CLI。`run` 在一个进程内完成交易日历与通知预检、盘前全市场筛选、每 15 分钟全市场维护、1 分钟主监控与 5 分钟辅监控、风险评估、下一完整分钟 IOC、T+1 账本、通知 outbox 和收盘报告；journal、账本、outbox、`status.json` 与 Markdown 报告均按交易日隔离。`status/report/summary` 读取 sidecar，不打开正在运行的数据库。
+1. [持久成交账本](src/gribuki_trade/services/ashare/paper_day/ashare_paper.py) 有 CLI：保存现金、持仓、均价、已实现盈亏、`today_buy/available_to_sell` T+1、佣金/最低佣金/过户费/卖出印花税。人工与模拟 fill 共用契约；`fill_id` 幂等，事件带逐账户 SHA-256 链并由同一投影重放。
+2. [保守日线撮合器](src/gribuki_trade/services/ashare/paper_day/ashare_paper_matching.py) 是 Python API：支持 `PENDING/PARTIALLY_FILLED/FILLED/CANCELLED/REJECTED/EXPIRED`、NEXT_TRADING_BAR/GTD、限价触及、100 股买入整手、卖出尾仓、FIFO、默认 1% bar 成交量参与、跨 bar 部分成交和不穿限价的保守滑点。调用方必须提供完整未复权 bar 和明确价格区间；停牌、缺 OHLC、零量、缺价格带或越界全部不成交。
+3. [durable 恢复层](src/gribuki_trade/services/ashare/paper_day/ashare_paper_recovery.py) 与 [订单事件库](src/gribuki_trade/storage/paper/paper_orders.py) 保存完整 `RUN_STARTED` 输入、状态、fill 和完成事件，并使用 writer lease。资金账本和订单库是两个 SQLite 数据库，因此采用确定性 `fill_id` + 恢复 saga，而不宣称跨库 ACID；调用方必须先 `recover()`。
+4. [PAPER-day 编排器](src/gribuki_trade/services/ashare/paper_day/ashare_paper_day.py) 有 `ashare-paper-day run/status/report/summary` CLI。`run` 在一个进程内完成交易日历与通知预检、盘前全市场筛选、每 15 分钟全市场维护、1 分钟主监控与 5 分钟辅监控、风险评估、下一完整分钟 IOC、T+1 账本、通知 outbox 和收盘报告；journal、账本、outbox、`status.json` 与 Markdown 报告均按交易日隔离。`status/report/summary` 读取 sidecar，不打开正在运行的数据库。
 
 PAPER-day 默认初始权益 20 万元；默认**没有固定持仓数量上限**，但每次买入仍受最低 20% 现金储备、最高 80% 组合 gross、最高 20% 单标的敞口和 0.75% 单笔止损风险预算约束。`--maximum-positions` 只是在需要时显式打开计数熔断器，不能绕过资金、费用、板块申报数量、流动性和待撮合资金占用。
 
@@ -592,9 +592,9 @@ Schwab 当前没有 CLI 或真实生产联调。OAuth、Market Data、Trader RES
 | `src/gribuki_trade/runtime` | PAPER/SHADOW/LIVE 模式、broker 守卫与集中临时目录解析 |
 
 大型入口保留历史兼容路径，但内部职责已开始拆分：CLI 的无副作用参数转换在
-`cli_parsing.py`，Binance Spot 的纯协议解析在
-`adapters/binance/spot_parsing.py`，USDⓈ-M OMS 的 SQLite 编解码在
-`trading/futures_oms_codec.py`。后续命令处理器和长工作流会沿同一规则逐步拆出；
+`cli_commands/parsers/`，Binance Spot 的纯协议解析在
+`adapters/binance/spot/parsing.py`，USDⓈ-M OMS 的 SQLite 编解码在
+`trading/futures/futures_oms_codec.py`。后续命令处理器和长工作流会沿同一规则逐步拆出；
 具体边界见 [模块地图](docs/architecture/module-map.md)。
 | `src/gribuki_trade/security` | OS keyring、token 和密钥边界 |
 | `src/gribuki_trade/gui` | NapCat 与 DeepSeek/OpenAI 集成管理，以及仍使用占位数据的交易展示页 |

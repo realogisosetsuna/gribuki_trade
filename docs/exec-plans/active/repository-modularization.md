@@ -19,7 +19,7 @@ files have grown beyond practical review size:
   handlers, service wiring, and presentation formatting.
 - `adapters/binance/transport/gateway.py` is roughly 85 KiB and combines transport,
   signing, market data, account queries, order commands, and response parsing.
-- `trading/futures/futures_oms.py`, `services/binance_execution.py`, and several
+- `trading/futures/futures_oms.py`, `services/binance/binance_execution.py`, and several
   A-share workflows also combine persistence, state transitions, and runtime
   orchestration.
 
@@ -45,7 +45,7 @@ files have grown beyond practical review size:
 - Extract one low-risk CLI concern behind `gribuki_trade.cli:main`.
 - Extract one low-risk execution/OMS concern without importing adapter code
   into broker-neutral modules.
-  The broker-neutral OMS slice is now `trading/oms_codec.py`, which owns pure
+  The broker-neutral OMS slice is now `trading/core/oms_codec.py`, which owns pure
   SQLite row codecs, JSON/Decimal/time conversion, identifiers, and status
   projection helpers; `oms.py` retains all connections, transactions, leases,
   and durable state transitions.
@@ -76,7 +76,7 @@ and lease-argument normalization for `SQLitePaperDayStore`; the facade keeps
 all connections, transactions, leases, and append-only transitions.
 
 The A-share PAPER-day slice now includes
-`services/ashare_paper_day_projection.py`. It owns the deterministic LLM gate
+`services/ashare/paper_day/ashare_paper_day_projection.py`. It owns the deterministic LLM gate
 and DEEP exit audit/notification projections; the runner retains compatibility
 wrappers while continuing to own scheduling, persistence, and side effects.
 
@@ -103,7 +103,7 @@ DataFrame row extraction, column alias resolution, numeric/OHLC validation, and
 facade for client calls, timeout handling, source fallback, and routing; it
 re-exports the historical exception and enum names through imports.
 
-The reporting slice now includes `reporting/paper_day_codec.py`. It owns the
+The reporting slice now includes `reporting/paper_day/paper_day_codec.py`. It owns the
 sidecar JSON object reader, JSONL event decoder, timestamp/date validation, and
 scalar coercion helpers. `reporting/paper_day/paper_day_summary.py` keeps the historical
 private helper names as small compatibility wrappers and continues to own
@@ -150,8 +150,8 @@ recovery orchestration. The historical public `PaperAccountChainError`,
 `PaperAccountLedgerPreparation`, and `prepare_paper_day_ledger` imports remain
 unchanged; the old private helper names are aliases for the pure module during
 the migration. Regression coverage is in
-`tests/unit/test_paper_account_manifest.py` and
-`tests/unit/test_paper_account_chain.py`.
+`tests/unit/runtime/test_paper_account_manifest.py` and
+`tests/unit/runtime/test_paper_account_chain.py`.
 
 ## Provider and command directory grouping
 
@@ -197,7 +197,7 @@ five environment-skipped tests, 41 subtests, and one recurring Windows pytest-ca
 warning. Readiness, Ruff, mypy (340 source files), and compileall also passed.
 
 The broker-neutral OMS now delegates pure fill-to-position projection to
-`trading/oms_position_policy.py`; the facade still owns row reads and transaction
+`trading/core/oms_position_policy.py`; the facade still owns row reads and transaction
 writes. The projection is covered by dedicated opening, partial-close, and reversal
 tests.
 

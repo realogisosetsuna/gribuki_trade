@@ -4,7 +4,7 @@
 
 评估日期：2026-08-14
 
-原始需求：[后续开发计划260814.md](%E5%90%8E%E7%BB%AD%E5%BC%80%E5%8F%91%E8%AE%A1%E5%88%92260814.md)
+原始需求：[后续开发计划260814.md](后续开发计划260814.md)
 
 既有交易系统路线：[ROADMAP.md](ROADMAP.md)
 
@@ -50,7 +50,7 @@
    继续沿用 QUICK，而不是使持仓失去保护。领域约束见
    [exit_plans.py](../../src/gribuki_trade/domain/exit_plans.py)。
 3. **审计存储**：计划创建、替换、附着成交、barrier 观察和退出信号采用 append-only 哈希链，
-   见 [exit_plans.py（存储）](../../src/gribuki_trade/storage/exit_plans.py)。
+   见 [exit_plans.py（存储）](../../src/gribuki_trade/storage/execution/exit_plans.py)。
 4. **离线优化**：`strategy_lab` 已增加有限、预注册的退出参数空间和 PIT trace；观察到 barrier
    与实际可执行成交被分开记录，T+1 阻断不会被伪装为成交，同一 OHLC bar 同时触碰止盈/止损时
    采用保守的 stop-first。见
@@ -58,7 +58,7 @@
 5. **生命周期服务**：broker-free 服务已经把 QUICK 创建、成交附着、单次 DEEP 请求、单调替换、
    深研失败留用旧计划以及完成 bar 的 barrier/退出信号串成幂等流程。T+1 可卖数为零仍完整记录，
    但服务没有 broker/order-store 依赖且永不自行创建订单。见
-   [exit_plan_lifecycle.py](../../src/gribuki_trade/services/exit_plan_lifecycle.py)。
+   [exit_plan_lifecycle.py](../../src/gribuki_trade/services/exit/exit_plan_lifecycle.py)。
 
 上述生命周期已经接入 PAPER 日运行和 `live-sync`：买单前必须先落 QUICK，撮合线若已触发
 barrier 就拒买；fill 后附着成交并登记/执行 DEEP，多时间框架输入与双轨 LLM 评分共同进入
@@ -75,7 +75,7 @@ research-only，不会在线调参或自动发布策略。
 
 此外，盘中 PAPER 风控已经用“买入限价到失效价”的最坏距离做头寸风险预算，避免用较低的信号价
 低估滑点后的每股风险；买卖两侧仍各自保留交易所价格带和可接受成交走廊。实现见
-[ashare_intraday_paper.py](../../src/gribuki_trade/services/ashare_intraday_paper.py)。
+[ashare_intraday_paper.py](../../src/gribuki_trade/services/ashare/intraday/ashare_intraday_paper.py)。
 
 ### 0.2 多角色 LLM：先 SHADOW，不能因为预算不限就取消边界
 
@@ -84,7 +84,7 @@ research-only，不会在线调参或自动发布策略。
 费用和错误共识。因此“所有语义 LLM 调用采用同一证据约束协议”是迁移方向，健康检查、解析、
 风险计算等确定性函数则不应为了形式统一而调用 LLM。
 
-[adversarial_macro.py](../../src/gribuki_trade/services/adversarial_macro.py) 已实现兼容现有
+[adversarial_macro.py](../../src/gribuki_trade/services/macro/adversarial_macro.py) 已实现兼容现有
 `MacroAnalyzer` 的有界协议：首轮各角色只看同一冻结 `EvidencePack`，后续只能看到经过规范化的
 不可信同伴论点；引用必须指向已知 evidence id，并提供可证伪条件。当前深度档位为：
 
@@ -147,13 +147,13 @@ PAPER 与盘后日报、单标的深研、PAPER/NapCat 健康消息均在发送�
   cooling cursor，采用有上限的指数退避和来源特定 jitter。熔断窗口内直接跳过，窗口到期只允许
   新一轮探测；SQLite `BEGIN IMMEDIATE` 探测租约保证不同进程也只有一个 half-open owner，
   token fence 禁止过期 owner 覆盖新状态，不让一个失败来源阻断其他来源，见
-  [news_collection.py](../../src/gribuki_trade/services/news_collection.py)。
+  [news_collection.py](../../src/gribuki_trade/services/communications/news_collection.py)。
 - 默认官方源已经扩展到统计局、央行、证监会、财政部、国家发改委、外汇局、上交所和美联储；
   所有解析出来的链接都重新经过来源域名/协议白名单。公共媒体事实只有获得独立来源印证后才可被
   对抗轨引用；单一媒体保持“未证实线索”。
 - 行情侧已有主源失败后的明确降级：分钟线可回退 Sina，全市场/单标的快照可回退 Tencent，
   受时间上限约束的旧缓存只能以 degraded 身份使用，见
-  [akshare.py](../../src/gribuki_trade/adapters/akshare.py)。
+  [akshare.py](../../src/gribuki_trade/adapters/market_data/akshare.py)。
 - 原始文档、内容哈希、事件去重/修订链继续用于追踪同一新闻的重复与变更；fallback 的来源身份
   必须进入审计，不能把备用源伪装成主源。
 
@@ -207,7 +207,7 @@ seal 与 SQLite 追加拦截触发器在同一事务内生效：旧日一经封�
 实盘记录与 PAPER 采用独立编排和独立哈希链 SQLite 账本：
 
 - [live_records.py（领域）](../../src/gribuki_trade/domain/live_records.py)
-- [live_trade_records.py](../../src/gribuki_trade/services/live_trade_records.py)
+- [live_trade_records.py](../../src/gribuki_trade/services/live/live_trade_records.py)
 - [live_records.py（存储）](../../src/gribuki_trade/storage/live_records/live_records.py)
 
 `live-sync ingest` 会把 OneBot 私聊事件规范化，只接受白名单发送者、私聊 friend 消息、合理时间窗和严格的
@@ -402,8 +402,8 @@ owner 才能原子切换 `plan_stream_id` 权威指针；过期 worker 的迟到
 
 - [筛选数据端口](../../src/gribuki_trade/ports/ashare_screening.py)
 - [硬过滤和横截面因子](../../src/gribuki_trade/features/ashare_screening.py)
-- [三层编排服务](../../src/gribuki_trade/services/ashare_screening.py)
-- [AKShare 筛选适配器](../../src/gribuki_trade/adapters/ashare_screening.py)
+- [三层编排服务](../../src/gribuki_trade/services/ashare/research/ashare_screening.py)
+- [AKShare 筛选适配器](../../src/gribuki_trade/adapters/ashare/screening/screening.py)
 
 当前漏斗：
 
@@ -446,8 +446,8 @@ owner 才能原子切换 `plan_stream_id` 权威指针；过期 worker 的迟到
 
 - [盘中快照端口](../../src/gribuki_trade/ports/ashare_surveillance.py)
 - [盘中异常因子](../../src/gribuki_trade/features/ashare_surveillance.py)
-- [盘中编排服务](../../src/gribuki_trade/services/ashare_surveillance.py)
-- [AKShare/东方财富与腾讯适配器](../../src/gribuki_trade/adapters/ashare_surveillance.py)
+- [盘中编排服务](../../src/gribuki_trade/services/ashare/research/ashare_surveillance.py)
+- [AKShare/东方财富与腾讯适配器](../../src/gribuki_trade/adapters/ashare/market/surveillance.py)
 
 当前单次扫描只在 09:30–11:30、13:00–15:00 运行，默认要求至少 4,500 个标的且快照不超过
 3 分钟。它按涨跌强度、当日成交额、日内区间位置、开盘后延续、量比和换手率做横截面排名，
@@ -478,9 +478,9 @@ owner 才能原子切换 `plan_stream_id` 权威指针；过期 worker 的迟到
 可行性：**高**。当前候选领域模型、SQLite 事件存储和编排服务已落地：
 
 - [候选领域模型](../../src/gribuki_trade/domain/candidates.py)
-- [候选事件存储](../../src/gribuki_trade/storage/candidate_store.py)
-- [候选编排服务](../../src/gribuki_trade/services/candidate_universe.py)
-- [有限轮研究调度](../../src/gribuki_trade/services/research_watch.py)
+- [候选事件存储](../../src/gribuki_trade/storage/research/candidate_store.py)
+- [候选编排服务](../../src/gribuki_trade/services/research/candidate_universe.py)
+- [有限轮研究调度](../../src/gribuki_trade/services/research/research_watch.py)
 
 候选来源包含手工、收盘筛选、盘中异动、策略和复核；同一代码的多来源会合并但不丢失
 provenance。默认 TTL 为收盘筛选 4 天、盘中异动 8 小时、策略 2 天、复核 7 天，手工候选
@@ -542,10 +542,10 @@ Markdown/PNG 报告和通知。推荐经过确定性门禁：宏观最多占 40%
    `EXPIRED`；保存 recommendation、证据、候选 provenance、操作主体和原因；
 6. 复核确认只表示研究结论获批，领域与服务层均不导入订单、账户、券商或执行模块。
 
-相关实现见 [动态证券画像适配器](../../src/gribuki_trade/adapters/instrument_profile.py)、
+相关实现见 [动态证券画像适配器](../../src/gribuki_trade/adapters/ashare/profile/instrument.py)、
 [复核领域模型](../../src/gribuki_trade/domain/review_cases.py)、
-[复核服务](../../src/gribuki_trade/services/recommendation_review.py) 和
-[复核事件存储](../../src/gribuki_trade/storage/review_case_store.py)。
+[复核服务](../../src/gribuki_trade/services/research/recommendation_review.py) 和
+[复核事件存储](../../src/gribuki_trade/storage/research/review_case_store.py)。
 
 人工复核的有限 CLI 已实现，`confirm` 需要显式 `RESEARCH_ONLY` 哨兵：
 
@@ -588,10 +588,10 @@ Top-N 到收盘深研的有界批处理入口现已实现：它可接收重复 `
 
 - [领域模型](../../src/gribuki_trade/domain/paper_trading.py)
 - [账本端口](../../src/gribuki_trade/ports/paper_ledger.py)
-- [SQLite 账本](../../src/gribuki_trade/storage/paper_ledger.py)
-- [PAPER 服务](../../src/gribuki_trade/services/ashare_paper.py)
-- [持久委托事件库](../../src/gribuki_trade/storage/paper_orders.py)
-- [崩溃恢复 saga](../../src/gribuki_trade/services/ashare_paper_recovery.py)
+- [SQLite 账本](../../src/gribuki_trade/storage/paper/paper_ledger.py)
+- [PAPER 服务](../../src/gribuki_trade/services/ashare/paper_day/ashare_paper.py)
+- [持久委托事件库](../../src/gribuki_trade/storage/paper/paper_orders.py)
+- [崩溃恢复 saga](../../src/gribuki_trade/services/ashare/paper_day/ashare_paper_recovery.py)
 - [详细边界](../A_SHARE_PAPER_TRADING.md)
 
 已实现现金非负、`quantity = available_to_sell + today_buy`、买入当日不可卖、下一交易日显式
@@ -599,7 +599,7 @@ rollover、禁止超卖、账户内 `fill_id` 幂等、实际费用固化、事�
 人工与模拟成交共享同一 fill 契约，区别只在来源和费用覆盖权限。
 
 第二阶段 [PAPER 委托模型](../../src/gribuki_trade/domain/paper_orders.py) 与
-[保守日线撮合器](../../src/gribuki_trade/services/ashare_paper_matching.py) 已提供：
+[保守日线撮合器](../../src/gribuki_trade/services/ashare/paper_day/ashare_paper_matching.py) 已提供：
 
 - `PENDING/PARTIALLY_FILLED/FILLED/CANCELLED/REJECTED/EXPIRED` 六态限价委托；
 - 只处理决策日之后、明确 `PriceAdjustment.NONE` 的已完成日线；停牌、OHLC 缺失、零成交量、
@@ -730,7 +730,7 @@ shadow 门槛。
 
 可行性：**高**，但“保存运行输出”和“保存完整原始输入”必须分开表述。
 
-[研究运行存储](../../src/gribuki_trade/storage/research_runs.py) 已为收盘全市场筛选和盘中异常扫描
+[研究运行存储](../../src/gribuki_trade/storage/research/research_runs.py) 已为收盘全市场筛选和盘中异常扫描
 保存 append-only 运行记录：确定性 run ID、逻辑键、策略版本、状态、起止时间、规范化完整配置
 及 SHA-256、来源 revision，以及规范化输出文档和摘要。同一逻辑运行精确重放保持幂等，复用
 身份但配置、lineage 或输出不同都会报冲突。旧预览表迁移时不会伪造缺失配置。只读 CLI 支持

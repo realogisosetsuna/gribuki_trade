@@ -106,7 +106,7 @@ tests/
 ## 模块入口规则
 
 `adapters/` 与 `services/` 根目录只保留包初始化文件，不再放置供应商或业务
-实现。新调用方直接导入职责目录，例如 `adapters.binance.spot.order_params`、
+实现；历史根级别模块已经删除。新调用方直接导入职责目录，例如 `adapters.binance.spot.order_params`、
 `adapters.market_data.akshare` 和 `services.live.live_trade_orchestration`。包初始化
 文件不主动导入全部平台，避免导入一个纯模型时触发网络、密钥或重量级依赖。
 
@@ -124,8 +124,8 @@ rg -n "from gribuki_trade\.adapters|from gribuki_trade\.storage" src/gribuki_tra
 python -m pytest --temp-dir runtime/layout -q tests/unit/meta/test_module_layout.py
 ```
 
-完整的 facade 到实现映射见 [`module-map.md`](module-map.md)，重构顺序和已完成
-切片见 [`modularization-roadmap.md`](modularization-roadmap.md)。
+当前规范路径和职责映射见 [`module-map.md`](module-map.md)，重构记录见
+[`modularization-roadmap.md`](modularization-roadmap.md)。
 
 测试目录与源码边界保持同构：持久化不变量放在
 `tests/unit/storage/`；行情和供应商协议放在

@@ -6,16 +6,16 @@ repository. This is a code audit, not a claim that every Binance API is part of
 the product. The status below is intentionally conservative.
 
 Implementation evidence: `src/gribuki_trade/adapters/binance/`,
-`src/gribuki_trade/services/binance_futures_unattended.py`, and
+`src/gribuki_trade/services/binance/binance_futures_unattended.py`, and
 `src/gribuki_trade/trading/futures/futures_oms.py`,
 `src/gribuki_trade/adapters/binance/market_data/orderbook.py`,
-`src/gribuki_trade/services/binance_orderbook.py`, and
-`src/gribuki_trade/trading/spot_order_lists.py`. Verification evidence:
+`src/gribuki_trade/services/binance/binance_orderbook.py`, and
+`src/gribuki_trade/trading/spot/spot_order_lists.py`. Verification evidence:
 `tests/unit/binance/test_binance_futures_stream.py`,
 `tests/unit/binance/test_binance_futures_user_stream.py`,
 `tests/unit/binance/test_binance_futures_unattended.py`,
 `tests/unit/trading/test_futures_oms.py`, `tests/unit/binance/test_binance_orderbook.py`,
-`tests/unit/test_spot_order_list_store.py`, and the Spot Binance adapter tests
+`tests/unit/storage/test_spot_order_list_store.py`, and the Spot Binance adapter tests
 under `tests/unit/`.
 
 Official references used for this audit:
@@ -70,7 +70,7 @@ contiguous. `bookTicker` cannot provide those guarantees.
 | Cancel order/list, cancel all, cancel-replace | Gateway methods | Implemented | A transport timeout can leave either cancel or replacement accepted. Persist both outcomes and reconcile by order/list query before retrying. |
 | Amend keep-priority | `amend_order_keep_priority` | Implemented | Binance permits quantity reduction only; strategies must not model this as an arbitrary price amendment. |
 | Query order, open orders, all orders, trades, account, commission | Gateway methods | Implemented | Reconciliation reads exist for single orders and account state. Spot WebSocket account equivalents are not wired into the gateway. |
-| Order-list query (`allOrderLists`, `openOrderLists`) and order-list status | `gateway.py`, `binance_spot_advanced.py`, `binance_execution.py`, and `trading/spot_order_lists.py` | Implemented | REST open/history snapshots and `listStatus` are persisted atomically with member references; restart reconciliation runs before pending commands resume. |
+| Order-list query (`allOrderLists`, `openOrderLists`) and order-list status | `gateway.py`, `binance_spot_advanced.py`, `binance_execution.py`, and `trading/spot/spot_order_lists.py` | Implemented | REST open/history snapshots and `listStatus` are persisted atomically with member references; restart reconciliation runs before pending commands resume. |
 | Rate-limit and order-count headers | Request metadata is captured by the gateway | Partial | No proactive per-account limiter/circuit breaker is exposed to a strategy. |
 
 ## Spot private WebSocket stream
@@ -94,7 +94,7 @@ proof that no events were lost.
 | Public routed WebSocket (`/public`) `@depth`, `@aggTrade`, `@trade` | `adapters/binance/futures/stream.py` | Partial | Typed transport events and sequence/gap fail-closed checks are implemented; REST snapshot application and durable book state remain above the adapter. |
 | Market routed WebSocket (`/market`) `@markPrice`, ticker/miniTicker, index and funding feeds | `FuturesMarkPriceEvent` / `FuturesTickerEvent` | Partial | Mark price, funding rate and next funding time are parsed. Index/mini-ticker variants and persistence are still missing. |
 | Futures local order-book recovery | `BinanceFuturesOrderBook` + `BinanceOrderBookRecoveryService` + `FuturesRestClient.order_book` | Implemented | Uses `U <= snapshot.lastUpdateId <= u`, then requires `pu == previous final id`; gaps and buffer overflow clear the view and require a new REST snapshot. |
-| 24-hour rotation, ping/pong, 10 msg/s, 1024 streams | `adapters/binance/futures/stream.py` + `services/binance_orderbook.py` | Partial | Routed connectors, rotation, reconnect, sequence checks, and REST bootstrap are implemented. Per-account rate limiting and long-duration soak evidence remain. |
+| 24-hour rotation, ping/pong, 10 msg/s, 1024 streams | `adapters/binance/futures/stream.py` + `services/binance/binance_orderbook.py` | Partial | Routed connectors, rotation, reconnect, sequence checks, and REST bootstrap are implemented. Per-account rate limiting and long-duration soak evidence remain. |
 
 USDⓈ-M now has routed endpoints: `wss://fstream.binance.com/public` for
 high-frequency public data, `/market` for regular market data, and `/private`

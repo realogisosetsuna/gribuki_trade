@@ -1,44 +1,46 @@
 # Verification map
 
-The repository currently collects 1,497 pytest cases (`python -m pytest
---collect-only -q` on 2026-09-08). A full local run on that date reported
-1,491 passed, 5 skipped, and 1 failed; the failure is the time-sensitive
-`test_alert_outbox_boundary_recovers_without_duplicate_notification` in
-`tests/unit/test_live_trade_orchestration.py` (its retry clock uses the real
-current time while the fixture uses 2026-08-17). Treat this as an existing
-verification gap, not evidence that the architecture is green. CI runs the
-following on Windows for Python
-3.11 and 3.12 (`.github/workflows/quality.yml`):
+The checked source tree is `src/gribuki_trade/`; test modules are grouped under
+`tests/unit/` by provider, service and durable boundary. The last complete local
+run for the clock-calibration and credential-persistence update reported
+`1859 passed, 5 skipped, 41 subtests passed` on 2026-09-09. The five skips require
+Windows symbolic-link permission; a pytest-cache permission warning is local
+runtime state, not a source failure.
 
-```powershell
+CI runs Windows with Python 3.11 and 3.12. Use Git Bash for local commands:
+
+```bash
+python scripts/check_repo_agent_readiness.py
 python -m ruff check conftest.py src tests
 python -m mypy src
-python scripts/check_repo_agent_readiness.py
-python -m pytest --temp-dir runtime/tmp/ci -q
+python -m compileall -q src tests
+python -m pytest --temp-dir runtime/tmp -q
 ```
 
-Use these narrower families while working:
+Use the smallest matching test family first:
 
-- adapters and evidence: `test_akshare_*`, `test_baostock_adapter.py`,
-  `test_official_*`, `test_cross_market_*`, `test_cboe_vix_adapter.py`;
-- research/decision: `test_ashare_*`, `test_macro_*`,
-  `test_recommendation_*`, `test_adversarial_macro.py`;
-- durable execution: `test_paper_*`, `test_live_*`, `test_trading_oms.py`,
-  `test_notification_*`, `test_*store.py`;
-- strategy research: `test_strategy_lab_*`, `test_*backtest*`,
-  `test_weekly_trend.py`, `test_crypto_trend.py`;
-- boundaries/presentation: `test_runtime_guard.py`, `test_security_secrets.py`,
-  `test_temp_root.py`, `test_cli.py`, `test_gui_*`, `test_report_*`.
+| Boundary | Test route |
+|---|---|
+| Binance protocols, clock, guards and execution | `tests/unit/binance/` |
+| A-share adapters and workflows | `tests/unit/ashare/`, `tests/unit/adapters/ashare/` |
+| Other provider adapters | `tests/unit/adapters/` |
+| Application services | `tests/unit/services/` |
+| SQLite stores and durable records | `tests/unit/storage/` |
+| Broker-neutral/Spot/Futures OMS | `tests/unit/trading/` |
+| Pure research and calculations | `tests/unit/analysis/`, `tests/unit/strategy_lab/` |
+| Runtime, secrets and continuity | `tests/unit/runtime/` |
+| CLI, GUI, reporting and ingest | corresponding directories under `tests/unit/` |
+| Agent maps and source-layout invariants | `tests/unit/meta/` |
 
-Tests are predominantly offline and fixture-driven. They establish behavior and
-failure contracts, but do not establish external provider uptime, production
-broker permissions, or long-running soak. Any change claiming those properties
-needs a separately documented integration or soak result.
-
-The checked source tree is `src/gribuki_trade/`; all current test modules are
-under `tests/unit/`.
+Tests are predominantly deterministic and offline. They prove behavior and
+failure contracts, not provider uptime, indefinite soak behavior, real fill
+quality or complete production permission coverage. LIVE `order/test` results
+prove signed request/parameter acceptance without creating an exchange order.
+Long-running private streams and actual execution still require separate
+integration/soak evidence.
 
 `scripts/check_repo_agent_readiness.py` checks required maps, local Markdown
 links, architecture evidence references, active-plan shape, and selected import
-direction rules. It uses only the standard library and excludes generated
-`runtime/` state.
+directions. Generated `runtime/` state is excluded. See
+[`source-layout.md`](source-layout.md) for canonical paths and
+[`module-map.md`](module-map.md) for owners.

@@ -11,19 +11,19 @@ These are current contracts, verified by source and tests.
   account and exchange. Confirmation is not loaded from environment/config.
 
 Source: `src/gribuki_trade/runtime/mode.py` and `runtime/guard.py`.
-Verification: `tests/unit/test_runtime_guard.py`, broker adapter tests, and
+Verification: `tests/unit/runtime/test_runtime_guard.py`, broker adapter tests, and
 CLI tests covering confirmation errors.
 
 Binance Spot execution uses the durable SQLite OMS in
-`services/binance_execution.py`. `BinanceSpotTestnetExecutionService` remains
+`services/binance/binance_execution.py`. `BinanceSpotTestnetExecutionService` remains
 TESTNET-only; `BinanceSpotExecutionService` is the explicit TESTNET/LIVE entry
 point and requires a `LiveTradingGuard` for every connect, query, subscribe,
 submit, and cancel operation. Public market monitoring is isolated in
-`services/binance_monitor.py` and never requires credentials or order access;
+`services/binance/binance_monitor.py` and never requires credentials or order access;
 its snapshots report receive latency percentiles and clock-skew samples.
 
 USD-M/COIN-M Futures REST execution is exposed through
-`services/binance_futures_execution.py`. It supports account and position
+`services/binance/binance_futures_execution.py`. It supports account and position
 queries, open/order history and trade reconciliation, order submission, single
 order cancellation, and cancel-all. LIVE clients must be created with
 `allow_live=True` and a `LiveTradingGuard`; every query and order-changing
@@ -32,7 +32,7 @@ cancel, while PAPER is rejected before any broker request. The adapter keeps
 the official product-specific `/fapi` and `/dapi` routes and never falls back
 from DEMO to LIVE.
 
-For USDⓈ-M unattended execution, `services/binance_futures_unattended.py`
+For USDⓈ-M unattended execution, `services/binance/binance_futures_unattended.py`
 combines the REST client with the routed private user stream and
 `trading/futures/futures_oms.py`. Startup and every stream epoch change reconcile
 balances, Hedge/One-way positions, normal orders, and Algo orders before order
@@ -40,7 +40,7 @@ changes resume. Raw events, fills, protection identities, command outcomes,
 owner leases, and fencing tokens are durable in SQLite; a transport timeout or
 process restart leaves a command `UNKNOWN` until REST evidence resolves it.
 The service also refuses order changes when the private stream is disconnected
-or degraded. Public market streams feed `services/binance_orderbook.py`, which exposes only
+or degraded. Public market streams feed `services/binance/binance_orderbook.py`, which exposes only
 neutral `LocalOrderBookView` snapshots. A gap or reconnect moves the book to
 `DESYNCED`, clears unsafe levels, and requires a REST snapshot bridge before
 strategies can consume it.
@@ -64,7 +64,7 @@ Futures trailing parameters are deliberately separate types and are never
 converted implicitly.
 
 Spot conditional order lists have a separate durable projection in
-`trading/spot_order_lists.py`. `SQLiteSpotOrderListStore` stores the list
+`trading/spot/spot_order_lists.py`. `SQLiteSpotOrderListStore` stores the list
 status and an independent member-leg table with raw event idempotency. The
 Spot execution service writes `listStatus` before refreshing member orders, and
 startup reconciliation merges `openOrderLists` with `allOrderList` REST
@@ -77,6 +77,21 @@ account data under the same guards. Spot reports per-asset free and locked
 balances; USD-M Futures reports selected account and asset balance fields.
 Decimal amounts remain strings, assets are never added across currencies,
 and account payloads are filtered to balance fields before output.
+
+## Binance server clock
+
+`adapters/binance/transport/time_sync.py` measures the difference between the
+Binance server timestamp and the midpoint of each local round trip. The sample
+count is 1–9; the lowest-RTT sample wins. Spot and Futures clients retain the
+result in their own process memory and use it when signing requests.
+`binance-time-sync` is a public, credential-free diagnostic: it does not set
+the Windows clock, save a global clock offset, or authorize orders. LIVE
+status/order services synchronize their own client before signed operations.
+
+Source: `src/gribuki_trade/adapters/binance/transport/time_sync.py`,
+`cli_commands/handlers/binance.py`, and `cli_commands/handlers/binance_live.py`.
+Verification: `tests/unit/binance/test_binance_gateway.py` and
+`tests/unit/binance/test_binance_envs_futures.py`.
 
 ## Research and LLM gates
 
@@ -92,8 +107,8 @@ behavior are covered by `test_adversarial_macro.py`,
 
 PAPER execution is local ledger/matcher state. Live-sync records broker facts
 and protection/review state; it does not turn observed fills into an implicit
-broker order authority. Inspect `services/ashare_paper*`,
-`services/live_trade*`, `runtime/paper_account_chain.py`, and the corresponding
+broker order authority. Inspect `services/ashare/`,
+`services/live/`, `runtime/paper_account_chain.py`, and the corresponding
 `test_paper_*`/`test_live_*` files.
 
 ## Secrets and generated state
@@ -104,5 +119,5 @@ using DPAPI under `%LOCALAPPDATA%/gribuki-trade/secrets.json`. The fallback is
 written atomically, never contains plaintext values, and is used only when the
 same-user keyring is unavailable or has been reset after a profile migration.
 Runtime databases, reports, caches and temporary files belong under
-`runtime/` and are not source-of-truth code. `test_security_secrets.py`,
-`test_integration_settings.py`, and `test_temp_root.py` verify these rules.
+`runtime/` and are not source-of-truth code. `tests/unit/runtime/test_security_secrets.py`,
+`tests/unit/runtime/test_integration_settings.py`, and `tests/unit/runtime/test_temp_root.py` verify these rules.

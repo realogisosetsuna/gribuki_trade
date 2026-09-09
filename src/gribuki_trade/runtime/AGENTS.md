@@ -12,5 +12,5 @@ before changing this package.
 - PAPER account continuity and cross-process recovery are runtime contracts.
 
 Run the focused contracts after changes:
-`tests/unit/test_runtime_guard.py`, `tests/unit/test_temp_root.py`, and
+`tests/unit/runtime/test_runtime_guard.py`, `tests/unit/runtime/test_temp_root.py`, and
 `tests/unit/storage/test_paper_account_chain.py`.

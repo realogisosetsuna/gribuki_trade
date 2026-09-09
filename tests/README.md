@@ -18,7 +18,7 @@
 | `adapters/simulated/` | 手工 ticket、PAPER broker 和 PAPER account 适配契约 |
 | `cli/` | CLI 参数、命令 handler 和结果投影 |
 | `gui/` | Qt smoke、integration gateway 和 NapCat 生命周期 |
-| `runtime/` | 运行模式 guard、临时目录、唤醒和 PAPER 连续性 |
+| `runtime/` | 运行模式 guard、临时目录、唤醒、凭据和 PAPER 连续性 |
 | `reporting/` | sidecar、PAPER-day 报告、artifact 和报告契约 |
 | `strategy_lab/` | 研究实验、factor DSL、walk-forward 和退出策略评估 |
 | `ingest/` | 新闻、搜索、官方文档采集、解析和去重 |
@@ -28,8 +28,8 @@
 | `adapters/notifiers/` | OneBot/NapCat 通知 adapter 契约 |
 | `meta/` | 仓库布局、agent-readiness 和源码语言约束 |
 
-其余测试组会按同一规则逐步迁移到 `tests/unit/<领域>/`。迁移只改变文件路径，
-不会改变模块导入或 pytest 节点中的测试函数名。
+当前单元测试已全部按领域归档到 `tests/unit/<领域>/`；新增测试应放入最接近的
+边界目录。迁移只改变文件路径，不改变模块导入或 pytest 节点中的测试函数名。
 
 ## 常用命令
 

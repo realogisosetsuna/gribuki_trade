@@ -14,7 +14,7 @@ The package is a Python 3.11–3.12 application with one console entry point,
 The repository also runs `scripts/check_repo_agent_readiness.py`, a standard
 library structural check for documentation routing, active ExecPlans and a
 small set of dependency-direction rules. Its contract is tested by
-`tests/unit/test_repo_agent_readiness.py`.
+`tests/unit/meta/test_repo_agent_readiness.py`.
 
 The implementation follows this direction:
 
@@ -76,7 +76,7 @@ details and file-level index are in `docs/architecture/data-lineage.md`.
 
 `storage/` contains event, raw, source-health, candidate, research, review,
 outbox, PAPER, live-record, exit-plan and strategy-experiment stores. Trading
-OMS behavior is in `trading/oms.py` and tested by `test_trading_oms.py`.
+OMS behavior is in `trading/core/oms.py` and tested by `test_trading_oms.py`.
 PAPER-day uses per-session journal/ledger/outbox/report sidecars, with
 cross-day continuity helpers in `runtime/paper_account_chain.py`.
 

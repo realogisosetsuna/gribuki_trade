@@ -4,7 +4,7 @@
 
 计划日期：2026-08-14；最终冻结日期：2026-08-15
 
-本文对应 [RE 后续开发计划](RE%E5%90%8E%E7%BB%AD%E5%BC%80%E5%8F%91%E8%AE%A1%E5%88%92260814.md)
+本文对应 [RE 后续开发计划](后续开发计划260814.md)
 列出的 16 项整改要求，记录本轮相对仓库既有版本形成的代码、持久化、运行编排、测试和文档变化。
 它不是 Git 提交日志，也不把尚未经过真实交易日或真实网络验证的能力写成已经验收。
 
@@ -54,8 +54,8 @@
 新增：
 
 - [`domain/exit_plans.py`](../../src/gribuki_trade/domain/exit_plans.py)
-- [`storage/exit_plans.py`](../../src/gribuki_trade/storage/exit_plans.py)
-- [`services/exit_plan_lifecycle.py`](../../src/gribuki_trade/services/exit_plan_lifecycle.py)
+- [`storage/exit_plans.py`](../../src/gribuki_trade/storage/execution/exit_plans.py)
+- [`services/exit_plan_lifecycle.py`](../../src/gribuki_trade/services/exit/exit_plan_lifecycle.py)
 
 每个保护流采用 append-only 事件序列。计划创建、成交附着、DEEP 请求、版本替换、分析失败、barrier
 观察与退出信号都有稳定幂等键、连续序号、前序哈希和事件哈希。SQLite trigger 禁止 UPDATE/DELETE；
@@ -94,7 +94,7 @@ stop、目标或时间条件，候选直接拒绝。
 
 ### 3.4 PAPER 主链
 
-[`services/ashare_paper_day.py`](../../src/gribuki_trade/services/ashare_paper_day.py) 的顺序改为：
+[`services/ashare/paper_day/ashare_paper_day.py`](../../src/gribuki_trade/services/ashare/paper_day/ashare_paper_day.py) 的顺序改为：
 
 ```text
 技术候选与双轨买入复核
@@ -133,9 +133,9 @@ PAPER journal 与退出哈希链恢复未完成 follow-up；旧待撮合订单�
 
 新增/扩展：
 
-- [`services/adversarial_macro.py`](../../src/gribuki_trade/services/adversarial_macro.py)
-- [`services/llm_production.py`](../../src/gribuki_trade/services/llm_production.py)
-- [`storage/adversarial_audit.py`](../../src/gribuki_trade/storage/adversarial_audit.py)
+- [`services/adversarial_macro.py`](../../src/gribuki_trade/services/macro/adversarial_macro.py)
+- [`services/llm_production.py`](../../src/gribuki_trade/services/llm/llm_production.py)
+- [`storage/adversarial_audit.py`](../../src/gribuki_trade/storage/execution/adversarial_audit.py)
 - [`ports/llm_analyzer.py`](../../src/gribuki_trade/ports/llm_analyzer.py)
 
 对抗轨角色覆盖催化支持、风险挑战、证据审计、市场状态和执行风险。首轮角色彼此不可见，使用同一
@@ -161,10 +161,10 @@ PAPER journal 与退出哈希链恢复未完成 follow-up；旧待撮合订单�
 
 - [`domain/live_records.py`](../../src/gribuki_trade/domain/live_records.py)
 - [`storage/live_records/live_records.py`](../../src/gribuki_trade/storage/live_records/live_records.py)
-- [`services/live_trade_records.py`](../../src/gribuki_trade/services/live_trade_records.py)
-- [`services/live_trade_orchestration.py`](../../src/gribuki_trade/services/live_trade_orchestration.py)
-- [`services/live_protection_inputs.py`](../../src/gribuki_trade/services/live_protection_inputs.py)
-- [`services/live_market_tracking.py`](../../src/gribuki_trade/services/live_market_tracking.py)
+- [`services/live/live_trade_records.py`](../../src/gribuki_trade/services/live/live_trade_records.py)
+- [`services/live/live_trade_orchestration.py`](../../src/gribuki_trade/services/live/live_trade_orchestration.py)
+- [`services/live/live_protection_inputs.py`](../../src/gribuki_trade/services/live/live_protection_inputs.py)
+- [`services/live/live_market_tracking.py`](../../src/gribuki_trade/services/live/live_market_tracking.py)
 
 `live-sync ingest` 只接受白名单 OneBot 私聊、合理消息时窗和严格 `GT-LIVE/1` 语法。新 proposal
 必须包含券商委托号 `external_order_id` 与独立成交执行号 `external_fill_id`；同一委托的多个部分成交
