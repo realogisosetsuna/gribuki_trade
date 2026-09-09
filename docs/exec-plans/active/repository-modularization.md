@@ -84,7 +84,7 @@ The nested PAPER-day runner also delegates pure K-line/technical-bar codecs,
 exit-barrier helpers, UTC normalization, canonical hashing, and event JSONL/file
 primitives to `services/ashare/ashare_paper_day_serialization.py`. Historical
 private helper names remain aliases in the runner module. Focused validation is
-covered by `tests/unit/test_ashare_paper_day_serialization.py` and the existing
+covered by `tests/unit/ashare/test_ashare_paper_day_serialization.py` and the existing
 PAPER-day compatibility suite.
 
 The nested runner now also delegates watchlist, intraday-candidate, pending-order,
@@ -94,7 +94,7 @@ object/document conversion, A-share board resolution, and strict scalar
 validation; the runner keeps recovery orchestration, journal transactions,
 scheduling, and notifications. `PaperDayWatchEntry` and historical private
 helper names remain compatibility aliases in the facade. Focused coverage is in
-`tests/unit/test_ashare_paper_day_documents.py` and the existing PAPER-day suite.
+`tests/unit/ashare/test_ashare_paper_day_documents.py` and the existing PAPER-day suite.
 
 The AKShare daily-history slice now includes
 `adapters/akshare_daily_parsing.py`. It owns provider symbol/date normalization,
@@ -272,9 +272,9 @@ synchronization, runtime authority, and all order-changing endpoints.
 Focused evidence:
 
 ```bash
-python -m pytest tests/unit/test_binance_futures_parsing.py \
-  tests/unit/test_binance_futures_order_params.py \
-  tests/unit/test_binance_orderbook.py -q
+python -m pytest tests/unit/binance/test_binance_futures_parsing.py \
+  tests/unit/binance/test_binance_futures_order_params.py \
+  tests/unit/binance/test_binance_orderbook.py -q
 ```
 
 Result: 28 passed (with the recurring Windows pytest-cache permission warning).

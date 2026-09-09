@@ -188,11 +188,11 @@ Current source evidence includes `src/gribuki_trade/cli_parsing.py`,
 `src/gribuki_trade/adapters/ashare/screening_factors.py`, and
 `src/gribuki_trade/strategy_lab/experiment_serialization.py`. Focused verification is
 covered by `tests/unit/test_cli_parsing.py`,
-`tests/unit/test_cli_output.py`, `tests/unit/test_binance_spot_parsing.py`,
-`tests/unit/test_futures_oms_codec.py`,
-`tests/unit/test_trading_oms_codec.py`,
-`tests/unit/test_ashare_paper_day_projection.py`,
-`tests/unit/test_ashare_close_components.py`,
+`tests/unit/test_cli_output.py`, `tests/unit/binance/test_binance_spot_parsing.py`,
+`tests/unit/trading/test_futures_oms_codec.py`,
+`tests/unit/trading/test_trading_oms_codec.py`,
+`tests/unit/ashare/test_ashare_paper_day_projection.py`,
+`tests/unit/ashare/test_ashare_close_components.py`,
 `tests/unit/test_paper_day_store.py`, and
 `tests/unit/test_strategy_lab_exit_serialization.py`, with strategy experiment
 serialization coverage in `tests/unit/test_strategy_lab_experiment_serialization.py`
@@ -215,7 +215,7 @@ lazy-loads the facade so it can be imported independently without changing
 monkeypatch hooks.
 
 Representative routing tests include `tests/unit/test_akshare_market_data.py`,
-`tests/unit/test_ashare_paper_day.py`, `tests/unit/test_binance_execution.py`,
+`tests/unit/ashare/test_ashare_paper_day.py`, `tests/unit/binance/test_binance_execution.py`,
 and `tests/unit/test_cli.py`. The remaining oversized orchestration facades
 (`ashare_paper_day.py`, `storage/live_records.py`, the remaining sidecar loading in
 `reporting/paper_day_summary.py`, and the A-share workflow branches in `cli.py`)

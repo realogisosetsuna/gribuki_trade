@@ -11,5 +11,5 @@ before changing the broker-neutral OMS.
 - Keep broker-specific protocol code in `adapters/`; the OMS consumes ports and
   domain models.
 
-Run `tests/unit/test_trading_oms.py` and the relevant broker adapter tests after
+Run `tests/unit/trading/test_trading_oms.py` and the relevant broker adapter tests after
 changes.

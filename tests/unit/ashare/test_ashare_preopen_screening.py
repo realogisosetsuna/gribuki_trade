@@ -25,7 +25,7 @@ from gribuki_trade.ports.ashare_screening import (
 )
 
 FIXTURE = (
-    Path(__file__).parents[1]
+    Path(__file__).parents[2]
     / "fixtures"
     / "ashare_screening"
     / "provider_payloads.json"

@@ -11,10 +11,10 @@ Implementation evidence: `src/gribuki_trade/adapters/binance/`,
 `src/gribuki_trade/adapters/binance/orderbook.py`,
 `src/gribuki_trade/services/binance_orderbook.py`, and
 `src/gribuki_trade/trading/spot_order_lists.py`. Verification evidence:
-`tests/unit/test_binance_futures_stream.py`,
-`tests/unit/test_binance_futures_user_stream.py`,
-`tests/unit/test_binance_futures_unattended.py`,
-`tests/unit/test_futures_oms.py`, `tests/unit/test_binance_orderbook.py`,
+`tests/unit/binance/test_binance_futures_stream.py`,
+`tests/unit/binance/test_binance_futures_user_stream.py`,
+`tests/unit/binance/test_binance_futures_unattended.py`,
+`tests/unit/trading/test_futures_oms.py`, `tests/unit/binance/test_binance_orderbook.py`,
 `tests/unit/test_spot_order_list_store.py`, and the Spot Binance adapter tests
 under `tests/unit/`.
 

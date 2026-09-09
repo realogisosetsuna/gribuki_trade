@@ -36,6 +36,21 @@ gribuki_trade/
 └── cli_commands/命令注册、参数解析和按命令族划分的 handler
 ```
 
+测试代码采用相同的领域分组，避免 `tests/unit/` 继续堆叠所有模块的平铺文件：
+
+```text
+tests/
+├── fixtures/             固定的供应商 payload、报告和行情样本
+└── unit/
+    ├── ashare/           A 股研究、PAPER、盘前和盘后
+    ├── binance/          Spot、USDⓈ-M Futures、流和执行
+    └── trading/          OMS、订单和仓位策略
+```
+
+其他测试领域按同一规则迁移到 `tests/unit/<领域>/`。测试文件保持
+`test_<module>.py` 命名，pytest 仍从 `tests/` 递归收集，因此不会改变 CI 命令。
+完整的测试目录说明见 [`tests/README.md`](../../tests/README.md)。
+
 ## 新代码放置规则
 
 | 需求 | 归属 | 不应放入 |

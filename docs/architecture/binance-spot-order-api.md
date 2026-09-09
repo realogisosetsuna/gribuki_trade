@@ -46,5 +46,5 @@ Official reference: [Spot Trade REST API](https://developers.binance.com/en/docs
 
 Implementation: `src/gribuki_trade/adapters/binance/gateway.py` and
 `src/gribuki_trade/adapters/binance/models.py`. Verification:
-`tests/unit/test_binance_gateway.py` and the Binance adapter test family under
+`tests/unit/binance/test_binance_gateway.py` and the Binance adapter test family under
 `tests/unit/`.
