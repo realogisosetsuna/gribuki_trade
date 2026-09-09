@@ -150,6 +150,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "gribuki_trade.services.ashare.ashare_paper_day_config",
             "services/ashare/ashare_paper_day_config.py",
         ),
+        (
+            "gribuki_trade.services.ashare.ashare_paper_day_reports",
+            "services/ashare/ashare_paper_day_reports.py",
+        ),
         ("gribuki_trade.gui.napcat_process", "gui/napcat_process.py"),
         (
             "gribuki_trade.cli_commands.post_close_results",
@@ -524,6 +528,11 @@ def test_model_extractions_keep_facade_type_identity() -> None:
                 "_entry_rejection_display",
                 "_match_reason_display",
             ),
+        ),
+        (
+            "gribuki_trade.services.ashare.ashare_paper_day",
+            "gribuki_trade.services.ashare.ashare_paper_day_reports",
+            ("account_summary_document", "account_summary_text", "render_report"),
         ),
         (
             "gribuki_trade.gui.integrations",

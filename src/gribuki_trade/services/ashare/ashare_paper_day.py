@@ -83,13 +83,13 @@ from gribuki_trade.ports.notifier import (
 from gribuki_trade.reporting.contracts import (
     ReportKind,
     humanize_internal_code,
-    report_contract,
     validate_markdown_report_contract,
 )
 from gribuki_trade.services.ashare import ashare_paper_day_documents as _paper_day_documents
 from gribuki_trade.services.ashare import ashare_paper_day_llm_payloads as _paper_day_llm_payloads
 from gribuki_trade.services.ashare import ashare_paper_day_notifications as _paper_day_notifications
 from gribuki_trade.services.ashare import ashare_paper_day_projection as _paper_day_projection
+from gribuki_trade.services.ashare import ashare_paper_day_reports as _paper_day_reports
 from gribuki_trade.services.ashare import ashare_paper_day_risk as _paper_day_risk
 from gribuki_trade.services.ashare.ashare_intraday_llm import (
     IntradayLLMCoordinator,
@@ -212,6 +212,12 @@ _paper_notification_price_text = _paper_day_notifications._paper_notification_pr
 _paper_notification_title_and_detail = _paper_day_notifications._paper_notification_title_and_detail
 _paper_report_artifact_key = _paper_day_notifications._paper_report_artifact_key
 _PAPER_HEALTH_EVENTS = _paper_day_notifications._PAPER_HEALTH_EVENTS
+
+# 日报/账户摘要只消费不可变投影；旧 facade 继续暴露这些纯函数，便于历史
+# 工具和测试直接复用同一实现。
+account_summary_document = _paper_day_reports.account_summary_document
+account_summary_text = _paper_day_reports.account_summary_text
+render_report = _paper_day_reports.render_report
 
 # 观察列表、候选、委托和成交文档由无副作用模块实现；这里保留历史名称，
 # 让旧的恢复代码和外部测试继续从 runner facade 访问同一份契约。
@@ -3953,41 +3959,16 @@ class ASharePaperDayRunner:
         )
 
     def _account_summary_document(self) -> dict[str, object]:
-        snapshot = self._paper.snapshot(self._manifest.account_id)
-        market_value = sum(
-            (
-                self._last_prices.get(item.symbol, item.average_cost) * item.quantity
-                for item in snapshot.positions
-            ),
-            Decimal("0"),
+        return _paper_day_reports.account_summary_document(
+            self._paper.snapshot(self._manifest.account_id),
+            self._last_prices,
         )
-        return {
-            "cash": snapshot.cash,
-            "estimated_equity": snapshot.cash + market_value,
-            "estimated_market_value": market_value,
-            "positions": [
-                {
-                    "available_to_sell": item.available_to_sell,
-                    "average_cost": item.average_cost,
-                    "mark": self._last_prices.get(item.symbol),
-                    "quantity": item.quantity,
-                    "symbol": item.symbol,
-                    "today_buy": item.today_buy,
-                }
-                for item in snapshot.positions
-                if item.quantity > 0
-            ],
-        }
 
     def _account_summary_text(self, label: str) -> str:
-        document = self._account_summary_document()
-        positions = cast(list[dict[str, object]], document["positions"])
-        return (
-            f"【A股模拟盘｜{label}摘要】\n"
-            f"现金：{Decimal(str(document['cash'])):.2f} 元\n"
-            f"估算持仓市值：{Decimal(str(document['estimated_market_value'])):.2f} 元\n"
-            f"估算权益：{Decimal(str(document['estimated_equity'])):.2f} 元\n"
-            f"持仓数量：{len(positions)}；待撮合：{len(self._pending)}。"
+        return _paper_day_reports.account_summary_text(
+            self._account_summary_document(),
+            label=label,
+            pending_order_count=len(self._pending),
         )
 
     async def _expire_pending_orders(
@@ -4655,61 +4636,10 @@ class ASharePaperDayRunner:
         return required, sent, max(0, required - sent)
 
     def _render_report(self, required: int, sent: int, gaps: int) -> str:
-        events = self._store.events(self._manifest.run_id)
+        """读取权威运行时状态并委托给无副作用日报投影器。"""
+
         snapshot = self._paper.snapshot(self._manifest.account_id)
-        fills = self._paper.fills(self._manifest.account_id)
-        rows = [
-            "# A股模拟盘全天运行报告",
-            "",
-            f"> 报告类型：{report_contract(ReportKind.DAILY_REVIEW).chinese_name}",
-            "> 权威边界：本报告是不可变交易事件与 PAPER 账本的可读投影。",
-            "",
-            "## 执行摘要",
-            "",
-            f"- 交易日：{self._manifest.session_date.isoformat()}",
-            f"- Run ID：`{self._manifest.run_id}`",
-            f"- 策略：`{self._config.strategy_version}`",
-            f"- 会话覆盖：{'PARTIAL_SESSION' if self._partial_session else 'FULL_SESSION'}",
-            f"- 初始资金：{self._manifest.initial_cash:.2f} 元",
-            "- 执行边界：仅本地 PAPER；从未连接或调用真实券商下单接口",
-            "- 撮合边界：完成分钟线产生信号，仅使用信号可知后才开始的"
-            "首个完整 1 分钟区间做单次 IOC；非盘口仿真",
-            "",
-            "## 市场复盘",
-            "",
-            f"- 不可变事件总数：{len(events)}。",
-            "- 全市场扫描、关注名单、技术信号及数据源状态均按事件可知时点留痕；"
-            "详细证据见本报告末尾时间线。",
-            "- 公开网页行情不等同于交易所可执行盘口，任何降级源均不得静默提高入场权限。",
-            "",
-            "## 操作复盘",
-            "",
-            "### 最终账户",
-            "",
-            f"- 现金：{snapshot.cash:.2f} 元",
-            f"- 成交笔数：{len(fills)}",
-            f"- 必推事件：{required}；已发送：{sent}；投递缺口：{gaps}",
-            "",
-            "| 标的 | 数量 | 当日买入 | 可卖 | 均价 | 最新留存价 |",
-            "|---|---:|---:|---:|---:|---:|",
-        ]
-        for position in snapshot.positions:
-            if position.quantity <= 0:
-                continue
-            mark = self._last_prices.get(position.symbol)
-            rows.append(
-                f"| {position.symbol} | {position.quantity} | {position.today_buy} | "
-                f"{position.available_to_sell} | {position.average_cost:.3f} | "
-                f"{_decimal_display(mark)} |"
-            )
-        rows.extend(("", "## 持仓深研", "", "### 持仓退出计划", ""))
-        rows.extend(
-            (
-                "| 标的 | 深度 | 状态 | 确定止损 | 趋势目标 | 时间门槛 |",
-                "|---|---|---|---:|---:|---|",
-            )
-        )
-        planned_symbols: set[str] = set()
+        exit_plans: dict[str, ExitPlan] = {}
         if self._exit_plan_lifecycle is not None:
             for symbol, protection_id in sorted(self._exit_protection_by_symbol.items()):
                 held_position = snapshot.position(symbol)
@@ -4719,85 +4649,22 @@ class ASharePaperDayRunner:
                     plan = self._exit_plan_lifecycle.active_plan(protection_id)
                 except Exception:
                     continue
-                planned_symbols.add(symbol)
-                rows.append(
-                    f"| {symbol} | {plan.depth.value} | {plan.state.value} | "
-                    f"{plan.stop_price:.3f} | {plan.take_profit_price:.3f} | "
-                    f"{plan.time_exit_at.astimezone(SHANGHAI):%Y-%m-%d %H:%M} |"
-                )
-        unplanned = tuple(
-            item.symbol
-            for item in snapshot.positions
-            if item.quantity > 0 and item.symbol not in planned_symbols
+                exit_plans[symbol] = plan
+        return _paper_day_reports.render_report(
+            events=self._store.events(self._manifest.run_id),
+            snapshot=snapshot,
+            fills=self._paper.fills(self._manifest.account_id),
+            session_date=self._manifest.session_date,
+            run_id=self._manifest.run_id,
+            strategy_version=self._config.strategy_version,
+            partial_session=self._partial_session,
+            initial_cash=self._manifest.initial_cash,
+            last_prices=self._last_prices,
+            exit_plans=exit_plans,
+            required=required,
+            sent=sent,
+            gaps=gaps,
         )
-        if unplanned:
-            rows.append("")
-            rows.append(
-                "未绑定退出计划的历史持仓：" + "、".join(unplanned) + "。"
-                "这些标的不会被伪装为已持续监控。"
-            )
-        rows.extend(("", "## 成交与费用", ""))
-        if not fills:
-            rows.append("当日没有满足全部双门信号、风险和下一分钟撮合条件的成交。")
-        else:
-            rows.extend(
-                (
-                    "| 时间 | 标的 | 方向 | 数量 | 价格 | 佣金 | 过户费 | 印花税 |",
-                    "|---|---|---|---:|---:|---:|---:|---:|",
-                )
-            )
-            for item in fills:
-                fill = item.fill
-                rows.append(
-                    f"| {fill.executed_at.astimezone(SHANGHAI):%H:%M:%S} | "
-                    f"{fill.symbol} | {fill.side.value} | {fill.quantity} | "
-                    f"{fill.price:.3f} | {item.fees.commission:.2f} | "
-                    f"{item.fees.transfer_fee:.2f} | {item.fees.stamp_tax:.2f} |"
-                )
-        held_symbols = "、".join(
-            item.symbol for item in snapshot.positions if item.quantity > 0
-        ) or "无"
-        rows.extend(
-            (
-                "",
-                "## 次日基线",
-                "",
-                f"- 收盘留存持仓：{held_symbols}。",
-                "- 下一交易日开盘前重新核验交易日历、停复牌、价格带、公告和最新退出计划；"
-                "不得把今日信号直接复用为次日订单。",
-                "- 逐标的 LLM 双轨深研由盘后编排独立生成；未生成时不得声称已经完成次日复核。",
-            )
-        )
-        rows.extend(("", "## 不可变事件时间线", ""))
-        for event in events:
-            local = event.known_at.astimezone(SHANGHAI)
-            symbol = "" if event.symbol is None else f" [{event.symbol}]"
-            rows.append(f"### {event.sequence}. {local:%H:%M:%S} {event.event_type}{symbol}")
-            rows.append("")
-            rows.append(
-                f"阶段 `{event.phase.value}`；级别 `{event.severity.value}`；"
-                f"事件 `{event.event_id}`。"
-            )
-            rows.append("")
-            rows.append("```json")
-            rows.append(json.dumps(event.payload, ensure_ascii=False, sort_keys=True))
-            rows.append("```")
-            rows.append("")
-        rows.extend(
-            (
-                "## 真实性与限制",
-                "",
-                "- 数据来自公开网页聚合源，不是交易所 tick/L1/L2 或可执行报价。",
-                "- 盘前网页快照以今晨首次抓取时间作为 available_at，未倒填为昨日已知。",
-                "- 降级分钟源只有在独立全市场快照价格交叉核对后才可通过入场数据门。",
-                "- 同日卖出信号全部留存；本次按约定不提交任何卖单。",
-                "- QQ outbox 是至少一次投递；极端崩溃窗口可能产生可识别的重复消息。",
-                "",
-            )
-        )
-        rendered = "\n".join(rows).rstrip() + "\n"
-        validate_markdown_report_contract(ReportKind.DAILY_REVIEW, rendered)
-        return rendered
 
 
 def _paper_day_event_has_empty_candidates(event: PaperDayEvent) -> bool:

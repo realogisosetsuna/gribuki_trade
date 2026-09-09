@@ -105,6 +105,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `adapters/binance/user_stream.py` | `adapters/binance/user_stream_parsing.py` | Spot user-data event models, signature encoding, strict frame/event parsing, and field validation |
 | `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_models.py` | Immutable configuration, PIT review context, journal acceptance, schedule, and gate outcome models |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_events.py` | Event store protocol, publisher, sidecar heartbeat/recovery, and notification outbox reconciliation |
+| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_reports.py` | Pure account-summary and Markdown daily-report projections; runner retains store reads, exit-plan lookup, artifact writing, and state transitions |
 | `services/ashare/ashare_close_notifications.py` | `services/ashare/ashare_close_notification_splitting.py` | Pure report-contract envelopes, line/character payload splitting, and dual-track macro summary rendering |
 | `cli_commands/handlers/binance.py` | `cli_commands/binance_results.py` | Balance validation, testnet deltas, and reconciliation payload shaping |
 | `cli_commands/handlers/binance.py` | `cli_commands/handlers/binance_live.py` | LIVE Spot/Futures guards, account queries, order tests, execution, and private stream orchestration |
