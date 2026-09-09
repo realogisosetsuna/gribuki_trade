@@ -177,6 +177,20 @@ def test_cli_handler_families_are_independent_execution_modules() -> None:
     assert callable(binance._binance_live_status)
 
 
+def test_paper_day_summary_models_keep_facade_type_identity() -> None:
+    """摘要模型独立可导航，同时旧导入路径保留相同类型身份。"""
+
+    summary = importlib.import_module("gribuki_trade.reporting.paper_day_summary")
+    models = importlib.import_module("gribuki_trade.reporting.paper_day_summary_models")
+    for name in (
+        "PaperDayExecutiveProjection",
+        "PaperDayPriceAcceptanceProjection",
+        "PaperDayRiskPolicyProjection",
+        "PaperDayWatchlistChange",
+    ):
+        assert getattr(summary, name) is getattr(models, name)
+
+
 def test_cli_runtime_support_is_importable_before_the_facade() -> None:
     """运行时辅助可单独导航，且导入顺序不会触发 CLI 循环依赖。"""
 

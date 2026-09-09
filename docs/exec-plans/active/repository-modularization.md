@@ -426,3 +426,11 @@ account, order-test, submit/cancel, and private-stream orchestration. The
 original `handlers/binance.py` keeps testnet, history-sync, backtest, and shadow
 workflows while re-exporting the LIVE names for `cli.py` compatibility. The
 focused CLI and module-layout route passed 173 tests after the split.
+
+The PAPER-day summary model boundary now lives in
+`reporting/paper_day_summary_models.py`. It owns the immutable executive,
+watchlist/source-state, risk-policy, price/quantity, and execution projection
+data classes. `paper_day_summary.py` retains sidecar loading, aggregation,
+rendering/writing orchestration, and compatibility imports with unchanged type
+identity. The focused summary, account, LLM, and module-layout route passed
+before the next repository gate.
