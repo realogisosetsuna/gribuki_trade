@@ -50,10 +50,12 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `adapters/market_data/akshare.py` | `adapters/market_data/akshare_payload.py` | Provider record decoding, symbol/number/time normalization, volume-unit conversion, JSONP/Eastmoney payload parsing, and required-column validation |
 | `gui/integrations.py` | `gui/integration_validation.py` | Provider/model/token validation and safe UI error text |
 | `features/close_analysis.py` | `features/close_analysis_indicators.py` | ATR/RSI/ADX, volatility, liquidity, trend, and score calculations |
+| `features/close_analysis.py` | `features/close_analysis_models.py` | Close-analysis configuration and immutable signal-family, horizon, and technical-assessment models |
 | `services/ashare_close_analysis.py` | `services/ashare_close_models.py`, `services/ashare_close_projection.py`, `services/ashare_close_notifications.py` | Point-in-time request/result contracts, pure evidence/technical projections, and deterministic report rendering/message splitting |
 | `services/adversarial_macro.py` | `services/adversarial_macro_serialization.py` | Canonical request/identity/analysis documents, hashes, and scalar normalization |
 | `services/adversarial_macro.py` | `services/adversarial_macro_policy.py` | Role validation, peer envelopes, conservative aggregation, and round stability |
 | `services/adversarial_macro.py` | `services/adversarial_macro_boundaries.py` | Role request construction, failure-safe ABSTAIN analysis, and sanitized failure-call documents |
+| `services/adversarial_macro.py` | `services/adversarial_macro_models.py` | Adversarial roles, immutable configuration, round/opinion/run records, and audit value objects |
 | `ingest/search_discovery.py` | `ingest/search_discovery_policy.py` | Pure result sanitization, publisher identity, discovery clustering, and confirmation basis selection |
 | `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_quantity.py` | Pure lot/quantity rules and sell-quantity planning for A-share intraday PAPER execution |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_config.py` | Frozen schedule/risk configuration and policy manifest projections |
@@ -98,6 +100,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `storage/live_records.py` | `storage/live_record_integrity.py`, `storage/live_record_errors.py` | Legacy JSON recovery validation, append-only event hash-chain verification, and shared durable-store error types |
 | `storage/live_records.py` | `storage/live_record_confirmation_policy.py` | Pure two-phase live-fill identity validation for command, sender, and confirmation fingerprint |
 
+| `cli.py` | `cli_commands/handlers/ashare_news.py` | One-shot A-share news collection, continuous news polling, and CNINFO disclosure ingestion with source-health persistence |
 ## Next slices
 
 The next large files are grouped by the responsibilities they mix:

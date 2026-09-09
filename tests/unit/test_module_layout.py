@@ -37,6 +37,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "features/close_analysis_indicators.py",
         ),
         (
+            "gribuki_trade.features.close_analysis_models",
+            "features/close_analysis_models.py",
+        ),
+        (
             "gribuki_trade.services.ashare.ashare_paper_day_config",
             "services/ashare/ashare_paper_day_config.py",
         ),

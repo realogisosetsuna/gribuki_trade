@@ -499,3 +499,29 @@ Extracted pure event interpretation from `reporting/paper_day_summary.py` into
 risk policy, price/quantity acceptance, stable rejection, and source transition
 projections; the facade retains compatibility aliases and file/report assembly.
 Focused tests, Ruff, mypy, and compile checks pass.
+
+
+### 2026-09-09 — close-analysis models
+
+Extracted close-analysis enums, configuration, signal-family, horizon, and
+technical-assessment value objects into `features/close_analysis_models.py`.
+The feature facade retains indicator calculations and assessment orchestration.
+Focused tests, Ruff, mypy, and compile checks pass.
+
+
+### 2026-09-09 — adversarial macro models
+
+Extracted adversarial-analysis enums, role charters, immutable configuration,
+round/opinion/run records, and audit value objects into
+`services/adversarial_macro_models.py`. The analyzer facade retains provider
+concurrency, budgets, aggregation, and failure orchestration while re-exporting
+the historical model identities. Focused tests, Ruff, mypy, and compile checks
+pass.
+
+
+### 2026-09-09 — A-share news CLI handlers
+
+Extracted one-shot news, continuous polling, and disclosure-index ingestion into
+`cli_commands/handlers/ashare_news.py`. The CLI facade retains historical names
+and dispatch while the handler owns provider collection and source-health
+persistence. Focused CLI, direct-import, Ruff, mypy, and compile checks pass.
