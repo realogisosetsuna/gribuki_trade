@@ -39,6 +39,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `storage/paper_day.py` | `storage/paper_day_codec.py` | PAPER-day row decoding, event digests, identifiers, and lease argument validation |
 | `storage/live_records.py` | `storage/live_record_codec.py` | Live-record scalar validation, canonical JSON, event/protection/work identifiers, and event hashes |
 | `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_serialization.py`, `strategy_lab/exit_simulation.py`, `strategy_lab/exit_walk_forward.py` | Exit documents, pure daily replay/cost metrics, and trading-day walk-forward fold/index planning |
+| `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_models.py` | Frozen bars/episodes/datasets, costs, outcomes, metrics, and research-only trial registry models |
 | `strategy_lab/experiments.py` | `strategy_lab/experiment_serialization.py` | Strategy/data manifests, trial folds, metrics and holdout JSON plus SHA-256 serialization |
 | `services/ashare_paper_day.py` | `services/ashare_paper_day_projection.py` | LLM gate and DEEP exit audit/notification projections |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_serialization.py` | K-line/technical-bar codecs, exit-barrier/time helpers, UTC normalization, canonical hashes, and event JSONL/file primitives |

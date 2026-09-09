@@ -525,3 +525,11 @@ Extracted one-shot news, continuous polling, and disclosure-index ingestion into
 `cli_commands/handlers/ashare_news.py`. The CLI facade retains historical names
 and dispatch while the handler owns provider collection and source-health
 persistence. Focused CLI, direct-import, Ruff, mypy, and compile checks pass.
+
+
+### 2026-09-09 — exit evaluation models
+
+Extracted frozen exit-evaluation bars, episodes, datasets, cost models, outcomes,
+metrics, and research-only trial registries into `strategy_lab/exit_models.py`.
+The evaluator facade retains deterministic replay, candidate evaluation, and
+walk-forward orchestration. Focused tests, Ruff, mypy, and compile checks pass.

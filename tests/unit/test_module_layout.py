@@ -29,6 +29,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "strategy_lab/exit_walk_forward.py",
         ),
         (
+            "gribuki_trade.strategy_lab.exit_models",
+            "strategy_lab/exit_models.py",
+        ),
+        (
             "gribuki_trade.adapters.market_data.cross_market_payload",
             "adapters/market_data/cross_market_payload.py",
         ),
