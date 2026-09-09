@@ -790,3 +790,16 @@ Extracted OCO/OTO/OTOCO order-list and bulk-order snapshot decoding into
 transport, credentials, order tracking, execution authority, and uncertain
 result reconciliation; historical parser names remain available through the
 gateway facade.
+
+### 2026-09-10 — PAPER-day account and report projections
+
+Moved the side-effect-free account summary and Markdown daily-report projection
+from `services/ashare/ashare_paper_day.py` to
+`services/ashare/ashare_paper_day_reports.py`. The new module consumes immutable
+account snapshots, fills, events, and resolved exit plans only. The runner keeps
+authoritative SQLite/event-store reads, exit-plan lookup, report file writes,
+artifact delivery, leases, and all state transitions; historical facade methods
+and pure helper identities remain available. Added independent projection tests,
+module-layout identity coverage, and architecture mappings. Focused PAPER-day,
+artifact-delivery, renderer, and module-layout tests pass; no transaction or
+broker boundary moved.
