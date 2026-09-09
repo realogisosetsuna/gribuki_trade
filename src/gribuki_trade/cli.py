@@ -10,7 +10,7 @@ import os
 import sys
 import time
 from collections.abc import Awaitable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress  # noqa: F401 - handler facade hook
 from datetime import UTC, date, datetime, timedelta
 from datetime import time as datetime_time
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal, InvalidOperation
