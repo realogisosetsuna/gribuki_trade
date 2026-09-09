@@ -2,11 +2,14 @@ from decimal import Decimal
 from unittest import TestCase
 
 from gribuki_trade.adapters.binance.spot_parsing import (
+    map_order_status,
     normalize_symbol,
     parameter_text,
     parse_levels,
+    parse_order_snapshot,
     sanitize_message,
 )
+from gribuki_trade.domain.orders import OrderStatus
 
 
 class BinanceSpotParsingTests(TestCase):
@@ -20,3 +23,23 @@ class BinanceSpotParsingTests(TestCase):
         levels = parse_levels([["100.00", "0.25"], ["99.50", "1.0"]], "bids")
         self.assertEqual(levels[0].price, Decimal("100.00"))
         self.assertEqual(levels[1].quantity, Decimal("1.0"))
+
+    def test_order_snapshot_and_status_are_transport_independent(self) -> None:
+        snapshot = parse_order_snapshot(
+            {
+                "symbol": "BTCUSDT",
+                "clientOrderId": "client-1",
+                "orderId": 42,
+                "status": "PARTIALLY_FILLED",
+                "side": "BUY",
+                "price": "100.00",
+                "origQty": "0.25",
+                "executedQty": "0.10",
+                "cummulativeQuoteQty": "10.000",
+                "transactTime": 123,
+            },
+            fallback_symbol="ETHUSDT",
+        )
+        self.assertEqual(snapshot.status, OrderStatus.PARTIALLY_FILLED)
+        self.assertEqual(snapshot.executed_quantity, Decimal("0.10"))
+        self.assertEqual(map_order_status("FILLED"), OrderStatus.FILLED)

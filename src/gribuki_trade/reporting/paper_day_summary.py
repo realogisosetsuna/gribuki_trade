@@ -16,7 +16,6 @@ labels every value that the sidecars cannot prove.
 
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 from collections import Counter
@@ -53,6 +52,18 @@ from .paper_day_projection_models import (
     PaperDayPositionProjection,
     PaperDaySidecarError,
     PaperDaySidecarEvent,
+)
+from .paper_day_sidecar_codec import (
+    counter_items as _sidecar_counter_items,
+)
+from .paper_day_sidecar_codec import (
+    int_tuple as _sidecar_int_tuple,
+)
+from .paper_day_sidecar_codec import (
+    read_final_result as _sidecar_read_final_result,
+)
+from .paper_day_sidecar_codec import (
+    string_tuple as _sidecar_string_tuple,
 )
 
 _llm_projection = project_llm_sidecars
@@ -823,13 +834,11 @@ def _watchlist_changes(
 
 
 def _string_tuple(value: object) -> tuple[str, ...]:
-    if not isinstance(value, list):
-        return ()
-    return tuple(item for item in value if isinstance(item, str))
+    return _sidecar_string_tuple(value)
 
 
 def _counter_items(counter: Counter[str]) -> tuple[tuple[str, int], ...]:
-    return tuple(sorted(counter.items(), key=lambda item: (-item[1], item[0])))
+    return _sidecar_counter_items(counter)
 
 
 def _price_acceptance(
@@ -1079,11 +1088,7 @@ def _sell_execution_acceptances(
 
 
 def _int_tuple(value: object) -> tuple[int, ...]:
-    if not isinstance(value, list):
-        return ()
-    return tuple(
-        item for item in value if isinstance(item, int) and not isinstance(item, bool)
-    )
+    return _sidecar_int_tuple(value)
 
 
 def _stable_rejection_reasons(
@@ -1219,37 +1224,7 @@ def _source_recovery_count(transitions: tuple[PaperDaySourceTransition, ...]) ->
 def _read_final_result(
     root: Path, session_date: date, run_id: str
 ) -> dict[str, object] | None:
-    candidates = (
-        root / "final-result.json",
-        root / "result.json",
-        root / "runner.stdout.log",
-    )
-    for path in candidates:
-        if not path.is_file():
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
-            continue
-        documents = [text.strip(), *(line.strip() for line in reversed(text.splitlines()))]
-        for document in documents:
-            if not document:
-                continue
-            try:
-                parsed = json.loads(document)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(parsed, dict):
-                continue
-            value = cast(dict[str, object], parsed)
-            if (
-                value.get("ok") is True
-                and value.get("action") == "run"
-                and value.get("run_id") == run_id
-                and value.get("session_date") == session_date.isoformat()
-            ):
-                return value
-    return None
+    return _sidecar_read_final_result(root, session_date, run_id)
 
 
 def _latest_original_report(root: Path, session_date: date) -> Path | None:

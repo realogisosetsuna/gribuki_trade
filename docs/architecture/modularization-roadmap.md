@@ -29,7 +29,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | Original facade | New cohesive module | Responsibility |
 |---|---|---|
 | `cli.py` | `cli_commands/parsers/`, `cli_commands/handlers/binance.py`, `cli_commands/handlers/ashare.py`, `cli_parsing.py`, `cli_output.py` | Command-family registration, Binance and read-only A-share workflow handlers, argparse converters, Decimal formatting, and atomic JSON output |
-| `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py`, `adapters/binance/spot_order_params.py` | Spot wire parsing, scalar validation, signing/redaction, and pure Spot/OCO/OTO/OTOCO parameter encoding |
+| `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py`, `adapters/binance/spot_order_params.py` | Spot wire parsing, order snapshot/status mapping, scalar validation, signing/redaction, and pure Spot/OCO/OTO/OTOCO parameter encoding |
 | `trading/futures_oms.py` | `trading/futures_oms_codec.py` | Futures SQLite codecs, JSON/Decimal/time conversion, event identity |
 | `trading/futures_oms.py` | `trading/futures_oms_schema.py` | Futures OMS SQLite DDL and indexes with caller-owned transaction scope |
 | `trading/futures_oms.py` | `trading/futures_oms_policy.py` | Pure order-status projection, protection-plan version policy, and restart-recovery query parameters |
@@ -42,6 +42,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/ashare_paper_day.py` | `services/ashare_paper_day_projection.py` | LLM gate and DEEP exit audit/notification projections |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_serialization.py` | K-line/technical-bar codecs, exit-barrier/time helpers, UTC normalization, canonical hashes, and event JSONL/file primitives |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_codec.py` | Sidecar JSON and JSONL event decoding for reports |
+| `reporting/paper_day_summary.py` | `reporting/paper_day_sidecar_codec.py` | Deterministic sidecar tuple/counter codecs and final-result identity filtering |
 | `adapters/akshare_daily.py` | `adapters/akshare_daily_parsing.py` | Symbol/date normalization, frame parsing, and DailyBar validation |
 | `adapters/market_data/cross_market.py` | `adapters/market_data/cross_market_payload.py` | DataFrame/quote/date/number parsing and exact-universe validation |
 | `adapters/market_data/akshare_daily.py` | `adapters/market_data/akshare_daily_stitch.py` | Delayed-history tail stitching and overlap diagnostics |

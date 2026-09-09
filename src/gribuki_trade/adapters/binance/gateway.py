@@ -107,6 +107,15 @@ from .spot_parsing import (
     api_code as _api_code_value,
 )
 from .spot_parsing import (
+    map_order_status,
+    parse_commission_component,
+    parse_kline,
+    parse_levels,
+    parse_order_snapshot,
+    parse_trade,
+    sanitize_message,
+)
+from .spot_parsing import (
     normalize_symbol as _normalize_symbol_value,
 )
 from .spot_parsing import (
@@ -114,13 +123,6 @@ from .spot_parsing import (
 )
 from .spot_parsing import (
     parameter_text as _parameter_text_value,
-)
-from .spot_parsing import (
-    parse_commission_component,
-    parse_kline,
-    parse_levels,
-    parse_trade,
-    sanitize_message,
 )
 from .spot_parsing import (
     sign_hmac_sha256 as _sign_hmac_sha256,
@@ -1648,67 +1650,14 @@ class BinanceSpotGateway:
         *,
         fallback_symbol: str,
     ) -> BinanceOrderSnapshot:
-        mapping = self._require_mapping(payload, "order")
-        exchange_status_value = mapping.get("status")
-        exchange_status = (
-            str(exchange_status_value).upper() if exchange_status_value is not None else None
-        )
-        side: Side | None = None
-        if mapping.get("side") is not None:
-            try:
-                side = Side(str(mapping["side"]).upper())
-            except ValueError:
-                side = None
         try:
-            order_id_value = mapping.get("orderId")
-            order_id = int(order_id_value) if order_id_value is not None else None
-            price_value = mapping.get("price")
-            price = decimal_from_api(price_value, "price") if price_value is not None else None
-            original_value = mapping.get("origQty")
-            original_quantity = (
-                decimal_from_api(original_value, "origQty") if original_value is not None else None
-            )
-            executed_quantity = decimal_from_api(mapping.get("executedQty", "0"), "executedQty")
-            cumulative_value = mapping.get("cummulativeQuoteQty")
-            cumulative_quote_quantity = (
-                decimal_from_api(cumulative_value, "cummulativeQuoteQty")
-                if cumulative_value is not None
-                else None
-            )
-            time_value = mapping.get("transactTime", mapping.get("time", mapping.get("updateTime")))
-            transact_time = int(time_value) if time_value is not None else None
+            return parse_order_snapshot(payload, fallback_symbol=fallback_symbol)
         except (TypeError, ValueError, BinanceValidationError):
             raise BinanceProtocolError("Binance order response is malformed") from None
-        client_value = mapping.get("clientOrderId", mapping.get("origClientOrderId"))
-        return BinanceOrderSnapshot(
-            symbol=str(mapping.get("symbol", fallback_symbol)).upper(),
-            client_order_id=str(client_value) if client_value is not None else None,
-            order_id=order_id,
-            status=self._map_order_status(exchange_status),
-            exchange_status=exchange_status,
-            side=side,
-            price=price,
-            original_quantity=original_quantity,
-            executed_quantity=executed_quantity,
-            transact_time_ms=transact_time,
-            cumulative_quote_quantity=cumulative_quote_quantity,
-        )
 
     @staticmethod
     def _map_order_status(exchange_status: str | None) -> OrderStatus:
-        if exchange_status is None:
-            return OrderStatus.UNKNOWN
-        return {
-            "NEW": OrderStatus.ACCEPTED,
-            "PENDING_NEW": OrderStatus.SUBMITTING,
-            "PARTIALLY_FILLED": OrderStatus.PARTIALLY_FILLED,
-            "FILLED": OrderStatus.FILLED,
-            "PENDING_CANCEL": OrderStatus.CANCEL_PENDING,
-            "CANCELED": OrderStatus.CANCELED,
-            "REJECTED": OrderStatus.BROKER_REJECTED,
-            "EXPIRED": OrderStatus.EXPIRED,
-            "EXPIRED_IN_MATCH": OrderStatus.EXPIRED,
-        }.get(exchange_status, OrderStatus.UNKNOWN)
+        return map_order_status(exchange_status)
 
     def _record_snapshot(
         self,

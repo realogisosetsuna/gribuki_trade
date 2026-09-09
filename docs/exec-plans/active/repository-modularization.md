@@ -114,6 +114,12 @@ pure stable-code, timestamp, money, percentage, and Markdown-cell formatting.
 The summary facade delegates those historical helper names without changing
 the generated report contract.
 
+The follow-up `reporting/paper_day_sidecar_codec.py` slice isolates the small
+deterministic tuple/counter codecs and final-result identity filtering from the
+summary projector. The facade keeps the historical private helper names and
+continues to own sidecar loading, projection assembly, Markdown output, and
+atomic report writing. The new codec tests and existing summary tests pass.
+
 Each slice must remove a real responsibility from its original file, retain a
 compatibility facade while callers migrate, and add a focused test for the
 new boundary. A module is not considered split merely because it was renamed
@@ -341,6 +347,13 @@ model and watchlist, candidate, order, and fill codecs, while the runner retains
 calendar, recovery, persistence, transaction, scheduling, and notification side
 effects through explicit compatibility aliases. The new CLI-handler and PAPER-day
 document routes passed together with the existing serialization and runner tests;
-the complete repository gate passed readiness, Ruff, mypy (347 source files),
-compileall, and 1815 tests with five environment-skipped tests, 41 subtests, and
+the complete repository gate passed readiness, Ruff, mypy (348 source files),
+compileall, and 1819 tests with five environment-skipped tests, 41 subtests, and
 the recurring Windows pytest-cache permission warning.
+
+The Spot gateway response boundary was tightened further: `spot_parsing.py` now
+owns order snapshot decoding and exchange-to-domain status mapping as well as the
+existing scalar, market-data, trade, and commission parsers. `gateway.py` keeps
+HTTP signing, credentials, runtime authority, tracked-order state, and the
+compatibility static methods. The focused Spot gateway route passed 31 tests after
+this change.

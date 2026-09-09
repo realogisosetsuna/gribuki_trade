@@ -12,8 +12,11 @@ import re
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
 
+from gribuki_trade.domain.orders import OrderStatus, Side
+
 from .models import (
     BinanceCommissionComponent,
+    BinanceOrderSnapshot,
     BinanceTrade,
     Kline,
     OrderBookLevel,
@@ -166,4 +169,68 @@ def parse_commission_component(value: object) -> BinanceCommissionComponent:
         taker=decimal_from_api(value["taker"], "taker"),
         buyer=decimal_from_api(value["buyer"], "buyer"),
         seller=decimal_from_api(value["seller"], "seller"),
+    )
+
+
+def map_order_status(exchange_status: str | None) -> OrderStatus:
+    """把 Binance 订单状态映射到 broker-neutral 状态。"""
+
+    if exchange_status is None:
+        return OrderStatus.UNKNOWN
+    return {
+        "NEW": OrderStatus.ACCEPTED,
+        "PENDING_NEW": OrderStatus.SUBMITTING,
+        "PARTIALLY_FILLED": OrderStatus.PARTIALLY_FILLED,
+        "FILLED": OrderStatus.FILLED,
+        "PENDING_CANCEL": OrderStatus.CANCEL_PENDING,
+        "CANCELED": OrderStatus.CANCELED,
+        "REJECTED": OrderStatus.BROKER_REJECTED,
+        "EXPIRED": OrderStatus.EXPIRED,
+        "EXPIRED_IN_MATCH": OrderStatus.EXPIRED,
+    }.get(exchange_status, OrderStatus.UNKNOWN)
+
+
+def parse_order_snapshot(payload: object, *, fallback_symbol: str) -> BinanceOrderSnapshot:
+    """解析现货订单 REST 响应，保持金额字段的 Decimal 精度。"""
+
+    if not isinstance(payload, Mapping):
+        raise TypeError("order response")
+    status_value = payload.get("status")
+    exchange_status = str(status_value).upper() if status_value is not None else None
+    side: Side | None = None
+    if payload.get("side") is not None:
+        try:
+            side = Side(str(payload["side"]).upper())
+        except ValueError:
+            side = None
+    order_id_value = payload.get("orderId")
+    order_id = int(order_id_value) if order_id_value is not None else None
+    price_value = payload.get("price")
+    price = decimal_from_api(price_value, "price") if price_value is not None else None
+    original_value = payload.get("origQty")
+    original_quantity = (
+        decimal_from_api(original_value, "origQty") if original_value is not None else None
+    )
+    executed_quantity = decimal_from_api(payload.get("executedQty", "0"), "executedQty")
+    cumulative_value = payload.get("cummulativeQuoteQty")
+    cumulative_quote_quantity = (
+        decimal_from_api(cumulative_value, "cummulativeQuoteQty")
+        if cumulative_value is not None
+        else None
+    )
+    time_value = payload.get("transactTime", payload.get("time", payload.get("updateTime")))
+    transact_time = int(time_value) if time_value is not None else None
+    client_value = payload.get("clientOrderId", payload.get("origClientOrderId"))
+    return BinanceOrderSnapshot(
+        symbol=str(payload.get("symbol", fallback_symbol)).upper(),
+        client_order_id=str(client_value) if client_value is not None else None,
+        order_id=order_id,
+        status=map_order_status(exchange_status),
+        exchange_status=exchange_status,
+        side=side,
+        price=price,
+        original_quantity=original_quantity,
+        executed_quantity=executed_quantity,
+        transact_time_ms=transact_time,
+        cumulative_quote_quantity=cumulative_quote_quantity,
     )
