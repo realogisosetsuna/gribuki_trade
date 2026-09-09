@@ -34,6 +34,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "services/ashare/ashare_paper_day_models.py",
         ),
         (
+            "gribuki_trade.cli_commands.handlers.ashare_review",
+            "cli_commands/handlers/ashare_review.py",
+        ),
+        (
             "gribuki_trade.features.cross_market_models",
             "features/cross_market_models.py",
         ),

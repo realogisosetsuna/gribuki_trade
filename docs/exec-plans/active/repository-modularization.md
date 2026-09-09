@@ -668,3 +668,11 @@ Extracted the immutable `PaperDayResult` completion record into
 `services/ashare/ashare_paper_day_models.py`. The large runner facade continues to
 own scheduling, state recovery, paper execution, durable writes, and notification
 orchestration; historical facade exports and type identity are preserved.
+
+### 2026-09-09 — CLI candidate and review handlers
+
+Moved candidate-universe mutations and the research-review state machine into
+`cli_commands/handlers/ashare_review.py`. These handlers only touch research and
+review stores and never authorize execution; the CLI facade remains the stable
+parser/dispatch and monkeypatch surface. CLI and module-layout tests, Ruff, and
+mypy pass.

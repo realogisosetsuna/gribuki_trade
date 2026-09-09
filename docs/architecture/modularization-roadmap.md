@@ -48,6 +48,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/binance/binance_shadow.py` | `services/binance/binance_shadow_models.py` | Shadow configuration, safety watermark, market quote, adapter snapshot, and session statistics |
 | `services/binance/binance_futures_unattended.py` | `services/binance/binance_futures_unattended_models.py` | Immutable startup and reconciliation summary returned by the unattended Futures service |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_models.py` | Immutable PAPER-day completion result; the runner retains scheduling, state recovery, execution, persistence, and notification orchestration |
+| `cli.py` | `cli_commands/handlers/ashare_review.py` | Candidate-universe mutations and research-review state-machine handlers; the CLI facade retains dispatch and compatibility exports |
 | `services/ashare_paper_day.py` | `services/ashare_paper_day_projection.py` | LLM gate and DEEP exit audit/notification projections |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_serialization.py` | K-line/technical-bar codecs, exit-barrier/time helpers, UTC normalization, canonical hashes, and event JSONL/file primitives |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_codec.py` | Sidecar JSON and JSONL event decoding for reports |
