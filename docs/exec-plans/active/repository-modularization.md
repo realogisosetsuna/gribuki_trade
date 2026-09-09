@@ -592,3 +592,12 @@ error, and startup reconciliation result into
 `services/binance/binance_execution_models.py`. The execution facade retains OMS
 transactions, broker calls, stream processing, reconciliation, and runtime guards.
 Focused tests, Ruff, mypy, and compile checks pass.
+
+
+### 2026-09-09 — strategy experiment models
+
+Extracted immutable manifests, walk-forward configuration and folds, weight
+constraints, costs, metrics, evaluation records, and research experiment results
+into `strategy_lab/experiment_models.py`. The experiments facade retains fold
+generation, candidate enumeration, and experiment execution while preserving
+historical imports. Focused tests, Ruff, mypy, and compile checks pass.

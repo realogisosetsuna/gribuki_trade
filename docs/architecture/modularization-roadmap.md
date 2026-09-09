@@ -42,6 +42,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_models.py` | Frozen bars/episodes/datasets, costs, outcomes, metrics, and research-only trial registry models |
 | `strategy_lab/ashare_evaluator.py` | `strategy_lab/ashare_evaluator_models.py` | A-share execution/action enums, point-in-time scores, completed bars, observations, evaluator configuration, and result records |
 | `strategy_lab/experiments.py` | `strategy_lab/experiment_serialization.py` | Strategy/data manifests, trial folds, metrics and holdout JSON plus SHA-256 serialization |
+| `strategy_lab/experiments.py` | `strategy_lab/experiment_models.py` | Immutable manifests, walk-forward configuration/folds, weight constraints, costs, metrics, evaluation records, and research experiment results |
 | `services/ashare_paper_day.py` | `services/ashare_paper_day_projection.py` | LLM gate and DEEP exit audit/notification projections |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_serialization.py` | K-line/technical-bar codecs, exit-barrier/time helpers, UTC normalization, canonical hashes, and event JSONL/file primitives |
 | `reporting/paper_day_summary.py` | `reporting/paper_day_codec.py` | Sidecar JSON and JSONL event decoding for reports |
