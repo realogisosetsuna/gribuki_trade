@@ -66,6 +66,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "cli_commands/handlers/ashare_paper_day_run.py",
         ),
         (
+            "gribuki_trade.cli_commands.handlers.ashare_post_close",
+            "cli_commands/handlers/ashare_post_close.py",
+        ),
+        (
             "gribuki_trade.cli_commands.ashare_paper_day_results",
             "cli_commands/ashare_paper_day_results.py",
         ),
@@ -554,6 +558,17 @@ def test_model_extractions_keep_facade_type_identity() -> None:
             "gribuki_trade.cli",
             "gribuki_trade.cli_commands.handlers.ashare_paper_day_run",
             ("_run_ashare_paper_day_owned", "_paper_day_resume_config_compatible"),
+        ),
+        (
+            "gribuki_trade.cli",
+            "gribuki_trade.cli_commands.handlers.ashare_post_close",
+            (
+                "_CLIExistingCloseResearch",
+                "_ashare_post_close",
+                "_ashare_post_close_run",
+                "_deliver_post_close_artifact",
+                "_post_close_delivery_summary",
+            ),
         ),
         (
             "gribuki_trade.cli",

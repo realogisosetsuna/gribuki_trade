@@ -744,3 +744,14 @@ LLM context, and restart manifest compatibility contracts into
 session scheduling, recovery, persistence, and execution orchestration while
 the facade re-exports the historical names. Focused PAPER-day and module-layout
 tests pass; transaction and trading side effects were not moved.
+
+### 2026-09-10 — CLI post-close workflow
+
+Moved the A-share post-close command family from the monolithic CLI facade to
+`cli_commands/handlers/ashare_post_close.py`. The handler now owns the
+existing-close-research adapter, idempotent analysis and delivery phase
+transitions, report-path/digest validation, and NapCat durable-outbox delivery.
+The module resolves mutable CLI hooks lazily, so historical imports and
+monkeypatch seams remain stable; ledger, candidate, research, and notification
+stores keep their existing transaction boundaries. Focused CLI and
+module-layout tests pass, and no LIVE trading authority changed.
