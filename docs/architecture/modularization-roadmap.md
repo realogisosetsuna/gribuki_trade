@@ -45,7 +45,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `adapters/akshare_daily.py` | `adapters/akshare_daily_parsing.py` | Symbol/date normalization, frame parsing, and DailyBar validation |
 | `adapters/market_data/cross_market.py` | `adapters/market_data/cross_market_payload.py` | DataFrame/quote/date/number parsing and exact-universe validation |
 | `adapters/market_data/akshare_daily.py` | `adapters/market_data/akshare_daily_stitch.py` | Delayed-history tail stitching and overlap diagnostics |
-| `adapters/market_data/akshare.py` | `adapters/market_data/akshare_payload.py` | Provider record decoding, JSONP/Eastmoney payload parsing, required-column validation, and shared provider errors |
+| `adapters/market_data/akshare.py` | `adapters/market_data/akshare_payload.py` | Provider record decoding, symbol/number/time normalization, volume-unit conversion, JSONP/Eastmoney payload parsing, and required-column validation |
 | `gui/integrations.py` | `gui/integration_validation.py` | Provider/model/token validation and safe UI error text |
 | `features/close_analysis.py` | `features/close_analysis_indicators.py` | ATR/RSI/ADX, volatility, liquidity, trend, and score calculations |
 | `services/ashare_close_analysis.py` | `services/ashare_close_models.py`, `services/ashare_close_projection.py`, `services/ashare_close_notifications.py` | Point-in-time request/result contracts, pure evidence/technical projections, and deterministic report rendering/message splitting |
@@ -65,6 +65,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `cli_commands/handlers/binance.py` | `cli_commands/binance_results.py` | Balance validation, testnet deltas, and reconciliation payload shaping |
 | `cli.py` | `cli_commands/close_research_payloads.py` | Close-research archive/profile payload projections |
 | `adapters/binance/futures.py` | `adapters/binance/futures_order_params.py` | Futures order/protection parameter validation and encoding |
+| `adapters/binance/futures.py` | `adapters/binance/futures_parsing.py` | Futures Ticker and local-order-book response decoding, plus symbol/enum/listen-key validation |
 | `adapters/binance/gateway.py` | `adapters/binance/errors.py`, `adapters/binance/rate_limit.py` | Shared error hierarchy and pure rate-limit response-header parsing |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_notifications.py` | Stable notification kind, artifact identity, and report text projections |
 | `gui/integrations.py` | `gui/napcat_process.py` | NapCat launch-command validation and owned process lifecycle |
@@ -165,3 +166,12 @@ and `tests/unit/test_cli.py`. The remaining oversized orchestration facades
 are the next vertical slices; each must first
 extract pure projections or codecs before moving transaction and dispatch
 logic.
+
+The Futures adapter parsing slice now places deterministic Ticker and
+local-order-book decoding in `adapters/binance/futures_parsing.py`. It accepts
+the documented USD-M object and COIN-M single-element-array Ticker forms,
+preserves Decimal precision and snapshot sequence identity, and centralizes
+symbol, enum, and listen-key validation. The `futures.py` facade retains signed
+HTTP, credential handling, runtime authority, and order-changing operations.
+The focused parser, order-parameter, and order-book route passed 28 tests; the
+known Windows pytest-cache permission warning remains environment-only.

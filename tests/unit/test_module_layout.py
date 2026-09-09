@@ -85,6 +85,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "adapters/binance/futures_order_params.py",
         ),
         (
+            "gribuki_trade.adapters.binance.futures_parsing",
+            "adapters/binance/futures_parsing.py",
+        ),
+        (
             "gribuki_trade.services.ashare.ashare_paper_day_notifications",
             "services/ashare/ashare_paper_day_notifications.py",
         ),

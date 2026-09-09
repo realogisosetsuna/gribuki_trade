@@ -200,6 +200,12 @@ validation to `ashare_intraday_llm_policy.py`. Focused live-record, intraday LLM
 module-layout, and source-comment tests passed 46 tests; Ruff and mypy passed for
 345 source files.
 
+AKShare payload ownership now also includes symbol, numeric, timestamp, volume-unit,
+and trade-direction normalization, reducing the market-data facade below 900 lines
+while preserving its provider fallback and cache boundaries. The payload contract
+tests passed 25 cases in the current verification route; full-suite validation is
+still required after the in-flight Binance adapter slice.
+
 The latest increment separates live-sync result payloads from the CLI facade,
 strict PAPER-day LLM audit payload recovery from the nested runner, Binance error
 and rate-limit protocol helpers from the REST gateway, and live-record work-queue
@@ -237,6 +243,29 @@ The current follow-up focused route passed 101 tests, including the Chinese-sour
 check, module-layout checks, Binance gateway/request-builder tests, live-record
 schema/model/store tests, and PAPER-day schedule/runner tests. Full quality gates
 remain required after this follow-up is staged.
+
+## Futures REST parsing boundary (this increment)
+
+Status: implementation complete; parent full-repository validation complete.
+
+`adapters/binance/futures_parsing.py` now owns pure Futures response decoding and
+scalar validation. It contains the USD-M/COIN-M Ticker shape adapter, order-book
+level/snapshot parser, and symbol/enum/listen-key checks. `futures.py` remains a
+compatibility facade and still owns HTTP signing, credentials, transport, clock
+synchronization, runtime authority, and all order-changing endpoints.
+
+Focused evidence:
+
+```bash
+python -m pytest tests/unit/test_binance_futures_parsing.py \
+  tests/unit/test_binance_futures_order_params.py \
+  tests/unit/test_binance_orderbook.py -q
+```
+
+Result: 28 passed (with the recurring Windows pytest-cache permission warning).
+Ruff and mypy passed for the changed source and test files. The parent agent
+must run the repository-wide readiness, Ruff, mypy, compileall, source-comment,
+and full pytest gates after combining parallel slices.
 
 The live-sync/PAPER-day payload slice and the gateway/live-work policy slice are
 now pushed. Focused payload and storage/provider routes passed; the repository
@@ -283,3 +312,9 @@ passed after the final compatibility fixes.
 
 The next focused route passed 212 behavioral tests before the final Chinese-source
 comment cleanup; the full route will be rerun before staging this increment.
+
+The completed combined increment adds the expanded AKShare payload normalization
+boundary and Futures REST response parsing boundary described above. Repository-wide
+validation then passed readiness, Ruff, mypy (346 source files), compileall, and the
+full pytest route with 1808 passed, five environment-skipped tests, 41 subtests,
+and one recurring Windows pytest-cache permission warning.

@@ -10,8 +10,7 @@ from __future__ import annotations
 import re
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 from urllib.parse import urlencode
 
@@ -30,6 +29,28 @@ from .futures_order_params import (
     algo_order_params,
     order_params,
 )
+from .futures_parsing import (
+    BinanceFuturesTicker as _BinanceFuturesTicker,
+)
+from .futures_parsing import (
+    enum_value as _enum_value,
+)
+from .futures_parsing import (
+    normalize_symbol as _normalize_symbol,
+)
+from .futures_parsing import (
+    parse_futures_ticker,
+    parse_order_book_snapshot,
+)
+from .futures_parsing import (
+    parse_order_book_levels as _parse_order_book_levels,
+)
+from .futures_parsing import (
+    require_mapping as _require_mapping,
+)
+from .futures_parsing import (
+    validate_listen_key as _validate_listen_key,
+)
 from .gateway import (
     BinanceAPIError,
     BinanceConfigurationError,
@@ -46,18 +67,11 @@ from .http import (
 from .models import BinanceCredentials, OrderBookLevel, OrderBookSnapshot
 
 BinanceFuturesProtectionOrder = _BinanceFuturesProtectionOrder
+BinanceFuturesTicker = _BinanceFuturesTicker
 
-_SYMBOL = re.compile(r"^[A-Z0-9_]{1,30}$")
 _SENSITIVE_ASSIGNMENT = re.compile(
     r"(?i)\b(api[-_ ]?key|secret(?:[-_ ]?key)?|signature)\b\s*[:=]\s*[^\s,;&]+"
 )
-
-
-@dataclass(frozen=True, slots=True)
-class BinanceFuturesTicker:
-    symbol: str
-    price: Decimal
-    time_ms: int | None = None
 
 
 class BinanceFuturesRestClient:
@@ -229,24 +243,7 @@ class BinanceFuturesRestClient:
             self._v1("ticker/price"),
             params=(("symbol", normalized),),
         )
-        # 当前 COIN-M 即使提供 ``symbol`` 仍返回单元素数组，而 USD-M 返回对象；
-        # 在适配器边界保留这一有文档依据的产品差异。
-        if isinstance(payload, list):
-            if len(payload) != 1 or not isinstance(payload[0], Mapping):
-                raise BinanceProtocolError(
-                    "Binance Futures ticker response must contain exactly one symbol"
-                )
-            mapping = payload[0]
-        else:
-            mapping = self._require_mapping(payload, "ticker price")
-        try:
-            response_symbol = self._normalize_symbol(str(mapping["symbol"]))
-            price = Decimal(str(mapping["price"]))
-            time_value = mapping.get("time")
-            time_ms = None if time_value is None else int(time_value)
-        except (KeyError, InvalidOperation, TypeError, ValueError):
-            raise BinanceProtocolError("Binance Futures ticker response is malformed") from None
-        return BinanceFuturesTicker(symbol=response_symbol, price=price, time_ms=time_ms)
+        return parse_futures_ticker(payload)
 
     async def order_book(self, symbol: str, *, limit: int = 100) -> OrderBookSnapshot:
         """读取 USD-M/COIN-M REST 深度快照供本地订单簿恢复。"""
@@ -259,19 +256,7 @@ class BinanceFuturesRestClient:
             self._v1("depth"),
             params=(('symbol', normalized), ("limit", limit)),
         )
-        mapping = self._require_mapping(payload, "Futures order book")
-        try:
-            update_id = int(mapping["lastUpdateId"])
-            bids = self._parse_order_book_levels(mapping["bids"])
-            asks = self._parse_order_book_levels(mapping["asks"])
-        except (KeyError, TypeError, ValueError, InvalidOperation):
-            raise BinanceProtocolError("Binance Futures order book response is malformed") from None
-        return OrderBookSnapshot(
-            symbol=normalized,
-            last_update_id=update_id,
-            bids=bids,
-            asks=asks,
-        )
+        return parse_order_book_snapshot(payload, symbol=normalized)
 
     get_order_book = order_book
 
@@ -1041,45 +1026,20 @@ class BinanceFuturesRestClient:
 
     @staticmethod
     def _require_mapping(payload: Any, description: str) -> Mapping[str, Any]:
-        if not isinstance(payload, Mapping):
-            raise BinanceProtocolError(f"Binance Futures {description} response must be an object")
-        return payload
+        return _require_mapping(payload, description)
 
     @staticmethod
     def _parse_order_book_levels(value: object) -> tuple[OrderBookLevel, ...]:
-        if not isinstance(value, list):
-            raise TypeError("order book levels must be a list")
-        levels: list[OrderBookLevel] = []
-        for row in value:
-            if not isinstance(row, (list, tuple)) or len(row) != 2:
-                raise ValueError("order book level must contain price and quantity")
-            price = Decimal(str(row[0]))
-            quantity = Decimal(str(row[1]))
-            if price <= 0 or quantity < 0:
-                raise ValueError("order book level values are invalid")
-            levels.append(OrderBookLevel(price=price, quantity=quantity))
-        return tuple(levels)
+        return _parse_order_book_levels(value)
 
     @staticmethod
     def _normalize_symbol(symbol: str) -> str:
-        normalized = symbol.strip().upper()
-        if not _SYMBOL.fullmatch(normalized):
-            raise ValueError(f"invalid Binance Futures symbol: {symbol!r}")
-        return normalized
+        return _normalize_symbol(symbol)
 
     @staticmethod
     def _validate_listen_key(listen_key: str) -> str:
-        if not isinstance(listen_key, str) or not listen_key.strip():
-            raise ValueError("listen_key must not be blank")
-        # 密钥是透明字符串，但路径字符必须受限，防止误把查询参数拼进请求。
-        allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
-        if any(char not in allowed for char in listen_key):
-            raise ValueError("listen_key contains invalid characters")
-        return listen_key
+        return _validate_listen_key(listen_key)
 
     @staticmethod
     def _enum_value(value: str, name: str) -> str:
-        normalized = value.strip().upper()
-        if not normalized or not normalized.replace("_", "").isalnum():
-            raise ValueError(f"invalid Binance Futures {name}: {value!r}")
-        return normalized
+        return _enum_value(value, name)
