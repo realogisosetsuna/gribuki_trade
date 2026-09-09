@@ -234,6 +234,33 @@ class BinanceFuturesClientTests(IsolatedAsyncioTestCase):
         self.assertEqual(offset, 9_940)
         self.assertEqual(client.last_time_sync_rtt_ms, 120)
 
+    async def test_calibrate_time_selects_lowest_rtt_sample(self) -> None:
+        credentials = BinanceCredentials(api_key="offline-key", secret_key="offline-secret")
+        transport = FakeTransport(
+            response(200, {"serverTime": 1_700_000_010_000}),
+            response(200, {"serverTime": 1_700_000_010_040}),
+        )
+        clock_values = iter(
+            (
+                1_700_000_000_000,
+                1_700_000_000_300,
+                1_700_000_000_400,
+                1_700_000_000_420,
+            )
+        )
+        client = BinanceFuturesRestClient(
+            credentials=credentials,
+            transport=transport,
+            clock_ms=lambda: next(clock_values),
+        )
+
+        result = await client.calibrate_time(samples=2)
+
+        self.assertEqual(result.samples, 2)
+        self.assertEqual(result.rtt_ms, 20)
+        self.assertEqual(result.offset_ms, 9_630)
+        self.assertEqual(client.server_time_offset_ms, result.offset_ms)
+
     async def test_validate_order_calls_only_test_order_endpoint(self) -> None:
         credentials = BinanceCredentials(api_key="offline-key", secret_key="offline-secret")
         transport = FakeTransport(

@@ -40,6 +40,7 @@ __all__ = (
     "_binance_live_order",
     "_binance_live_order_test",
     "_binance_live_status",
+    "_binance_time_sync",
     "_build_live_order",
     "_live_futures_service",
     "_live_gateway",
@@ -52,6 +53,46 @@ _testnet_reconciliation_payload = _results._testnet_reconciliation_payload
 
 # 处理器通过延迟 CLI facade 解析兼容钩子，避免处理器被单独导入时循环依赖。
 _cli: Any = _LazyCliFacade()
+
+
+async def _binance_time_sync(target: str, environment: str, samples: int) -> dict[str, object]:
+    """快速校准 Binance 公共服务器时钟，不读取密钥也不提交订单。"""
+
+    normalized_target = target.strip().lower()
+    normalized_environment = environment.strip().upper()
+    if normalized_target == "spot":
+        if normalized_environment not in {"LIVE", "TESTNET"}:
+            raise ValueError("Spot time sync supports LIVE or TESTNET")
+        gateway = _cli.BinanceSpotGateway(
+            environment=_cli.BinanceEnvironment(normalized_environment),
+            allow_live=normalized_environment == "LIVE",
+        )
+        result = await gateway.calibrate_time(samples=samples)
+        endpoint = gateway.base_url
+    elif normalized_target in {"usds-futures", "coin-futures"}:
+        product = (
+            _cli.BinanceProduct.USDS_FUTURES
+            if normalized_target == "usds-futures"
+            else _cli.BinanceProduct.COIN_FUTURES
+        )
+        stage = _cli.BinanceStage(normalized_environment)
+        client = _cli.BinanceFuturesRestClient(
+            product=product,
+            stage=stage,
+            allow_live=stage is _cli.BinanceStage.LIVE,
+        )
+        result = await client.calibrate_time(samples=samples)
+        endpoint = client.base_url
+    else:
+        raise ValueError("target must be spot, usds-futures, or coin-futures")
+    return {
+        "environment": normalized_environment,
+        "endpoint": endpoint,
+        "offset_ms": result.offset_ms,
+        "rtt_ms": result.rtt_ms,
+        "samples": result.samples,
+        "target": normalized_target,
+    }
 
 
 def _testnet_gateway() -> _cli.BinanceSpotGateway:

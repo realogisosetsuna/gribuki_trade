@@ -36,6 +36,7 @@ from ..transport.http import (
     HttpTransportError,
     UrllibAsyncHttpTransport,
 )
+from ..transport.time_sync import TimeSyncResult, sample_server_time
 from .order_params import (
     BinanceFuturesProtectionOrder as _BinanceFuturesProtectionOrder,
 )
@@ -224,13 +225,16 @@ class BinanceFuturesRestClient:
             ) from None
 
     async def synchronize_time(self) -> int:
-        started_ms = self._clock_ms()
-        exchange_ms = await self.server_time()
-        finished_ms = self._clock_ms()
-        self._last_time_sync_rtt_ms = max(0, finished_ms - started_ms)
-        midpoint_ms = started_ms + (finished_ms - started_ms) // 2
-        self._server_time_offset_ms = exchange_ms - midpoint_ms
-        return self._server_time_offset_ms
+        result = await self.calibrate_time(samples=1)
+        return result.offset_ms
+
+    async def calibrate_time(self, *, samples: int = 3) -> TimeSyncResult:
+        """快速校准合约 REST 时钟，使用最低 RTT 样本更新签名偏移。"""
+
+        result = await sample_server_time(self.server_time, self._clock_ms, samples=samples)
+        self._last_time_sync_rtt_ms = result.rtt_ms
+        self._server_time_offset_ms = result.offset_ms
+        return result
 
     async def exchange_info(self) -> dict[str, Any]:
         payload = await self._request_json("GET", self._v1("exchangeInfo"))

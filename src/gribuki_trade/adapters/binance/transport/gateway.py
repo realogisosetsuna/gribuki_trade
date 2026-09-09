@@ -131,6 +131,7 @@ from .http import (
 )
 from .rate_limit import parse_rate_limit_usage
 from .request_builder import encode_request
+from .time_sync import TimeSyncResult, sample_server_time
 
 # 保留旧网关导出的错误类和签名函数，避免下游适配器因拆分而改变导入路径。
 BinanceAPIError = _BinanceAPIError
@@ -292,13 +293,16 @@ class BinanceSpotGateway:
         可在启动时以及 Binance 明确以 ``-1021`` 拒绝时间戳后安全调用。
         """
 
-        started_ms = self._clock_ms()
-        exchange_ms = await self.server_time()
-        finished_ms = self._clock_ms()
-        self._last_time_sync_rtt_ms = max(0, finished_ms - started_ms)
-        local_midpoint_ms = started_ms + (finished_ms - started_ms) // 2
-        self._server_time_offset_ms = exchange_ms - local_midpoint_ms
-        return self._server_time_offset_ms
+        result = await self.calibrate_time(samples=1)
+        return result.offset_ms
+
+    async def calibrate_time(self, *, samples: int = 3) -> TimeSyncResult:
+        """快速校准 Binance 时钟，选择最低 RTT 样本并更新签名偏移。"""
+
+        result = await sample_server_time(self.server_time, self._clock_ms, samples=samples)
+        self._last_time_sync_rtt_ms = result.rtt_ms
+        self._server_time_offset_ms = result.offset_ms
+        return result
 
     async def exchange_info(self, symbol: str | None = None) -> dict[str, Any]:
         params: tuple[tuple[str, object], ...] = ()

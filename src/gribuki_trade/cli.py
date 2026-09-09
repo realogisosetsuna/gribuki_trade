@@ -144,6 +144,7 @@ from gribuki_trade.cli_commands.handlers.binance import (
     _binance_testnet_oms_fill,
     _binance_testnet_order_test,
     _binance_testnet_status,
+    _binance_time_sync,
     _build_live_order,
     _build_marketable_test_order,
     _build_test_order,
@@ -454,6 +455,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = asyncio.run(_binance_testnet_status(args.symbol))
     elif command == "binance-live-status":
         result = asyncio.run(_binance_live_status(args.symbol, args.confirm))
+    elif command == "binance-time-sync":
+        result = asyncio.run(_binance_time_sync(args.target, args.environment, args.samples))
     elif command == "binance-live-balance":
         result = asyncio.run(_binance_live_balance(args.asset, args.include_zero, args.confirm))
     elif command == "binance-live-futures-balance":

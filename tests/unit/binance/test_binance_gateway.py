@@ -422,6 +422,36 @@ class BinanceGatewayTests(IsolatedAsyncioTestCase):
         self.assertEqual(first_signed["timestamp"], ["1700000000000"])
         self.assertEqual(retried_signed["timestamp"], ["1700000010150"])
 
+    async def test_calibrate_time_uses_lowest_round_trip_sample(self) -> None:
+        credentials = BinanceCredentials("offline-api-placeholder", "offline-secret-placeholder")
+        transport = FakeTransport(
+            response(200, {"serverTime": 1_700_000_010_000}),
+            response(200, {"serverTime": 1_700_000_010_040}),
+            response(200, {"serverTime": 1_700_000_010_100}),
+        )
+        clock_values = iter(
+            (
+                1_700_000_000_000,
+                1_700_000_000_300,
+                1_700_000_000_400,
+                1_700_000_000_420,
+                1_700_000_000_500,
+                1_700_000_000_700,
+            )
+        )
+        gateway = BinanceSpotGateway(
+            credentials=credentials,
+            transport=transport,
+            clock_ms=lambda: next(clock_values),
+        )
+
+        result = await gateway.calibrate_time(samples=3)
+
+        self.assertEqual(result.samples, 3)
+        self.assertEqual(result.rtt_ms, 20)
+        self.assertEqual(result.offset_ms, 9_630)
+        self.assertEqual(gateway.server_time_offset_ms, result.offset_ms)
+
     async def test_exchange_order_validation_does_not_track_or_place_order(self) -> None:
         credentials = BinanceCredentials("offline-api-placeholder", "offline-secret-placeholder")
         transport = FakeTransport(

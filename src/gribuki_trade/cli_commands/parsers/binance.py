@@ -17,6 +17,21 @@ from gribuki_trade.cli_commands.parser_support import (
 def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """注册 binance 命令族。"""
 
+    time_sync = commands.add_parser(
+        "binance-time-sync",
+        help="快速采样 Binance 服务器时钟并返回最低 RTT 偏移（不需要密钥）",
+    )
+    time_sync.add_argument(
+        "--target", choices=("spot", "usds-futures", "coin-futures"), default="spot",
+    )
+    time_sync.add_argument(
+        "--environment", choices=("LIVE", "TESTNET", "DEMO"), default="LIVE",
+    )
+    time_sync.add_argument(
+        "--samples", type=int, choices=range(1, 10), default=3,
+        help="采样次数（1-9，默认 3）",
+    )
+
     status = commands.add_parser(
         "binance-testnet-status",
         help="perform authenticated read-only Spot Testnet checks",
