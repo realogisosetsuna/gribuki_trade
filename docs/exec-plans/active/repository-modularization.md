@@ -550,3 +550,12 @@ Extracted pure contractual report envelopes, line/character payload splitting, a
 retains historical private helper aliases and report assembly; the new module has
 no network, storage, notifier, or service state dependency. Focused close-analysis
 and module-layout tests cover the compatibility boundary.
+
+
+### 2026-09-09 — live trade orchestration models
+
+Extracted live protection input contracts, the input-provider protocol, work-run
+summaries, tracking observations, and stable input errors into
+`services/live_trade_orchestration_models.py`. The orchestration facade retains
+work claiming, exit lifecycle calls, and outbox delivery. Focused tests, Ruff,
+mypy, and compile checks pass.

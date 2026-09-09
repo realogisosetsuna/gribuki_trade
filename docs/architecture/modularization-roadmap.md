@@ -66,6 +66,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_documents.py` | Watchlist/candidate/order/fill document codecs, A-share symbol resolution, and strict positive-integer validation |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_risk.py` | Pure risk-policy migration authorization, incomplete-fill checks, and price/quantity execution-policy documents |
 | `services/binance/binance_execution.py` | `services/binance/binance_execution_records.py` | Pure snapshot/fill/balance/order-list record projections and timestamp normalization |
+| `services/live_trade_orchestration.py` | `services/live_trade_orchestration_models.py` | Live protection input contracts, provider protocol, work-run summary, tracking observation, and stable input errors |
 | `services/binance/binance_execution.py` | `services/binance/binance_execution_policy.py` | Environment, clock, order allow-list, and exchange-snapshot merge policy |
 | `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_serialization.py` | Safe audit documents, stable JSON normalization, and hashes |
 | `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_policy.py` | Pure context/review identity, scalar validation, score bounds, and UTC normalization |

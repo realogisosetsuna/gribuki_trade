@@ -14,6 +14,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         ("gribuki_trade.adapters.paper", "adapters/simulated/paper.py"),
         ("gribuki_trade.services.ashare_paper_day", "services/ashare/ashare_paper_day.py"),
         ("gribuki_trade.services.binance_execution", "services/binance/binance_execution.py"),
+        (
+            "gribuki_trade.services.live_trade_orchestration_models",
+            "services/live_trade_orchestration_models.py",
+        ),
         ("gribuki_trade.services.macro_models", "services/macro_models.py"),
         (
             "gribuki_trade.adapters.binance.spot_order_params",
