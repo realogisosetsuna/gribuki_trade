@@ -9,6 +9,9 @@
 | `services/live` | Live observation, protection inputs, record parsing and guarded recovery orchestration | `services/live/` | `tests/unit/live/` (after the live test slice) |
 | `services/macro` | Macro evidence selection, research, adversarial analysis and progressive-release policy | `services/macro/` | `tests/unit/research/` and macro service tests |
 | `services/exit` | Exit-plan lifecycle, protection barriers and durable plan event contracts | `services/exit/` | `tests/unit/storage/test_exit_plan_lifecycle.py`, exit-plan tests |
+| `services/research` | Candidate, cross-market evidence, crypto research, recommendation and research-watch orchestration | `services/research/` | `tests/unit/services/` |
+| `services/communications` | News collection and notification dispatch | `services/communications/` | `tests/unit/services/news/`, `tests/unit/services/notifications/` |
+| `services/llm` | Production dual-track LLM orchestration | `services/llm/` | `tests/unit/services/deepseek/` |
 | `adapters` / `ingest` | Provider/API/file boundaries and payload validation | `adapters/`, `ingest/` | `test_akshare_*`, `test_official_*`, `test_binance_*`, Schwab tests |
 | `pipeline` | Normalization and deduplication of incoming evidence | `pipeline/normalize.py` | `test_news_parsers.py`, event/evidence tests |
 | `storage` | SQLite durable records, projections, leases and outboxes | `storage/*.py` | `test_*store.py`, `test_notification_outbox.py`, `test_trading_oms.py` |

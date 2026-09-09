@@ -30,6 +30,9 @@ gribuki_trade/
 │   └── live/     实盘观察、保护输入、订单记录和恢复编排
 │   └── macro/    宏观证据选择、研究和对抗分析
 │   └── exit/     退出计划生命周期和保护状态
+│   ├── research/ 研究候选、跨市场证据和推荐编排
+│   ├── communications/ 新闻采集和通知投递
+│   └── llm/      生产 LLM 双轨编排
 ├── trading/      Broker-neutral OMS、仓位和订单状态转换
 ├── storage/      SQLite store、事件日志、lease 和 outbox
 ├── runtime/      PAPER/SHADOW/LIVE guard、连续性和临时目录
@@ -118,3 +121,7 @@ python -m pytest --temp-dir runtime/layout -q tests/unit/test_module_layout.py
 
 退出计划生命周期实现统一位于 `services/exit/`；根目录的
 `exit_plan_lifecycle*.py` 仅保留兼容旧导入路径的 facade。
+
+研究候选、跨市场证据和推荐服务统一位于 `services/research/`；新闻采集
+与通知投递位于 `services/communications/`；生产 LLM 编排位于
+`services/llm/`。对应的根目录文件仅是兼容 facade。

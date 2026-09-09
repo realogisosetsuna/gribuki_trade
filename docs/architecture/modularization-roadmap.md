@@ -264,6 +264,11 @@ adversarial analysis are now grouped under `services/macro/`. The former root
 modules remain compatibility facades, so existing import and monkeypatch
 identity contracts stay valid while new implementations have a clear home.
 
+The remaining service-root implementations are grouped under
+`services/research/`, `services/communications/`, and `services/llm/`; their
+flat paths remain compatibility facades. New candidate/recommendation,
+notification, and production LLM code should use the grouped packages.
+
 The unit-test hierarchy now mirrors these boundaries. Durable-boundary contracts
 are under `tests/unit/storage/`, including candidate/event/exit stores,
 live-record integrity and lease policies, PAPER recovery, research/review stores,

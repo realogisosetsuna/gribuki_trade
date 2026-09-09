@@ -820,6 +820,13 @@ research, official-rate/global-risk evidence, and adversarial analysis under
 tests pass, and provider calls, research-only policy, and failure-closed
 analysis boundaries remain unchanged.
 
+The remaining service-root implementations are now grouped under
+`services/research/`, `services/communications/`, and `services/llm/` for
+candidate/recommendation research, news and notification delivery, and
+production LLM orchestration. Historical root imports remain facades; module
+identity tests cover all three groups and no broker or durable-state boundary
+moved.
+
 ### 2026-09-10 — Unit-test hierarchy
 
 Moved 23 durable-boundary tests from the flat `tests/unit/` root to

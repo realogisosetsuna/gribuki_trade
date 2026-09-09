@@ -103,6 +103,18 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "services/exit/exit_plan_lifecycle.py",
         ),
         (
+            "gribuki_trade.services.candidate_universe",
+            "services/research/candidate_universe.py",
+        ),
+        (
+            "gribuki_trade.services.notification_dispatch",
+            "services/communications/notification_dispatch.py",
+        ),
+        (
+            "gribuki_trade.services.llm_production",
+            "services/llm/llm_production.py",
+        ),
+        (
             "gribuki_trade.services.live_trade_orchestration_models",
             "services/live/live_trade_orchestration_models.py",
         ),
@@ -677,3 +689,26 @@ def test_macro_services_keep_legacy_facades() -> None:
         facade = importlib.import_module(f"gribuki_trade.services.{name}")
         implementation = importlib.import_module(f"gribuki_trade.services.macro.{name}")
         assert facade is implementation
+
+
+def test_research_communication_and_llm_services_keep_legacy_facades() -> None:
+    """研究、通信和生产 LLM 服务归档后仍保留旧模块身份。"""
+
+    groups = {
+        "research": (
+            "candidate_universe",
+            "cross_market_evidence",
+            "cross_market_relation_evidence",
+            "crypto_research",
+            "recommendation_evaluation",
+            "recommendation_review",
+            "research_watch",
+        ),
+        "communications": ("news_collection", "notification_dispatch"),
+        "llm": ("llm_production",),
+    }
+    for group, names in groups.items():
+        for name in names:
+            facade = importlib.import_module(f"gribuki_trade.services.{name}")
+            implementation = importlib.import_module(f"gribuki_trade.services.{group}.{name}")
+            assert facade is implementation
