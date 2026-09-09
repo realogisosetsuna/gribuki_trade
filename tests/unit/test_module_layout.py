@@ -91,13 +91,17 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         ),
         (
             "gribuki_trade.services.exit_plan_lifecycle_models",
-            "services/exit_plan_lifecycle_models.py",
+            "services/exit/exit_plan_lifecycle_models.py",
         ),
         ("gribuki_trade.adapters.akshare", "adapters/market_data/akshare.py"),
         ("gribuki_trade.adapters.ashare_screening", "adapters/ashare/screening.py"),
         ("gribuki_trade.adapters.paper", "adapters/simulated/paper.py"),
         ("gribuki_trade.services.ashare_paper_day", "services/ashare/ashare_paper_day.py"),
         ("gribuki_trade.services.binance_execution", "services/binance/binance_execution.py"),
+        (
+            "gribuki_trade.services.exit_plan_lifecycle",
+            "services/exit/exit_plan_lifecycle.py",
+        ),
         (
             "gribuki_trade.services.live_trade_orchestration_models",
             "services/live/live_trade_orchestration_models.py",

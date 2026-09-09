@@ -33,7 +33,7 @@ from gribuki_trade.features.exit_planning import (
     build_quick_exit_plan,
 )
 from gribuki_trade.features.technical import TechnicalBar
-from gribuki_trade.services.exit_plan_lifecycle_models import (
+from gribuki_trade.services.exit.exit_plan_lifecycle_models import (
     DeepExitPlanApplication,
     DeepExitPlanBuildApplication,
     ExitBarrierObservation,
