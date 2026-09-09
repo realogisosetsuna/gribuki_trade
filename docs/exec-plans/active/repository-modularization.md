@@ -468,3 +468,8 @@ models into `services/ashare/ashare_intraday_llm_models.py`. The original module
 retains the synchronous gate algorithm and asynchronous coordinator while
 re-exporting historical models and serialization helpers. The focused intraday
 LLM policy/serialization and module-layout route passed after the split.
+
+The complete gate after the intraday LLM model split passed readiness, Ruff,
+mypy (361 source files), compileall, and 1839 tests with five
+environment-skipped tests, 41 subtests, and the recurring Windows pytest-cache
+permission warning.
