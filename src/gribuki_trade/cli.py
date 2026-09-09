@@ -63,11 +63,6 @@ from gribuki_trade.cli_commands.close_research_payloads import (
     _instrument_profile_document,
     _paper_session_instrument_profiles,
 )
-from gribuki_trade.cli_commands.handlers.ashare_news import (
-    _ashare_disclosures,
-    _ashare_news,
-    _ashare_news_watch,
-)
 from gribuki_trade.cli_commands.handlers.ashare import (
     _ashare_bars,
     _ashare_daily,
@@ -77,6 +72,11 @@ from gribuki_trade.cli_commands.handlers.ashare import (
     _ashare_snapshot,
     _ashare_source_health,
     _ashare_watchlist,
+)
+from gribuki_trade.cli_commands.handlers.ashare_news import (
+    _ashare_disclosures,
+    _ashare_news,
+    _ashare_news_watch,
 )
 from gribuki_trade.cli_commands.handlers.binance import (
     _assert_testnet_oms_database_idle,

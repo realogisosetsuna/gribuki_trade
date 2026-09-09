@@ -829,3 +829,19 @@ def _role_failure_documents(
         default_failure_code=default_failure_code,
         rejected_role=rejected_role,
     )
+
+
+__all__ = (
+    "AdversarialFeatureMode",
+    "AdversarialMacroAnalyzer",
+    "AdversarialMacroConfig",
+    "AdversarialMacroDepth",
+    "AdversarialMacroRole",
+    "AdversarialMacroRun",
+    "AdversarialRoleOpinion",
+    "AdversarialRound",
+    "AdversarialShadowRecord",
+    "AdversarialTermination",
+    "FeatureFlaggedAdversarialMacroAnalyzer",
+    "ProductionDualTrackMacroAnalyzer",
+)
