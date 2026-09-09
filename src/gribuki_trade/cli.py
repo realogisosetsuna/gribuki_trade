@@ -126,6 +126,16 @@ from gribuki_trade.cli_commands.post_close_results import (
     _post_close_string_tuple,
     _PostCloseCLIError,
 )
+from gribuki_trade.cli_commands.runtime import (
+    _apply_integration_runtime_defaults,
+    _configure_terminal_encoding,
+    _optional_local_secret,
+    _required_local_secret,
+    _secret_status,
+    _set_secret,
+    _sqlite_runtime_status,
+    _temp_root,
+)
 from gribuki_trade.cli_output import (
     _atomic_write_cli_json,
     _decimal_text,
@@ -163,7 +173,7 @@ from gribuki_trade.runtime import (
 )
 from gribuki_trade.runtime.integration_settings import (
     IntegrationSettingsError,
-    load_integration_settings,
+    load_integration_settings,  # noqa: F401 - historical monkeypatch surface
 )
 from gribuki_trade.runtime.integration_settings import (
     validate_model_id as validate_runtime_model_id,
@@ -188,7 +198,7 @@ from gribuki_trade.services.crypto_research import (
     CryptoResearchService,
     binance_klines_to_crypto_bars,
 )
-from gribuki_trade.sqlite_runtime import sqlite_runtime_status
+from gribuki_trade.sqlite_runtime import sqlite_runtime_status  # noqa: F401 - facade hook
 from gribuki_trade.strategy import CryptoTrendConfig
 from gribuki_trade.trading import (
     FuturesOrderManagementStore,
@@ -352,96 +362,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     return _build_parser()
 
-
-
-def _apply_integration_runtime_defaults(args: argparse.Namespace) -> None:
-    """把 GUI 共享配置应用到未被命令行显式覆盖的集成参数。"""
-
-    command = args.command or "gui"
-    action = getattr(args, "action", None)
-    paper_day_run = command == "ashare-paper-day" and action == "run"
-    post_close_run = command == "ashare-post-close" and action == "run"
-    live_cycle = command == "live-sync" and action == "cycle"
-    live_ingest = command == "live-sync" and action == "ingest"
-    live_onebot = live_cycle or live_ingest
-    base_url_commands = {
-        "napcat-status",
-        "napcat-dispatch",
-        "napcat-send-test",
-        "napcat-send-artifact",
-    }
-    model_commands = {
-        "ashare-post-close",
-        "ashare-research-once",
-        "ashare-close-research-once",
-        "ashare-close-research-batch",
-        "ashare-research-watch",
-    }
-    needs_settings = (
-        (
-            (command in base_url_commands or paper_day_run or post_close_run or live_onebot)
-            and getattr(args, "base_url", None) is None
-        )
-        or (command == "napcat-configure" and getattr(args, "runtime_dir", None) is None)
-        or (
-            command in model_commands
-            and (command != "ashare-post-close" or post_close_run)
-            and (
-                getattr(args, "macro_provider", None) is None
-                or getattr(args, "model", None) is None
-            )
-        )
-        or (
-            paper_day_run
-            and (
-                getattr(args, "intraday_llm_provider", None) is None
-                or getattr(args, "intraday_llm_model", None) is None
-            )
-        )
-        or (
-            live_cycle
-            and (
-                getattr(args, "llm_provider", None) is None
-                or getattr(args, "llm_model", None) is None
-            )
-        )
-    )
-    if not needs_settings:
-        return
-    settings = load_integration_settings()
-    if (command in base_url_commands or paper_day_run or post_close_run or live_onebot) and getattr(
-        args, "base_url", None
-    ) is None:
-        args.base_url = settings.onebot_url
-    if command == "napcat-configure" and getattr(args, "runtime_dir", None) is None:
-        args.runtime_dir = settings.napcat_runtime
-    if command in model_commands and (command != "ashare-post-close" or post_close_run):
-        if getattr(args, "macro_provider", None) is None:
-            args.macro_provider = settings.llm_provider
-        if getattr(args, "macro", False) is True and getattr(args, "model", None) is None:
-            args.model = (
-                settings.deepseek_model
-                if args.macro_provider == "deepseek"
-                else settings.openai_model
-            )
-    if paper_day_run:
-        if args.intraday_llm_provider is None:
-            args.intraday_llm_provider = settings.llm_provider
-        if args.intraday_llm_model is None:
-            args.intraday_llm_model = (
-                settings.deepseek_model
-                if args.intraday_llm_provider == "deepseek"
-                else settings.openai_model
-            )
-    if live_cycle:
-        if args.llm_provider is None:
-            args.llm_provider = settings.llm_provider
-        if args.llm_model is None:
-            args.llm_model = (
-                settings.deepseek_model
-                if args.llm_provider == "deepseek"
-                else settings.openai_model
-            )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -972,74 +892,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     ):
         return 1
     return 0
-
-
-def _configure_terminal_encoding() -> None:
-    """在 Windows 旧版控制台代码页下保持中文命令行输出可读。"""
-
-    if os.name != "nt":
-        return
-    for stream in (sys.stdout, sys.stderr):
-        if not hasattr(stream, "reconfigure"):
-            continue
-        stream.reconfigure(encoding="utf-8", errors="replace")
-
-
-def _set_secret(name: str) -> None:
-    from gribuki_trade.security import InteractiveSecretManager
-
-    InteractiveSecretManager(KeyringSecretProvider()).set_secret(name)
-
-
-def _secret_status() -> dict[str, bool]:
-    provider = KeyringSecretProvider()
-    return {name: provider.get_secret(name) is not None for name in KNOWN_SECRET_STATUS_NAMES}
-
-
-def _sqlite_runtime_status() -> dict[str, object]:
-    status = sqlite_runtime_status()
-    return {
-        "error_code": status.error_code,
-        "fixed_releases": list(status.fixed_releases),
-        "guidance_url": status.guidance_url,
-        "ok": status.shared_wal_safe,
-        "shared_wal_safe": status.shared_wal_safe,
-        "single_connection_local_allowed": True,
-        "sqlite_version": status.version,
-    }
-
-
-def _temp_root(action: str, explicit: str | None) -> dict[str, object]:
-    from gribuki_trade.runtime.temp_root import TempRootResolver
-
-    if action not in {"status", "prepare"}:
-        raise ValueError("unsupported temp-root action")
-    resolved = TempRootResolver().resolve(
-        explicit,
-        create=action == "prepare",
-    )
-    return {
-        "action": action,
-        **resolved.audit_document(),
-        "exists": resolved.path.is_dir(),
-        "ok": True,
-    }
-
-
-def _required_local_secret(name: str) -> str:
-    value = KeyringSecretProvider().get_secret(name)
-    if value is None:
-        raise RuntimeError(f"required local secret {name!r} is not configured; use secret-set")
-    return value
-
-
-def _optional_local_secret(name: str) -> str | None:
-    """读取可选集成密钥，同时不将对应供应商变为必需依赖。"""
-
-    try:
-        return KeyringSecretProvider().get_secret(name)
-    except SecretProviderError:
-        return None
 
 
 def _strategy_factor_discover(max_trials: int) -> dict[str, object]:

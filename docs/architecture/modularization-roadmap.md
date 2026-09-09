@@ -28,7 +28,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 
 | Original facade | New cohesive module | Responsibility |
 |---|---|---|
-| `cli.py` | `cli_commands/parsers/`, `cli_commands/handlers/binance.py`, `cli_commands/handlers/ashare.py`, `cli_parsing.py`, `cli_output.py` | Command-family registration, Binance and read-only A-share workflow handlers, argparse converters, Decimal formatting, and atomic JSON output |
+| `cli.py` | `cli_commands/parsers/`, `cli_commands/handlers/binance.py`, `cli_commands/handlers/ashare.py`, `cli_commands/runtime.py`, `cli_parsing.py`, `cli_output.py` | Command-family registration, Binance and read-only A-share workflow handlers, shared runtime/default handling, argparse converters, Decimal formatting, and atomic JSON output |
 | `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py`, `adapters/binance/spot_order_params.py` | Spot wire parsing, order snapshot/status mapping, scalar validation, signing/redaction, and pure Spot/OCO/OTO/OTOCO parameter encoding |
 | `trading/futures_oms.py` | `trading/futures_oms_codec.py` | Futures SQLite codecs, JSON/Decimal/time conversion, event identity |
 | `trading/futures_oms.py` | `trading/futures_oms_schema.py` | Futures OMS SQLite DDL and indexes with caller-owned transaction scope |
@@ -56,8 +56,10 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `ingest/search_discovery.py` | `ingest/search_discovery_policy.py` | Pure result sanitization, publisher identity, discovery clustering, and confirmation basis selection |
 | `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_quantity.py` | Pure lot/quantity rules and sell-quantity planning for A-share intraday PAPER execution |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_config.py` | Frozen schedule/risk configuration and policy manifest projections |
+| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_risk.py` | Runtime risk-policy migration validation and price/quantity audit projections |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_llm_payloads.py` | Strict LLM audit payload recovery, type validation, and pure gate/text projections |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_documents.py` | Watchlist/candidate/order/fill document codecs, A-share symbol resolution, and strict positive-integer validation |
+| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_risk.py` | Pure risk-policy migration authorization, incomplete-fill checks, and price/quantity execution-policy documents |
 | `services/binance/binance_execution.py` | `services/binance/binance_execution_records.py` | Pure snapshot/fill/balance/order-list record projections and timestamp normalization |
 | `services/binance/binance_execution.py` | `services/binance/binance_execution_policy.py` | Environment, clock, order allow-list, and exchange-snapshot merge policy |
 | `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_serialization.py` | Safe audit documents, stable JSON normalization, and hashes |
@@ -98,7 +100,7 @@ The next large files are grouped by the responsibilities they mix:
 | A-share screening | `adapters/ashare/screening.py` | pure factor calculations are split; provider calls and degradation policy remain |
 | Research | remaining `services/adversarial_macro.py` orchestration and other strategy/research facades | pure calculations → dataset/manifest IO → orchestration |
 | Presentation | remaining `reporting/paper_day_summary.py`, `gui/integrations.py` | sidecar loading/projection assembly → provider boundary → UI wiring |
-| CLI | `cli.py` | A-share workflow handlers → output formatting → compatibility migration |
+| CLI | `cli.py` | remaining A-share workflow handlers and orchestration → compatibility migration |
 
 The original import path remains a facade until all in-repository callers have
 migrated. The broker-neutral OMS slice now has
@@ -161,7 +163,11 @@ module paths are compatibility aliases that point at the implementation module,
 so private monkeypatch and import behavior used by existing integrations stays
 stable. The CLI parser is split into eleven command-family modules under
 `src/gribuki_trade/cli_commands/parsers/`; Binance workflows and read-only A-share
-market/research handlers are extracted to `cli_commands/handlers/`.
+market/research handlers are extracted to `cli_commands/handlers/`. Shared
+integration defaults, terminal encoding, local-secret access, SQLite diagnostics,
+and temp-root operations are isolated in `cli_commands/runtime.py`; this module
+lazy-loads the facade so it can be imported independently without changing
+monkeypatch hooks.
 
 Representative routing tests include `tests/unit/test_akshare_market_data.py`,
 `tests/unit/test_ashare_paper_day.py`, `tests/unit/test_binance_execution.py`,

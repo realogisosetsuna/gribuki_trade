@@ -108,6 +108,7 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "gribuki_trade.cli_commands.live_sync_payloads",
             "cli_commands/live_sync_payloads.py",
         ),
+        ("gribuki_trade.cli_commands.runtime", "cli_commands/runtime.py"),
         (
             "gribuki_trade.services.ashare.ashare_paper_day_llm_payloads",
             "services/ashare/ashare_paper_day_llm_payloads.py",
@@ -174,6 +175,17 @@ def test_cli_handler_families_are_independent_execution_modules() -> None:
     ):
         assert callable(getattr(ashare, name))
     assert callable(binance._binance_live_status)
+
+
+def test_cli_runtime_support_is_importable_before_the_facade() -> None:
+    """运行时辅助可单独导航，且导入顺序不会触发 CLI 循环依赖。"""
+
+    runtime = importlib.import_module("gribuki_trade.cli_commands.runtime")
+    assert callable(runtime.apply_integration_runtime_defaults)
+    assert callable(runtime.required_local_secret)
+    facade = importlib.import_module("gribuki_trade.cli")
+    assert facade._apply_integration_runtime_defaults is runtime._apply_integration_runtime_defaults
+    assert facade._required_local_secret is runtime._required_local_secret
 
 
 def test_cli_command_families_are_independent_registration_modules() -> None:

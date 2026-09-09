@@ -385,3 +385,22 @@ reconciliation, and LIVE guards. Focused execution and policy validation passed
 17 tests. The combined repository gate then passed readiness, Ruff, mypy (352
 source files), compileall, and 1825 tests with five environment-skipped tests,
 41 subtests, and the recurring Windows pytest-cache permission warning.
+
+The CLI runtime-support slice is now isolated in `cli_commands/runtime.py`. It
+owns integration-setting default application, Windows terminal UTF-8 setup,
+secret set/status and required/optional secret reads, SQLite runtime diagnostics,
+and temp-root resolution. The module lazy-loads the CLI facade so it can be
+imported before `cli.py` without a circular import, while facade aliases preserve
+existing monkeypatch and embedding contracts. The focused CLI/runtime and module
+layout route passed 10 tests.
+
+The A-share PAPER-day risk boundary is now isolated in
+`services/ashare/ashare_paper_day_risk.py`. It owns exact risk-policy migration
+authorization, legacy baseline reconstruction, pending-order/incomplete-fill
+guards, and pure price/quantity policy documents. The runner facade retains
+historical private names as aliases and continues to own event-chain writes,
+SQLite transactions, scheduling, and notifications. Focused risk-codec and
+existing PAPER-day policy tests cover the compatibility path. The combined
+repository gate passed readiness, Ruff, mypy (354 source files), compileall, and
+1828 tests with five environment-skipped tests, 41 subtests, and the recurring
+Windows pytest-cache permission warning.
