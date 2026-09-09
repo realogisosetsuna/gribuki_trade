@@ -78,6 +78,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "cli_commands/handlers/ashare_post_close.py",
         ),
         (
+            "gribuki_trade.cli_commands.handlers.ashare_research",
+            "cli_commands/handlers/ashare_research.py",
+        ),
+        (
             "gribuki_trade.cli_commands.ashare_paper_day_results",
             "cli_commands/ashare_paper_day_results.py",
         ),
@@ -452,7 +456,7 @@ def test_cli_command_families_are_independent_registration_modules() -> None:
 def test_cli_handlers_are_separate_from_argument_registration() -> None:
     """只读市场处理器和 Binance 处理器不应回到参数注册模块。"""
 
-    for family in ("ashare", "binance"):
+    for family in ("ashare", "ashare_research", "binance"):
         module = importlib.import_module(f"gribuki_trade.cli_commands.handlers.{family}")
         assert module.__file__ is not None
 
@@ -591,6 +595,15 @@ def test_model_extractions_keep_facade_type_identity() -> None:
                 "_ashare_post_close_run",
                 "_deliver_post_close_artifact",
                 "_post_close_delivery_summary",
+            ),
+        ),
+        (
+            "gribuki_trade.cli",
+            "gribuki_trade.cli_commands.handlers.ashare_research",
+            (
+                "_ashare_research_watch",
+                "_resolve_ashare_research_symbols",
+                "_resolve_dynamic_research_symbols",
             ),
         ),
         (

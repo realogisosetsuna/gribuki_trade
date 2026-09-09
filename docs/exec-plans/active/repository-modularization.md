@@ -756,6 +756,17 @@ monkeypatch seams remain stable; ledger, candidate, research, and notification
 stores keep their existing transaction boundaries. Focused CLI and
 module-layout tests pass, and no LIVE trading authority changed.
 
+### 2026-09-10 — A-share research-watch handler
+
+Moved the bounded `ashare-research-watch` polling loop and dynamic symbol
+resolution into `cli_commands/handlers/ashare_research.py`. The handler keeps
+the watchlist/ACTIVE-candidate merge and per-symbol failure isolation together,
+while resolving the single-run research hook through the CLI facade so existing
+monkeypatch paths and `research_only` behavior remain unchanged. The facade
+continues to own command dispatch and the single-run research implementation;
+no broker or execution authority moved. CLI and module-layout tests plus Ruff
+passed for this slice.
+
 ### 2026-09-10 — Source layout guide
 
 Added `docs/architecture/source-layout.md` with the directory tree, ownership
@@ -763,6 +774,14 @@ rules for adapters/services/storage/trading/reporting/CLI code, and the
 compatibility-facade policy. The guide links to the concrete facade mapping so
 new contributors can locate an implementation without searching the entire
 source tree.
+
+### 2026-09-10 — CLI research watch handler
+
+Moved bounded A-share research-watch cycles and dynamic watchlist/ACTIVE-candidate
+symbol resolution into `cli_commands/handlers/ashare_research.py`. The handler
+delegates each one-symbol run through the lazy CLI facade and remains
+`research_only`; the facade keeps the single-run implementation and historical
+monkeypatch names.
 
 ### 2026-09-10 — Binance Spot order-list parsing
 
