@@ -9,7 +9,7 @@ import httpx
 import pandas as pd
 import pytest
 
-from gribuki_trade.adapters.akshare import (
+from gribuki_trade.adapters.market_data.akshare import (
     AKShareMarketDataAdapter,
     AKSharePayloadError,
     AKShareTimeoutError,

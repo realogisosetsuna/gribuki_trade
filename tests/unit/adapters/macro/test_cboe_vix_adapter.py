@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 
-from gribuki_trade.adapters.cboe_vix import (
+from gribuki_trade.adapters.macro.cboe_vix import (
     CBOE_VIX_EOD_CSV_URL,
     CBOE_VIX_SOURCE_ID,
     CboeVIXDailyAdapter,

@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-import gribuki_trade.services.ashare_paper_day as paper_day_module
-from gribuki_trade.adapters.ashare_surveillance import (
+import gribuki_trade.services.ashare.paper_day.ashare_paper_day as paper_day_module
+from gribuki_trade.adapters.ashare.market.surveillance import (
     TENCENT_ENRICHED_SURVEILLANCE_SOURCE_ID,
 )
 from gribuki_trade.analysis.schemas import (
@@ -64,7 +64,7 @@ from gribuki_trade.reporting.contracts import (
     ReportKind,
     validate_text_report_contract,
 )
-from gribuki_trade.services.ashare_intraday_llm import (
+from gribuki_trade.services.ashare.intraday.ashare_intraday_llm import (
     IntradayLLMConfig,
     IntradayLLMCoordinator,
     IntradayLLMGateAction,
@@ -72,14 +72,14 @@ from gribuki_trade.services.ashare_intraday_llm import (
     IntradayLLMGateReason,
     JournaledIntradayLLMReview,
 )
-from gribuki_trade.services.ashare_intraday_paper import (
+from gribuki_trade.services.ashare.intraday.ashare_intraday_paper import (
     IntradayPaperOrder,
     IntradayPaperRiskConfig,
     build_intraday_sell_quantity_plan,
     intraday_order_quantity_rule,
 )
-from gribuki_trade.services.ashare_paper import ASharePaperTradingService
-from gribuki_trade.services.ashare_paper_day import (
+from gribuki_trade.services.ashare.paper_day.ashare_paper import ASharePaperTradingService
+from gribuki_trade.services.ashare.paper_day.ashare_paper_day import (
     PAPER_RISK_POLICY_CHANGE_CONFIRMATION,
     ASharePaperDayConfig,
     ASharePaperDayRunner,
@@ -90,20 +90,20 @@ from gribuki_trade.services.ashare_paper_day import (
     PaperDayWatchEntry,
     intraday_llm_manifest_document,
 )
-from gribuki_trade.services.ashare_surveillance import (
+from gribuki_trade.services.ashare.research.ashare_surveillance import (
     AShareSurveillanceRun,
     AShareSurveillanceRunStatus,
 )
-from gribuki_trade.services.exit_plan_lifecycle import ExitPlanLifecycleService
-from gribuki_trade.services.macro_research import (
+from gribuki_trade.services.communications.notification_dispatch import NotificationDispatchService
+from gribuki_trade.services.exit.exit_plan_lifecycle import ExitPlanLifecycleService
+from gribuki_trade.services.macro.macro_research import (
     MacroResearchPlan,
     MacroResearchService,
 )
-from gribuki_trade.services.notification_dispatch import NotificationDispatchService
-from gribuki_trade.storage.exit_plans import SQLiteExitPlanStore
-from gribuki_trade.storage.outbox import OutboxDispatcher, OutboxStatus, SQLiteOutbox
-from gribuki_trade.storage.paper_day import SQLitePaperDayStore
-from gribuki_trade.storage.paper_ledger import SQLitePaperLedger
+from gribuki_trade.storage.execution.exit_plans import SQLiteExitPlanStore
+from gribuki_trade.storage.execution.outbox import OutboxDispatcher, OutboxStatus, SQLiteOutbox
+from gribuki_trade.storage.paper.paper_day import SQLitePaperDayStore
+from gribuki_trade.storage.paper.paper_ledger import SQLitePaperLedger
 
 SESSION = date(2026, 8, 14)
 ACCOUNT = "paper-day-test"

@@ -28,8 +28,8 @@ from gribuki_trade.runtime.paper_account_chain import (
     PaperAccountChainError,
     prepare_paper_day_ledger,
 )
-from gribuki_trade.services.ashare_paper import ASharePaperTradingService
-from gribuki_trade.storage.paper_ledger import (
+from gribuki_trade.services.ashare.paper_day.ashare_paper import ASharePaperTradingService
+from gribuki_trade.storage.paper.paper_ledger import (
     PaperLedgerConflictError,
     SQLitePaperLedger,
 )

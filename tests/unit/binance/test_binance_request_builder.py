@@ -4,7 +4,7 @@ import unittest
 from urllib.parse import parse_qs, urlsplit
 
 from gribuki_trade.adapters.binance.models import BinanceCredentials
-from gribuki_trade.adapters.binance.request_builder import encode_request
+from gribuki_trade.adapters.binance.transport.request_builder import encode_request
 
 
 class BinanceRequestBuilderTests(unittest.TestCase):

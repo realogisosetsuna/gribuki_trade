@@ -2,7 +2,7 @@ from decimal import Decimal
 
 import pytest
 
-from gribuki_trade.adapters.binance.futures_order_params import (
+from gribuki_trade.adapters.binance.futures.order_params import (
     BinanceFuturesProtectionOrder,
     algo_order_params,
     order_params,

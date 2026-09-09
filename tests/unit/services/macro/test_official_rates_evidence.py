@@ -12,7 +12,7 @@ from gribuki_trade.ports.official_rates import (
     ShiborTenor,
     USDCNYCentralParityObservation,
 )
-from gribuki_trade.services.official_rates_evidence import (
+from gribuki_trade.services.macro.official_rates_evidence import (
     build_official_rates_evidence,
 )
 

@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import pytest
 
-from gribuki_trade.adapters.ashare_context import (
+from gribuki_trade.adapters.ashare.market.context import (
     AKShareETFContextAdapter,
     AKShareIFContextAdapter,
     AKShareLiquidityContextAdapter,

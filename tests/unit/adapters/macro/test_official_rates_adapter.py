@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 
-from gribuki_trade.adapters.official_rates import (
+from gribuki_trade.adapters.macro.official_rates import (
     SAFE_CENTRAL_PARITY_URL,
     SAFE_USD_CNY_SOURCE_ID,
     SHIBOR_HISTORY_URL,

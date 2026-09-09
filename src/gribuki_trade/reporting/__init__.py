@@ -19,7 +19,7 @@ from .contracts import (
     validate_markdown_report_contract,
     validate_text_report_contract,
 )
-from .paper_day_summary import (
+from .paper_day.paper_day_summary import (
     PaperDayBuyExecutionProjection,
     PaperDayExecutiveProjection,
     PaperDayNotificationProjection,

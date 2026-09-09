@@ -5,8 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from gribuki_trade.domain.paper_day import PaperDayPhase, PaperDaySeverity
-from gribuki_trade.services.ashare import ashare_paper_day as facade
-from gribuki_trade.services.ashare import ashare_paper_day_serialization as serialization
+from gribuki_trade.services.ashare.paper_day import ashare_paper_day as facade
+from gribuki_trade.services.ashare.paper_day import ashare_paper_day_serialization as serialization
 
 
 def test_paper_day_facade_reexports_pure_serialization_helpers() -> None:

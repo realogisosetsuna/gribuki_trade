@@ -27,7 +27,7 @@ from gribuki_trade.ports.ashare_screening import (
     ScreeningHistoryPolicy,
     ScreeningSourceQuality,
 )
-from gribuki_trade.services.ashare_screening import (
+from gribuki_trade.services.ashare.research.ashare_screening import (
     AShareScreeningPointInTimeError,
     AShareScreeningRunStatus,
     AShareScreeningService,

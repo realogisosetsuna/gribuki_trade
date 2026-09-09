@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from gribuki_trade.reporting.paper_day_llm_projection import project_llm_sidecars
+from gribuki_trade.reporting.paper_day.paper_day_llm_projection import project_llm_sidecars
 
 
 def _event(sequence: int, event_type: str, payload: dict[str, object], symbol: str | None = None):

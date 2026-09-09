@@ -21,7 +21,7 @@ from gribuki_trade.domain.recommendations import (
 )
 from gribuki_trade.features.technical import TechnicalSignal
 from gribuki_trade.ports.llm_analyzer import AnalyzerAuditIdentity
-from gribuki_trade.services.ashare_intraday_llm import (
+from gribuki_trade.services.ashare.intraday.ashare_intraday_llm import (
     IntradayLLMConfig,
     IntradayLLMCoordinator,
     IntradayLLMGateAction,
@@ -31,7 +31,7 @@ from gribuki_trade.services.ashare_intraday_llm import (
     intraday_llm_document_sha256,
     intraday_llm_review_document,
 )
-from gribuki_trade.services.macro_research import MacroResearchService
+from gribuki_trade.services.macro.macro_research import MacroResearchService
 
 NOW = datetime(2026, 8, 14, 2, 15, tzinfo=UTC)
 SESSION_DATE = date(2026, 8, 14)
@@ -448,7 +448,7 @@ def test_journal_acceptance_is_idempotent_but_conflicting_metadata_is_rejected()
 def test_dual_track_review_document_can_be_restored_without_losing_audit_branches() -> None:
     """热恢复必须保留 baseline/对抗两支，不能悄悄退回单分析器语义。"""
 
-    from gribuki_trade.services.ashare_paper_day import _llm_review_from_document
+    from gribuki_trade.services.ashare.paper_day.ashare_paper_day import _llm_review_from_document
 
     async def scenario() -> None:
         coordinator, _, accepted = await _accepted_review()

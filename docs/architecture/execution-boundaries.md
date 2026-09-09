@@ -34,7 +34,7 @@ from DEMO to LIVE.
 
 For USDⓈ-M unattended execution, `services/binance_futures_unattended.py`
 combines the REST client with the routed private user stream and
-`trading/futures_oms.py`. Startup and every stream epoch change reconcile
+`trading/futures/futures_oms.py`. Startup and every stream epoch change reconcile
 balances, Hedge/One-way positions, normal orders, and Algo orders before order
 changes resume. Raw events, fills, protection identities, command outcomes,
 owner leases, and fencing tokens are durable in SQLite; a transport timeout or

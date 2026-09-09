@@ -13,7 +13,7 @@ from gribuki_trade.domain.live_records import (
 from gribuki_trade.features.deep_exit_planning import DeepExitTimeframe, DeepSemanticAssessment
 from gribuki_trade.features.exit_planning import QuickExitPlanConfig
 from gribuki_trade.features.technical import TechnicalBar
-from gribuki_trade.services.exit_plan_lifecycle import ExitBarrierObservation
+from gribuki_trade.services.exit.exit_plan_lifecycle import ExitBarrierObservation
 
 
 class LiveProtectionInputError(RuntimeError):

@@ -7,8 +7,8 @@ the product. The status below is intentionally conservative.
 
 Implementation evidence: `src/gribuki_trade/adapters/binance/`,
 `src/gribuki_trade/services/binance_futures_unattended.py`, and
-`src/gribuki_trade/trading/futures_oms.py`,
-`src/gribuki_trade/adapters/binance/orderbook.py`,
+`src/gribuki_trade/trading/futures/futures_oms.py`,
+`src/gribuki_trade/adapters/binance/market_data/orderbook.py`,
 `src/gribuki_trade/services/binance_orderbook.py`, and
 `src/gribuki_trade/trading/spot_order_lists.py`. Verification evidence:
 `tests/unit/binance/test_binance_futures_stream.py`,
@@ -46,8 +46,8 @@ Official references used for this audit:
 
 | Binance surface | Repository implementation | Status | LIVE implication / follow-up |
 | --- | --- | --- | --- |
-| REST `ping`, `time`, `exchangeInfo`, price ticker, depth, klines | `adapters/binance/gateway.py` | Implemented | Time offset and symbol rules are available. REST polling is not a substitute for a low-latency stream during volatility. |
-| WebSocket `@trade` | `adapters/binance/stream.py` (`BinanceTradeEvent`) | Implemented | Parser checks symbol and trade-id monotonicity; reconnect does not prove that no messages were missed. |
+| REST `ping`, `time`, `exchangeInfo`, price ticker, depth, klines | `adapters/binance/transport/gateway.py` | Implemented | Time offset and symbol rules are available. REST polling is not a substitute for a low-latency stream during volatility. |
+| WebSocket `@trade` | `adapters/binance/spot/stream.py` (`BinanceTradeEvent`) | Implemented | Parser checks symbol and trade-id monotonicity; reconnect does not prove that no messages were missed. |
 | WebSocket `@bookTicker` | `BinanceBookTickerEvent` | Implemented | Best bid/ask only; update-id regression is rejected. Full depth strategies use the local order-book recovery service. |
 | WebSocket `@kline_<interval>` | `BinanceKlineEvent` | Implemented | Candle events are validated; no sequence continuity or REST backfill is coupled to reconnect. |
 | WebSocket `@depth` / `@depth@100ms` | `BinanceDepthEvent` + `BinanceSpotOrderBook` + `BinanceOrderBookRecoveryService` | Implemented | Buffers diffs, applies `/api/v3/depth`, enforces `U <= lastUpdateId + 1 <= u`, deletes zero levels, and marks gaps/overflow `DESYNCED` until a fresh snapshot bridges the stream. |
@@ -75,7 +75,7 @@ contiguous. `bookTicker` cannot provide those guarantees.
 
 ## Spot private WebSocket stream
 
-`adapters/binance/user_stream.py` uses the current signed Spot WebSocket API
+`adapters/binance/spot/user_stream.py` uses the current signed Spot WebSocket API
 subscription and parses `executionReport`, `outboundAccountPosition`,
 `balanceUpdate`, and `listStatus`. A list event is persisted first, then triggers
 a REST reconciliation boundary in `BinanceSpotExecutionService`; the independent
@@ -90,11 +90,11 @@ proof that no events were lost.
 
 | Surface | Implementation | Status | LIVE implication / follow-up |
 | --- | --- | --- | --- |
-| REST `exchangeInfo`, price, depth, klines | `adapters/binance/futures.py` | Implemented | Useful for bootstrap and validation only. |
-| Public routed WebSocket (`/public`) `@depth`, `@aggTrade`, `@trade` | `adapters/binance/futures_stream.py` | Partial | Typed transport events and sequence/gap fail-closed checks are implemented; REST snapshot application and durable book state remain above the adapter. |
+| REST `exchangeInfo`, price, depth, klines | `adapters/binance/futures/client.py` | Implemented | Useful for bootstrap and validation only. |
+| Public routed WebSocket (`/public`) `@depth`, `@aggTrade`, `@trade` | `adapters/binance/futures/stream.py` | Partial | Typed transport events and sequence/gap fail-closed checks are implemented; REST snapshot application and durable book state remain above the adapter. |
 | Market routed WebSocket (`/market`) `@markPrice`, ticker/miniTicker, index and funding feeds | `FuturesMarkPriceEvent` / `FuturesTickerEvent` | Partial | Mark price, funding rate and next funding time are parsed. Index/mini-ticker variants and persistence are still missing. |
 | Futures local order-book recovery | `BinanceFuturesOrderBook` + `BinanceOrderBookRecoveryService` + `FuturesRestClient.order_book` | Implemented | Uses `U <= snapshot.lastUpdateId <= u`, then requires `pu == previous final id`; gaps and buffer overflow clear the view and require a new REST snapshot. |
-| 24-hour rotation, ping/pong, 10 msg/s, 1024 streams | `adapters/binance/futures_stream.py` + `services/binance_orderbook.py` | Partial | Routed connectors, rotation, reconnect, sequence checks, and REST bootstrap are implemented. Per-account rate limiting and long-duration soak evidence remain. |
+| 24-hour rotation, ping/pong, 10 msg/s, 1024 streams | `adapters/binance/futures/stream.py` + `services/binance_orderbook.py` | Partial | Routed connectors, rotation, reconnect, sequence checks, and REST bootstrap are implemented. Per-account rate limiting and long-duration soak evidence remain. |
 
 USDⓈ-M now has routed endpoints: `wss://fstream.binance.com/public` for
 high-frequency public data, `/market` for regular market data, and `/private`
@@ -105,7 +105,7 @@ generic Spot-style URL builder would be unsafe.
 
 | Surface | Implementation | Status | Notes |
 | --- | --- | --- | --- |
-| Account, position risk, exchange info, orders, trades | `adapters/binance/futures.py` and futures execution service | Implemented | Position mode/side, leverage and margin-type controls are represented. All LIVE writes still require runtime confirmation. |
+| Account, position risk, exchange info, orders, trades | `adapters/binance/futures/client.py` and futures execution service | Implemented | Position mode/side, leverage and margin-type controls are represented. All LIVE writes still require runtime confirmation. |
 | Leverage and margin type | Futures gateway methods | Implemented | Must be applied and confirmed before an entry; position-side semantics differ in Hedge and One-way modes. |
 | Native conditional/protection orders | Futures protection/algo methods | Partial | REST submission/cancel/query exists in the current branch; activation and terminal status still require private-stream reconciliation. |
 | Current USDⓈ-M Algo API (`/fapi/v1/algoOrder` family) | Check the futures adapter implementation and tests | Partial | Binance has migrated conditional/TP/SL workflows to the Algo API. Keep legacy conditional routes behind an explicit capability check and persist `algoId` separately from `orderId`. |
@@ -114,7 +114,7 @@ generic Spot-style URL builder would be unsafe.
 
 ## USDⓈ-M private events
 
-`adapters/binance/futures_user_stream.py` provides a guarded parser and
+`adapters/binance/futures/user_stream.py` provides a guarded parser and
 reconnecting transport for `ORDER_TRADE_UPDATE`, `ACCOUNT_UPDATE`,
 `ACCOUNT_CONFIG_UPDATE`, `MARGIN_CALL`, `ALGO_UPDATE`, `TRADE_LITE`, strategy
 and grid events, trigger rejects, and stream-expiry events. `futures.py`

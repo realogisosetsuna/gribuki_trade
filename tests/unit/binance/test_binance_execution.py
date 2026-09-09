@@ -20,7 +20,7 @@ from gribuki_trade.adapters.binance import (
     BinanceUserBalance,
 )
 from gribuki_trade.domain.orders import OrderIntent, OrderStatus, Side
-from gribuki_trade.services.binance_execution import (
+from gribuki_trade.services.binance.binance_execution import (
     BinanceSpotTestnetExecutionService,
     BinanceTestnetOnlyError,
 )

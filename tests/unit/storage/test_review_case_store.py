@@ -14,7 +14,7 @@ from gribuki_trade.domain.review_cases import (
     ReviewCaseStatus,
     ReviewCaseTransition,
 )
-from gribuki_trade.storage.review_case_store import (
+from gribuki_trade.storage.research.review_case_store import (
     InvalidReviewCaseTransitionError,
     ReviewCaseEventCollisionError,
     ReviewCaseNotFoundError,

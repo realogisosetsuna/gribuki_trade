@@ -10,7 +10,7 @@ from gribuki_trade.reporting.contracts import (
     ReportKind,
     validate_markdown_report_contract,
 )
-from gribuki_trade.reporting.paper_day_summary import (
+from gribuki_trade.reporting.paper_day.paper_day_summary import (
     PaperDaySidecarError,
     project_paper_day_sidecars,
     render_paper_day_summary,

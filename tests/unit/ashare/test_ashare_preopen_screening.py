@@ -11,10 +11,10 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import pytest
 
-from gribuki_trade.adapters.ashare_preopen_screening import (
+from gribuki_trade.adapters.ashare.screening.preopen_screening import (
     AKSharePreopenScreeningAdapter,
 )
-from gribuki_trade.adapters.ashare_screening import (
+from gribuki_trade.adapters.ashare.screening.screening import (
     AKShareScreeningPointInTimeError,
 )
 from gribuki_trade.ports.ashare_screening import (

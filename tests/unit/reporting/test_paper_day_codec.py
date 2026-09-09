@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from gribuki_trade.reporting.paper_day_codec import (
+from gribuki_trade.reporting.paper_day.paper_day_codec import (
     list_length,
     optional_bool,
     optional_decimal,
@@ -17,13 +17,13 @@ from gribuki_trade.reporting.paper_day_codec import (
     required_datetime,
     required_string,
 )
-from gribuki_trade.reporting.paper_day_formatting import (
+from gribuki_trade.reporting.paper_day.paper_day_formatting import (
     deep_selected_system_text,
     local_time,
     pairs,
     readable_code,
 )
-from gribuki_trade.reporting.paper_day_summary import PaperDaySidecarError
+from gribuki_trade.reporting.paper_day.paper_day_summary import PaperDaySidecarError
 
 
 def test_scalar_codecs_reject_ambiguous_json_values() -> None:

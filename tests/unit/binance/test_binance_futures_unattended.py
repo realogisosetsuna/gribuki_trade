@@ -7,8 +7,8 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase
 
-from gribuki_trade.adapters.binance.envs import BinanceProduct, BinanceStage
-from gribuki_trade.adapters.binance.futures_user_stream import parse_futures_user_event
+from gribuki_trade.adapters.binance.auth.envs import BinanceProduct, BinanceStage
+from gribuki_trade.adapters.binance.futures.user_stream import parse_futures_user_event
 from gribuki_trade.runtime.guard import (
     LIVE_CONFIRMATION_PHRASE,
     LiveTradingGuard,
@@ -16,10 +16,10 @@ from gribuki_trade.runtime.guard import (
     OperationNotAllowed,
 )
 from gribuki_trade.runtime.mode import TradingMode
-from gribuki_trade.services.binance_futures_unattended import (
+from gribuki_trade.services.binance.binance_futures_unattended import (
     BinanceFuturesUnattendedExecutionService,
 )
-from gribuki_trade.trading.futures_oms import FuturesOrderManagementStore
+from gribuki_trade.trading.futures.futures_oms import FuturesOrderManagementStore
 
 
 class FakeStream:

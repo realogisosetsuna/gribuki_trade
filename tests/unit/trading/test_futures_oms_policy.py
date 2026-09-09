@@ -3,11 +3,11 @@ from decimal import Decimal
 
 import pytest
 
-from gribuki_trade.trading.futures_models import (
+from gribuki_trade.trading.futures.futures_models import (
     FuturesOrderSnapshot,
     FuturesProtectionPlan,
 )
-from gribuki_trade.trading.futures_oms_policy import (
+from gribuki_trade.trading.futures.futures_oms_policy import (
     command_recovery_query,
     should_apply_order,
     should_replace_protection_plan,

@@ -1,7 +1,7 @@
 from types import MappingProxyType
 from unittest import TestCase
 
-from gribuki_trade.adapters.binance.envs import (
+from gribuki_trade.adapters.binance.auth.envs import (
     BINANCE_ENVIRONMENT_PROFILES,
     BinanceCapability,
     BinanceProduct,

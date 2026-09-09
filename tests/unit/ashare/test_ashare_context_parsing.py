@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from gribuki_trade.adapters.ashare.context_parsing import (
+from gribuki_trade.adapters.ashare.market.context_parsing import (
     _normalize_etf_symbol,
     _optional_decimal,
     _parse_date,

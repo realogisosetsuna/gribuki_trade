@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from gribuki_trade.adapters.akshare_daily import (
+from gribuki_trade.adapters.market_data.akshare_daily import (
     AKShareDailyAssetType,
     AKShareDailyError,
     AKShareDailyNoDataError,
@@ -23,7 +23,7 @@ from gribuki_trade.adapters.akshare_daily import (
     HistoricalDailyTailStitchError,
     HistoricalDailyTailStitchPolicy,
 )
-from gribuki_trade.adapters.baostock import BaoStockDailyAdapter
+from gribuki_trade.adapters.market_data.baostock import BaoStockDailyAdapter
 from gribuki_trade.domain.market import DailyBar, PriceAdjustment
 from gribuki_trade.ports.market_data import (
     AsyncHistoricalDailyData,

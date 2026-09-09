@@ -168,7 +168,7 @@ def humanize_internal_code(code: str | None) -> str:
         return direct
     # PAPER 日报维护当前最完整的执行原因目录；延迟导入可避免报告模块循环依赖。
     try:
-        from gribuki_trade.reporting.paper_day_summary import (  # noqa: PLC0415
+        from gribuki_trade.reporting.paper_day.paper_day_summary import (  # noqa: PLC0415
             _STABLE_REASON_EXPLANATIONS,
         )
     except ImportError:  # pragma: no cover - 安装包完整性不变量

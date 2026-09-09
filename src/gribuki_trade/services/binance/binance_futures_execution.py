@@ -6,12 +6,12 @@ from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any
 
-from gribuki_trade.adapters.binance.envs import BinanceStage
-from gribuki_trade.adapters.binance.futures import (
+from gribuki_trade.adapters.binance.auth.envs import BinanceStage
+from gribuki_trade.adapters.binance.futures.client import (
     BinanceFuturesProtectionOrder,
     BinanceFuturesRestClient,
 )
-from gribuki_trade.adapters.binance.gateway import BinanceConfigurationError
+from gribuki_trade.adapters.binance.transport.gateway import BinanceConfigurationError
 from gribuki_trade.runtime.guard import BrokerOperation, LiveTradingGuard
 
 

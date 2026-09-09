@@ -17,7 +17,7 @@ from queue import Empty, Queue
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from gribuki_trade.adapters.ashare.screening import _SINA_HISTORY_LOCK
+from gribuki_trade.adapters.ashare.screening.screening import _SINA_HISTORY_LOCK
 from gribuki_trade.ports.cross_market_history import (
     MINIMUM_CROSS_MARKET_HISTORY,
     CrossMarketHistoryDataError,

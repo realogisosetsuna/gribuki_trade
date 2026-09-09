@@ -26,13 +26,13 @@ from gribuki_trade.ports.llm_analyzer import (
     DualTrackMacroAnalyzer,
     MacroAnalyzer,
 )
-from gribuki_trade.services.adversarial_macro import (
+from gribuki_trade.services.macro.adversarial_macro import (
     AdversarialMacroAnalyzer,
     AdversarialMacroConfig,
     AdversarialMacroDepth,
     ProductionDualTrackMacroAnalyzer,
 )
-from gribuki_trade.storage.adversarial_audit import SQLiteAdversarialAuditStore
+from gribuki_trade.storage.execution.adversarial_audit import SQLiteAdversarialAuditStore
 
 
 class ProductionLLMProfile(StrEnum):

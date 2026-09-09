@@ -44,11 +44,11 @@ def _ashare_candidates(
     """管理研究候选事件存储，且不包含任何执行路径。"""
 
     from gribuki_trade.domain.candidates import CandidateSource
-    from gribuki_trade.services.candidate_universe import (
+    from gribuki_trade.services.research.candidate_universe import (
         CandidateDiscovery,
         CandidateUniverseService,
     )
-    from gribuki_trade.storage.candidate_store import SQLiteCandidateStore
+    from gribuki_trade.storage.research.candidate_store import SQLiteCandidateStore
 
     if action not in {"list", "add", "cool", "activate", "remove"}:
         raise ValueError("unsupported candidate action")
@@ -140,12 +140,12 @@ def _ashare_review(
     """操作研究复核状态机，且不产生执行副作用。"""
 
     from gribuki_trade.domain.review_cases import RecommendationReviewCase, ReviewActor
-    from gribuki_trade.services.recommendation_review import (
+    from gribuki_trade.services.research.recommendation_review import (
         RecommendationReviewService,
     )
-    from gribuki_trade.storage.candidate_store import SQLiteCandidateStore
-    from gribuki_trade.storage.research_store import SQLiteResearchStore
-    from gribuki_trade.storage.review_case_store import SQLiteReviewCaseStore
+    from gribuki_trade.storage.research.candidate_store import SQLiteCandidateStore
+    from gribuki_trade.storage.research.research_store import SQLiteResearchStore
+    from gribuki_trade.storage.research.review_case_store import SQLiteReviewCaseStore
 
     supported = {"open", "list", "get", "confirm", "reject", "cancel"}
     if action not in supported:

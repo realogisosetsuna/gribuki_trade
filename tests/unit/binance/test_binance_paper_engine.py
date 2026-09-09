@@ -6,10 +6,10 @@ from pathlib import Path
 from unittest import IsolatedAsyncioTestCase
 
 from gribuki_trade.adapters.binance import parse_stream_message
-from gribuki_trade.adapters.paper import PaperBroker
-from gribuki_trade.adapters.paper_account import PaperSpotAccount, SpotSymbolAssets
+from gribuki_trade.adapters.simulated.paper import PaperBroker
+from gribuki_trade.adapters.simulated.paper_account import PaperSpotAccount, SpotSymbolAssets
 from gribuki_trade.domain.orders import OrderIntent, OrderStatus, Side
-from gribuki_trade.services.binance_paper import BinancePaperEngine, PaperRiskLimits
+from gribuki_trade.services.binance.binance_paper import BinancePaperEngine, PaperRiskLimits
 from gribuki_trade.trading import SQLiteOrderManagementStore, TradingCommandStatus
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)

@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from gribuki_trade.adapters.paper_account import (
+from gribuki_trade.adapters.simulated.paper_account import (
     InsufficientPaperBalance,
     PaperFeeSchedule,
     PaperLiquidityRole,

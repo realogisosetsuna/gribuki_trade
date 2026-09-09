@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from gribuki_trade.domain.orders import Side
-from gribuki_trade.trading.models import ExecutionFill
-from gribuki_trade.trading.oms_position_policy import project_position_fill
+from gribuki_trade.trading.core.models import ExecutionFill
+from gribuki_trade.trading.core.oms_position_policy import project_position_fill
 
 
 def _fill(side: Side, quantity: str, price: str) -> ExecutionFill:

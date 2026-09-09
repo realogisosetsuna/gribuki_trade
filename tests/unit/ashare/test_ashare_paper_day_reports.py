@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from gribuki_trade.domain.paper_trading import PaperAccountSnapshot
-from gribuki_trade.services.ashare import ashare_paper_day_reports as reports
+from gribuki_trade.services.ashare.paper_day import ashare_paper_day_reports as reports
 
 
 def _snapshot() -> PaperAccountSnapshot:

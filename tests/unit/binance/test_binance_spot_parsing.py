@@ -1,7 +1,7 @@
 from decimal import Decimal
 from unittest import TestCase
 
-from gribuki_trade.adapters.binance.spot_parsing import (
+from gribuki_trade.adapters.binance.spot.parsing import (
     map_order_status,
     normalize_symbol,
     parameter_text,

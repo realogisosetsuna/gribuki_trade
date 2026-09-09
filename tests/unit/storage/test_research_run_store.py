@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from gribuki_trade.storage.research_runs import (
+from gribuki_trade.storage.research.research_runs import (
     ResearchRunCollisionError,
     SQLiteResearchRunStore,
 )
@@ -169,7 +169,7 @@ def test_preview_schema_is_migrated_without_fabricating_config(tmp_path: Path) -
     payload_json = '{"ok":true}'
     payload_sha256 = hashlib.sha256(payload_json.encode()).hexdigest()
     config_sha256 = hashlib.sha256(b"{}").hexdigest()
-    from gribuki_trade.storage.research_runs import research_run_id
+    from gribuki_trade.storage.research.research_runs import research_run_id
 
     run_id = research_run_id("legacy", "one")
     with sqlite3.connect(path) as connection:

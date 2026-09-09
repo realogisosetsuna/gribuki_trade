@@ -23,8 +23,8 @@ from datetime import date
 from pathlib import Path
 from typing import BinaryIO, Protocol, cast
 
-from gribuki_trade.services.ashare_paper import replay_paper_account
-from gribuki_trade.storage.paper_ledger import (
+from gribuki_trade.services.ashare.paper_day.ashare_paper import replay_paper_account
+from gribuki_trade.storage.paper.paper_ledger import (
     PaperLedgerIntegrityError,
     SQLitePaperLedger,
 )

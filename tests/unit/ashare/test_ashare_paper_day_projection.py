@@ -3,12 +3,12 @@ from __future__ import annotations
 from decimal import Decimal
 
 from gribuki_trade.domain.recommendations import RecommendationDecision
-from gribuki_trade.services.ashare_intraday_llm import (
+from gribuki_trade.services.ashare.intraday.ashare_intraday_llm import (
     IntradayLLMGateAction,
     IntradayLLMGateOutcome,
     IntradayLLMGateReason,
 )
-from gribuki_trade.services.ashare_paper_day_projection import (
+from gribuki_trade.services.ashare.paper_day.ashare_paper_day_projection import (
     deep_exit_sell_review,
     deep_exit_sell_review_text,
     llm_gate_dual_document,

@@ -160,7 +160,7 @@ PAPER journal 与退出哈希链恢复未完成 follow-up；旧待撮合订单�
 新增/扩展：
 
 - [`domain/live_records.py`](../../src/gribuki_trade/domain/live_records.py)
-- [`storage/live_records.py`](../../src/gribuki_trade/storage/live_records.py)
+- [`storage/live_records/live_records.py`](../../src/gribuki_trade/storage/live_records/live_records.py)
 - [`services/live_trade_records.py`](../../src/gribuki_trade/services/live_trade_records.py)
 - [`services/live_trade_orchestration.py`](../../src/gribuki_trade/services/live_trade_orchestration.py)
 - [`services/live_protection_inputs.py`](../../src/gribuki_trade/services/live_protection_inputs.py)

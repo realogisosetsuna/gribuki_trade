@@ -7,15 +7,15 @@ from tempfile import TemporaryDirectory
 from unittest import IsolatedAsyncioTestCase
 
 from gribuki_trade.adapters.binance import BinanceEnvironment
-from gribuki_trade.adapters.binance.stream import (
+from gribuki_trade.adapters.binance.spot.stream import (
     BinanceBookTickerEvent,
     BinanceKlineEvent,
     BinanceMarketEvent,
 )
-from gribuki_trade.adapters.paper_account import PaperSpotAccount, SpotSymbolAssets
+from gribuki_trade.adapters.simulated.paper_account import PaperSpotAccount, SpotSymbolAssets
 from gribuki_trade.backtest.crypto import CryptoBar
 from gribuki_trade.domain.orders import OrderIntent, Side
-from gribuki_trade.services.binance_shadow import (
+from gribuki_trade.services.binance.binance_shadow import (
     BinanceShadowConfig,
     BinanceShadowSession,
     ShadowMarketIntegrityError,

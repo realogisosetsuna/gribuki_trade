@@ -10,7 +10,7 @@ from gribuki_trade.ports.ashare_breadth import (
     AShareExchange,
     AShareExchangeCount,
 )
-from gribuki_trade.services.ashare_breadth_evidence import (
+from gribuki_trade.services.ashare.evidence.ashare_breadth_evidence import (
     build_ashare_breadth_evidence,
 )
 

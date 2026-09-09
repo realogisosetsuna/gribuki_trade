@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from gribuki_trade.storage.strategy_experiments import (
+from gribuki_trade.storage.execution.strategy_experiments import (
     SQLiteStrategyExperimentStore,
     StrategyExperimentCollisionError,
 )

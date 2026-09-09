@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from gribuki_trade.storage.source_health import (
+from gribuki_trade.storage.research.source_health import (
     ProviderRun,
     ProviderRunStatus,
     SourceHealthCollisionError,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import gribuki_trade.services.ashare.ashare_paper_day as paper_day
-import gribuki_trade.services.ashare.ashare_paper_day_reasons as reasons
+import gribuki_trade.services.ashare.paper_day.ashare_paper_day as paper_day
+import gribuki_trade.services.ashare.paper_day.ashare_paper_day_reasons as reasons
 
 
 def test_reason_display_module_preserves_facade_identity_and_fallbacks() -> None:

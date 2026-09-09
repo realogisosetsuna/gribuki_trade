@@ -21,8 +21,8 @@ from typing import Any
 from gribuki_trade.domain.events import RawDocument
 from gribuki_trade.domain.market import DailyBar, PriceAdjustment
 from gribuki_trade.ports.market_data import MarketDataUnavailableError
-from gribuki_trade.storage.market_evidence import daily_bar_evidence_canonical_url
-from gribuki_trade.storage.raw_store import BodyNotRetainedError, FileRawDocumentStore
+from gribuki_trade.storage.research.market_evidence import daily_bar_evidence_canonical_url
+from gribuki_trade.storage.research.raw_store import BodyNotRetainedError, FileRawDocumentStore
 
 DEFAULT_ARCHIVED_DAILY_SOURCE_IDS = (
     "baostock.daily",

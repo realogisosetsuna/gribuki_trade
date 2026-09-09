@@ -1,7 +1,7 @@
 # 源码布局与定位规则
 
 本文件描述当前 `src/gribuki_trade` 的目录职责和新增代码的归属规则。
-历史兼容 facade 仍保留在旧路径，但新的实现应放在下面列出的职责目录中。
+实现模块按职责目录归档；旧的根级适配器和服务文件已移除，调用方应使用下面列出的规范路径。
 
 ## 目录树
 
@@ -11,7 +11,15 @@ gribuki_trade/
 ├── ports/        外部边界协议，不包含具体供应商实现
 ├── adapters/     API、文件和模拟器适配器
 │   ├── binance/  Binance REST/WebSocket 协议与 wire parsing
-│   ├── ashare/   A 股供应商、SSE 官方数据和纯 payload parsing
+│   │   ├── spot/       Spot REST、订单参数和解析
+│   │   ├── futures/    USDⓈ-M Futures REST、订单参数和用户流
+│   │   ├── market_data/深度、历史行情和快照恢复
+│   │   ├── transport/  签名、限频、HTTP 和错误映射
+│   │   └── auth/       凭证和环境配置
+│   ├── ashare/   A 股适配器（market、screening、profile 子包）
+│   │   ├── market/      breadth、context、derivatives、surveillance
+│   │   ├── screening/   screening、factor、payload、preopen
+│   │   └── profile/     instrument profile
 │   ├── market_data/
 │   ├── macro/
 │   ├── llm/
@@ -27,6 +35,11 @@ gribuki_trade/
 ├── services/     应用流程、恢复、审批和失败策略
 │   ├── binance/  Binance 执行、SHADOW 和无人值守流程
 │   └── ashare/   A 股研究、PAPER 和盘后流程
+│       ├── paper_day/  PAPER 日账本、恢复、报告和事件
+│       ├── intraday/   盘中 PAPER、数量策略和 LLM
+│       ├── close/      收盘分析和盘后流程
+│       ├── evidence/   breadth、context、derivatives 证据
+│       └── research/   筛选、盘前、surveillance 和研究
 │   └── live/     实盘观察、保护输入、订单记录和恢复编排
 │   └── macro/    宏观证据选择、研究和对抗分析
 │   └── exit/     退出计划生命周期和保护状态
@@ -34,10 +47,18 @@ gribuki_trade/
 │   ├── communications/ 新闻采集和通知投递
 │   └── llm/      生产 LLM 双轨编排
 ├── trading/      Broker-neutral OMS、仓位和订单状态转换
+│   ├── core/     通用订单/仓位状态与 SQLite OMS
+│   ├── futures/  USDⓈ-M Futures OMS、保护计划和恢复策略
+│   └── spot/     Spot 订单列表状态
 ├── storage/      SQLite store、事件日志、lease 和 outbox
+│   ├── live_records/  实盘命令、记录和保护状态
+│   ├── paper/        PAPER 账本、订单和日级状态
+│   ├── research/     研究、事件、行情证据和原始文档
+│   └── execution/    退出计划、outbox、审计和实验
 ├── runtime/      PAPER/SHADOW/LIVE guard、连续性和临时目录
 ├── security/     secrets、keyring 和运行配置
 ├── reporting/    sidecar 投影、报告和 artifact 合约
+│   ├── paper_day/  PAPER 日报告、sidecar 编解码和投影
 ├── gui/          Qt 页面和 presentation wiring
 └── cli_commands/命令注册、参数解析和按命令族划分的 handler
 ```
@@ -82,12 +103,12 @@ tests/
 | CLI 参数注册和命令族处理 | `cli_commands/parsers/`、`cli_commands/handlers/` | 大型 `cli.py` 新增实现 |
 | sidecar、JSON、Markdown 和消息格式化 | `reporting/` 或 `cli_commands/*_payloads.py` | storage transaction、网络 adapter |
 
-## Facade 规则
+## 模块入口规则
 
-顶层历史模块（例如 `cli.py`、`adapters/ashare_derivatives.py`）是兼容入口，
-用于保留旧 import、嵌入调用和测试 monkeypatch。拆分时应让 facade 重新导出
-同一个对象身份，并在 `tests/unit/test_module_layout.py` 中加入路径和 identity
-断言。新调用方应直接依赖职责目录中的实现模块。
+`adapters/` 与 `services/` 根目录只保留包初始化文件，不再放置供应商或业务
+实现。新调用方直接导入职责目录，例如 `adapters.binance.spot.order_params`、
+`adapters.market_data.akshare` 和 `services.live.live_trade_orchestration`。包初始化
+文件不主动导入全部平台，避免导入一个纯模型时触发网络、密钥或重量级依赖。
 
 纯模块不得导入 SQLite 连接、broker client、Qt widget 或网络 transport。凡是
 会改变订单、账本、outbox 或恢复状态的代码，都必须留在对应 service、trading
@@ -100,7 +121,7 @@ tests/
 ```bash
 rg -n "class |def |async def" src/gribuki_trade/<area>
 rg -n "from gribuki_trade\.adapters|from gribuki_trade\.storage" src/gribuki_trade
-python -m pytest --temp-dir runtime/layout -q tests/unit/test_module_layout.py
+python -m pytest --temp-dir runtime/layout -q tests/unit/meta/test_module_layout.py
 ```
 
 完整的 facade 到实现映射见 [`module-map.md`](module-map.md)，重构顺序和已完成
@@ -112,16 +133,14 @@ python -m pytest --temp-dir runtime/layout -q tests/unit/test_module_layout.py
 路径，不改变导入、fixture 内容或 pytest 收集规则；`tests/README.md` 提供各组
 的定位命令和最近的测试地图。
 
-实盘服务实现统一位于 `services/live/`；`services/live_*.py` 仅保留兼容旧
-导入路径的 facade。新的实盘观察、保护和记录代码应直接放入 `services/live/`。
+实盘服务实现统一位于 `services/live/`。新的实盘观察、保护和记录代码应直接放入
+`services/live/`。
 
-宏观研究与对抗分析实现统一位于 `services/macro/`；根目录的宏观服务文件
-仅保留兼容旧导入路径的 facade。新的宏观证据选择、分析策略和研究编排应
-直接放入 `services/macro/`。
+宏观研究与对抗分析实现统一位于 `services/macro/`。新的宏观证据选择、分析策略
+和研究编排应直接放入 `services/macro/`。
 
-退出计划生命周期实现统一位于 `services/exit/`；根目录的
-`exit_plan_lifecycle*.py` 仅保留兼容旧导入路径的 facade。
+退出计划生命周期实现统一位于 `services/exit/`。
 
 研究候选、跨市场证据和推荐服务统一位于 `services/research/`；新闻采集
 与通知投递位于 `services/communications/`；生产 LLM 编排位于
-`services/llm/`。对应的根目录文件仅是兼容 facade。
+`services/llm/`。

@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from gribuki_trade.domain.events import NormalizedEvent, RawDocument, SourceTier
 from gribuki_trade.ingest.http import SourceRateLimited, SourceUnavailable
 from gribuki_trade.ports.news import FetchCursor, NewsBatch
-from gribuki_trade.services.news_collection import (
+from gribuki_trade.services.communications.news_collection import (
     NewsCollectionService,
     NewsSourceResiliencePolicy,
     SourceCollectionObservation,

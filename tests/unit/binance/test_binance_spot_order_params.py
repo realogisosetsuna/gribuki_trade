@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 
 from gribuki_trade.adapters.binance.models import BinanceSpotOrderLeg
-from gribuki_trade.adapters.binance.spot_order_params import (
+from gribuki_trade.adapters.binance.spot.order_params import (
     list_leg_params,
     prefixed_leg_params,
     spot_order_params,

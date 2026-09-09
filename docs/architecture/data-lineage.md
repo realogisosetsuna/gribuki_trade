@@ -15,7 +15,7 @@ The point-in-time rule is visible in `domain/events.py`,
 SQLite stores are explicit resource boundaries. Candidate/research/review
 stores are separate from notification/report outboxes. Trading OMS and PAPER
 stores keep idempotency keys, monotonic transitions and restart/reconciliation
-state; see `storage/*.py`, `trading/oms.py`, and their `test_*store.py`,
+state; see `storage/*.py`, `trading/core/oms.py`, and their `test_*store.py`,
 `test_trading_oms.py`, and `test_paper_*` tests.
 
 Shared WAL use is gated by the runtime SQLite version check in

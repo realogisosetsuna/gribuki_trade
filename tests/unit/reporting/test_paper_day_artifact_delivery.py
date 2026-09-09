@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import gribuki_trade.services.ashare_paper_day as paper_day_module
+import gribuki_trade.services.ashare.paper_day.ashare_paper_day as paper_day_module
 from gribuki_trade.domain.paper_day import (
     NewPaperDayEvent,
     PaperDayPhase,
@@ -30,9 +30,9 @@ from gribuki_trade.reporting.contracts import (
     ReportKind,
     render_stable_markdown_report,
 )
-from gribuki_trade.services.ashare_intraday_paper import IntradayPaperRiskConfig
-from gribuki_trade.services.ashare_paper import ASharePaperTradingService
-from gribuki_trade.services.ashare_paper_day import (
+from gribuki_trade.services.ashare.intraday.ashare_intraday_paper import IntradayPaperRiskConfig
+from gribuki_trade.services.ashare.paper_day.ashare_paper import ASharePaperTradingService
+from gribuki_trade.services.ashare.paper_day.ashare_paper_day import (
     PAPER_REPORT_ARTIFACT_MARK_SENT,
     PAPER_REPORT_ARTIFACT_RECOVERY_CONFIRMATION,
     PAPER_REPORT_ARTIFACT_RESEND,
@@ -40,14 +40,14 @@ from gribuki_trade.services.ashare_paper_day import (
     ASharePaperDayRunner,
     PaperDayEventPublisher,
 )
-from gribuki_trade.services.notification_dispatch import NotificationDispatchService
-from gribuki_trade.storage.outbox import SQLiteOutbox
-from gribuki_trade.storage.paper_day import SQLitePaperDayStore
-from gribuki_trade.storage.paper_ledger import SQLitePaperLedger
-from gribuki_trade.storage.report_artifact_outbox import (
+from gribuki_trade.services.communications.notification_dispatch import NotificationDispatchService
+from gribuki_trade.storage.execution.outbox import SQLiteOutbox
+from gribuki_trade.storage.execution.report_artifact_outbox import (
     ReportArtifactStatus,
     SQLiteReportArtifactOutbox,
 )
+from gribuki_trade.storage.paper.paper_day import SQLitePaperDayStore
+from gribuki_trade.storage.paper.paper_ledger import SQLitePaperLedger
 
 SESSION = date(2026, 8, 14)
 ACCOUNT = "paper-artifact-test"

@@ -26,7 +26,7 @@ from gribuki_trade.ports.market_data import (
     MinuteInterval,
     SourceSemantics,
 )
-from gribuki_trade.services.ashare_intraday_paper import (
+from gribuki_trade.services.ashare.intraday.ashare_intraday_paper import (
     IntradayPaperMatchReason,
     IntradayPaperMatchStatus,
     IntradayPaperRiskConfig,

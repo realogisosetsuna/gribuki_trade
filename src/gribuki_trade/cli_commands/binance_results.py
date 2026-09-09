@@ -10,7 +10,7 @@ from collections.abc import Iterable
 from decimal import Decimal, InvalidOperation
 from typing import Protocol
 
-from gribuki_trade.adapters.binance.gateway import BinanceProtocolError
+from gribuki_trade.adapters.binance.transport.gateway import BinanceProtocolError
 
 
 class _BalanceLike(Protocol):

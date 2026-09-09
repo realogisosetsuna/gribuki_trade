@@ -38,7 +38,7 @@ from gribuki_trade.services.live.live_trade_records_parsing import (
 from gribuki_trade.services.live.live_trade_records_parsing import (
     parse_onebot_private_message as _parse_onebot_private_message,
 )
-from gribuki_trade.storage.live_records import (
+from gribuki_trade.storage.live_records.live_records import (
     LiveRecordConflictError,
     LiveRecordIntegrityError,
     LiveRecordStateError,

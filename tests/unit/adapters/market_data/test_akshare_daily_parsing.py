@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 import pytest
 
-from gribuki_trade.adapters.akshare_daily_parsing import (
+from gribuki_trade.adapters.market_data.akshare_daily_parsing import (
     AKShareDailyAssetType,
     AKShareDailyNoDataError,
     AKShareDailyPayloadError,

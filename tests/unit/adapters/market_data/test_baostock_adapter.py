@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from gribuki_trade.adapters.baostock import (
+from gribuki_trade.adapters.market_data.baostock import (
     BaoStockDailyAdapter,
     BaoStockError,
     BaoStockTimeoutError,

@@ -8,13 +8,13 @@ from unittest import IsolatedAsyncioTestCase
 
 import pytest
 
-from gribuki_trade.adapters.binance.futures_user_stream import (
+from gribuki_trade.adapters.binance.futures.user_stream import (
     FuturesAlgoUpdate,
     FuturesUnknownEvent,
     normalize_futures_user_event,
     parse_futures_user_event,
 )
-from gribuki_trade.adapters.binance.gateway import BinanceProtocolError
+from gribuki_trade.adapters.binance.transport.gateway import BinanceProtocolError
 
 
 def test_parse_algo_update_preserves_identity_without_secret() -> None:
@@ -131,7 +131,7 @@ class FuturesUserStreamLifecycleTests(IsolatedAsyncioTestCase):
         async def callback(item: object) -> None:
             lifecycle.append(item)
 
-        from gribuki_trade.adapters.binance.futures_user_stream import BinanceFuturesUserDataStream
+        from gribuki_trade.adapters.binance.futures.user_stream import BinanceFuturesUserDataStream
 
         stream = BinanceFuturesUserDataStream(
             client, account_id="acct", connector=connector, on_lifecycle=callback
@@ -150,7 +150,7 @@ class FuturesUserStreamLifecycleTests(IsolatedAsyncioTestCase):
     async def test_malformed_private_frame_is_terminal_and_degraded(self) -> None:
         client = _FakeClient()
         connector = _Connector(_OneFrameConnection('{"e":"TRADE_LITE"}'))
-        from gribuki_trade.adapters.binance.futures_user_stream import BinanceFuturesUserDataStream
+        from gribuki_trade.adapters.binance.futures.user_stream import BinanceFuturesUserDataStream
 
         stream = BinanceFuturesUserDataStream(client, account_id="acct", connector=connector)
         with self.assertRaises(BinanceProtocolError):

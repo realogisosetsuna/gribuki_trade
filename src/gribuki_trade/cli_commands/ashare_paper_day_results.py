@@ -315,7 +315,7 @@ def _ashare_paper_day_summary(
 ) -> dict[str, object]:
     """从伴随文件重新生成增强报告，且不打开 SQLite。"""
 
-    from gribuki_trade.reporting.paper_day_summary import (
+    from gribuki_trade.reporting.paper_day.paper_day_summary import (
         PaperDaySidecarError,
         project_paper_day_sidecars,
         write_paper_day_summary,

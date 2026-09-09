@@ -15,12 +15,12 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 if TYPE_CHECKING:
-    from gribuki_trade.services.ashare_intraday_llm import IntradayLLMConfig
-    from gribuki_trade.services.ashare_paper_day import (
+    from gribuki_trade.services.ashare.intraday.ashare_intraday_llm import IntradayLLMConfig
+    from gribuki_trade.services.ashare.paper_day.ashare_paper_day import (
         PaperDayDeepExitAssessmentProvider,
         PaperDayIntradayLLMPlanFactory,
     )
-    from gribuki_trade.services.macro_research import MacroResearchService
+    from gribuki_trade.services.macro.macro_research import MacroResearchService
 
 class _LazyCliFacade:
     def __getattr__(self, name: str) -> Any:
@@ -58,13 +58,13 @@ async def _run_ashare_paper_day_owned(
 ) -> dict[str, object]:
     """构造并管理阻塞式日内循环的每项可变依赖。"""
 
-    from gribuki_trade.adapters.akshare import AKShareMarketDataAdapter
-    from gribuki_trade.adapters.ashare_preopen_screening import (
-        AKSharePreopenScreeningAdapter,
-    )
-    from gribuki_trade.adapters.ashare_surveillance import (
+    from gribuki_trade.adapters.ashare.market.surveillance import (
         AKShareAShareSurveillanceAdapter,
     )
+    from gribuki_trade.adapters.ashare.screening.preopen_screening import (
+        AKSharePreopenScreeningAdapter,
+    )
+    from gribuki_trade.adapters.market_data.akshare import AKShareMarketDataAdapter
     from gribuki_trade.adapters.notifiers import OneBotConfig, OneBotNotifier
     from gribuki_trade.domain.paper_day import (
         PaperDayRunManifest,
@@ -76,16 +76,16 @@ async def _run_ashare_paper_day_owned(
         SystemAwakeGuard,
         prepare_paper_day_ledger,
     )
-    from gribuki_trade.services.ashare_intraday_llm_plans import (
+    from gribuki_trade.services.ashare.intraday.ashare_intraday_llm_plans import (
         FrozenPITIntradayLLMPlanFactory,
         ReplayGuardedIntradayLLMCoordinator,
         build_preopen_context,
         load_frozen_pit_event_snapshot,
         replay_frozen_pit_event_snapshot,
     )
-    from gribuki_trade.services.ashare_intraday_paper import IntradayPaperRiskConfig
-    from gribuki_trade.services.ashare_paper import ASharePaperTradingService
-    from gribuki_trade.services.ashare_paper_day import (
+    from gribuki_trade.services.ashare.intraday.ashare_intraday_paper import IntradayPaperRiskConfig
+    from gribuki_trade.services.ashare.paper_day.ashare_paper import ASharePaperTradingService
+    from gribuki_trade.services.ashare.paper_day.ashare_paper_day import (
         ASharePaperDayConfig,
         ASharePaperDayRunner,
         PaperDayAbortRecoveryRequiredError,
@@ -94,21 +94,21 @@ async def _run_ashare_paper_day_owned(
         intraday_llm_evidence_manifest_document,
         intraday_llm_manifest_document,
     )
-    from gribuki_trade.services.ashare_preopen_screening import (
+    from gribuki_trade.services.ashare.research.ashare_preopen_screening import (
         ASharePreopenScreeningService,
     )
-    from gribuki_trade.services.ashare_surveillance import (
+    from gribuki_trade.services.ashare.research.ashare_surveillance import (
         AShareIntradaySurveillanceService,
     )
-    from gribuki_trade.services.notification_dispatch import (
+    from gribuki_trade.services.communications.notification_dispatch import (
         NotificationDispatchService,
     )
-    from gribuki_trade.storage.outbox import SQLiteOutbox
-    from gribuki_trade.storage.paper_day import (
+    from gribuki_trade.storage.execution.outbox import SQLiteOutbox
+    from gribuki_trade.storage.paper.paper_day import (
         PaperDayStoreLeaseError,
         SQLitePaperDayStore,
     )
-    from gribuki_trade.storage.paper_ledger import SQLitePaperLedger
+    from gribuki_trade.storage.paper.paper_ledger import SQLitePaperLedger
 
     target_kind = NotificationTargetKind(target_kind_value)
     session_root.mkdir(parents=True, exist_ok=True)
@@ -476,7 +476,7 @@ def _paper_day_resume_config_compatible(
 ) -> bool:
     """比较不可变运行时策略，同时委托风险迁移。"""
 
-    from gribuki_trade.services.ashare_paper_day import (
+    from gribuki_trade.services.ashare.paper_day.ashare_paper_day import (
         intraday_llm_manifest_compatible,
     )
 

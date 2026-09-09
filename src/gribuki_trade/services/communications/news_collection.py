@@ -14,8 +14,8 @@ from uuid import uuid4
 from gribuki_trade.ingest.http import SourceFetchError
 from gribuki_trade.pipeline.dedupe import EventDisposition
 from gribuki_trade.ports.news import FetchCursor, NewsSource
-from gribuki_trade.storage.event_store import SQLiteEventStore
-from gribuki_trade.storage.raw_store import FileRawDocumentStore
+from gribuki_trade.storage.research.event_store import SQLiteEventStore
+from gribuki_trade.storage.research.raw_store import FileRawDocumentStore
 
 
 class SourceRunStatus(StrEnum):

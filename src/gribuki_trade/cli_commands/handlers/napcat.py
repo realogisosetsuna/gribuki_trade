@@ -267,7 +267,7 @@ async def _napcat_send_artifact(
         ReportKind,
         validate_markdown_report_contract,
     )
-    from gribuki_trade.storage.report_artifact_outbox import (
+    from gribuki_trade.storage.execution.report_artifact_outbox import (
         ReportArtifactOutboxError,
         ReportArtifactStatus,
         SQLiteReportArtifactOutbox,

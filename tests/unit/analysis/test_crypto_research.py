@@ -8,7 +8,7 @@ import pytest
 
 from gribuki_trade.adapters.binance import BinanceKlineArchive, Kline
 from gribuki_trade.backtest import CryptoFeeConfig
-from gribuki_trade.services.crypto_research import (
+from gribuki_trade.services.research.crypto_research import (
     CryptoResearchError,
     CryptoResearchRequest,
     CryptoResearchService,

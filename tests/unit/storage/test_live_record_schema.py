@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from gribuki_trade.storage.live_record_schema import ensure_live_record_schema
+from gribuki_trade.storage.live_records.live_record_schema import ensure_live_record_schema
 
 
 def test_live_record_schema_is_idempotent_and_contains_durable_boundaries() -> None:

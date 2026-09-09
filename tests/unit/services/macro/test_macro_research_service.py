@@ -20,7 +20,7 @@ from gribuki_trade.domain.events import (
     NormalizedEvent,
     SourceTier,
 )
-from gribuki_trade.services.macro_research import (
+from gribuki_trade.services.macro.macro_research import (
     MacroEvidenceConfig,
     MacroResearchService,
     select_macro_evidence,

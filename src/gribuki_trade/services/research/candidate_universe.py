@@ -23,8 +23,8 @@ from gribuki_trade.domain.candidates import (
 )
 
 if TYPE_CHECKING:
-    from gribuki_trade.services.ashare_screening import AShareScreeningRun
-    from gribuki_trade.services.ashare_surveillance import AShareSurveillanceRun
+    from gribuki_trade.services.ashare.research.ashare_screening import AShareScreeningRun
+    from gribuki_trade.services.ashare.research.ashare_surveillance import AShareSurveillanceRun
 
 
 class CandidateRepository(Protocol):

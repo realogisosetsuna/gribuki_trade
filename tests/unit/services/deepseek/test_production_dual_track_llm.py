@@ -23,7 +23,10 @@ from gribuki_trade.features.exit_planning import build_quick_exit_plan
 from gribuki_trade.features.technical import TechnicalBar
 from gribuki_trade.ports.llm_analyzer import AnalyzerAuditIdentity, DualTrackMacroAnalysis
 from gribuki_trade.security.config import SecretValue
-from gribuki_trade.services.adversarial_macro import (
+from gribuki_trade.services.llm.llm_production import (
+    PaperDayDualTrackDeepExitAssessmentProvider,
+)
+from gribuki_trade.services.macro.adversarial_macro import (
     AdversarialFeatureMode,
     AdversarialMacroAnalyzer,
     AdversarialMacroConfig,
@@ -31,15 +34,12 @@ from gribuki_trade.services.adversarial_macro import (
     FeatureFlaggedAdversarialMacroAnalyzer,
     ProductionDualTrackMacroAnalyzer,
 )
-from gribuki_trade.services.llm_production import (
-    PaperDayDualTrackDeepExitAssessmentProvider,
-)
-from gribuki_trade.services.macro_research import (
+from gribuki_trade.services.macro.macro_research import (
     MacroResearchRun,
     MacroResearchService,
     select_macro_evidence,
 )
-from gribuki_trade.storage.adversarial_audit import SQLiteAdversarialAuditStore
+from gribuki_trade.storage.execution.adversarial_audit import SQLiteAdversarialAuditStore
 
 NOW = datetime(2026, 8, 14, 7, 0, tzinfo=UTC)
 FAKE_IDENTITY = AnalyzerAuditIdentity(

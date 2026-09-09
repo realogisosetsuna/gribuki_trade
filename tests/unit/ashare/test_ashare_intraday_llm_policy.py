@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 
-from gribuki_trade.services.ashare.ashare_intraday_llm_policy import (
+from gribuki_trade.services.ashare.intraday.ashare_intraday_llm_policy import (
     aware_utc,
     bounded_score,
     canonical_symbol,

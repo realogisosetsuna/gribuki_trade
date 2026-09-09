@@ -14,7 +14,7 @@ from datetime import date
 from functools import partial
 from typing import Any
 
-from gribuki_trade.adapters.ashare.screening import (
+from gribuki_trade.adapters.ashare.screening.screening import (
     _SINA_HISTORY_LOCK,
     SINA_HISTORY_SOURCE_ID,
 )

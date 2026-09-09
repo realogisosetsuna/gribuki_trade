@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import pytest
 
-from gribuki_trade.adapters.ashare_screening import (
+from gribuki_trade.adapters.ashare.screening.screening import (
     AKSHARE_HISTORY_SOURCE_ID,
     EASTMONEY_SCREENING_SOURCE_ID,
     SINA_HISTORY_SOURCE_ID,

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from gribuki_trade.adapters.archived_daily import (
+from gribuki_trade.adapters.market_data.archived_daily import (
     ArchivedDailyEvidenceSchemaError,
     ArchivedDailyEvidenceUnavailableError,
     ArchivedDailyEvidenceUnsupportedAdjustmentError,

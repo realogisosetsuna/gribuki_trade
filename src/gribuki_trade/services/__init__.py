@@ -1,24 +1,6 @@
 """负责协调各端口且不产生券商副作用的应用服务。"""
 
-from gribuki_trade.services.adversarial_macro import (
-    AdversarialFeatureMode,
-    AdversarialMacroAnalyzer,
-    AdversarialMacroConfig,
-    AdversarialMacroDepth,
-    AdversarialMacroRole,
-    AdversarialMacroRun,
-    AdversarialRoleOpinion,
-    AdversarialRound,
-    AdversarialShadowRecord,
-    AdversarialTermination,
-    FeatureFlaggedAdversarialMacroAnalyzer,
-    ProductionDualTrackMacroAnalyzer,
-)
-from gribuki_trade.services.ashare_breadth_evidence import (
-    AShareBreadthEvidenceBundle,
-    build_ashare_breadth_evidence,
-)
-from gribuki_trade.services.ashare_close_analysis import (
+from gribuki_trade.services.ashare.close.ashare_close_analysis import (
     AShareCloseAnalysisRequest,
     AShareCloseAnalysisRun,
     AShareCloseAnalysisService,
@@ -26,7 +8,7 @@ from gribuki_trade.services.ashare_close_analysis import (
     format_close_analysis_notification,
     format_close_analysis_notifications,
 )
-from gribuki_trade.services.ashare_close_sessions import (
+from gribuki_trade.services.ashare.close.ashare_close_sessions import (
     AShareCloseSessionResolver,
     CloseAnalysisMode,
     CloseSessionResolution,
@@ -36,15 +18,19 @@ from gribuki_trade.services.ashare_close_sessions import (
     TradingCalendarCoverageError,
     TradingCalendarUnavailableError,
 )
-from gribuki_trade.services.ashare_context_evidence import (
+from gribuki_trade.services.ashare.evidence.ashare_breadth_evidence import (
+    AShareBreadthEvidenceBundle,
+    build_ashare_breadth_evidence,
+)
+from gribuki_trade.services.ashare.evidence.ashare_context_evidence import (
     AShareContextEvidenceBundle,
     build_ashare_context_evidence,
 )
-from gribuki_trade.services.ashare_derivatives_evidence import (
+from gribuki_trade.services.ashare.evidence.ashare_derivatives_evidence import (
     AShareDerivativesEvidenceBundle,
     build_ashare_derivatives_evidence,
 )
-from gribuki_trade.services.ashare_intraday_llm import (
+from gribuki_trade.services.ashare.intraday.ashare_intraday_llm import (
     IntradayLLMConfig,
     IntradayLLMContext,
     IntradayLLMCoordinator,
@@ -59,7 +45,7 @@ from gribuki_trade.services.ashare_intraday_llm import (
     intraday_llm_document_sha256,
     intraday_llm_review_document,
 )
-from gribuki_trade.services.ashare_intraday_paper import (
+from gribuki_trade.services.ashare.intraday.ashare_intraday_paper import (
     IntradayOrderQuantityRule,
     IntradayPaperMatchOutcome,
     IntradayPaperMatchReason,
@@ -81,7 +67,7 @@ from gribuki_trade.services.ashare_intraday_paper import (
     intraday_order_quantity_rule,
     match_intraday_buy_order,
 )
-from gribuki_trade.services.ashare_paper import (
+from gribuki_trade.services.ashare.paper_day.ashare_paper import (
     ASharePaperError,
     ASharePaperTradingService,
     InsufficientAvailablePositionError,
@@ -93,7 +79,7 @@ from gribuki_trade.services.ashare_paper import (
     PaperSessionError,
     replay_paper_account,
 )
-from gribuki_trade.services.ashare_paper_day import (
+from gribuki_trade.services.ashare.paper_day.ashare_paper_day import (
     PAPER_RISK_POLICY_CHANGE_CONFIRMATION,
     ASharePaperDayConfig,
     ASharePaperDayRunner,
@@ -103,24 +89,24 @@ from gribuki_trade.services.ashare_paper_day import (
     PaperDayRiskPolicyChangeError,
     PaperDayWatchEntry,
 )
-from gribuki_trade.services.ashare_paper_matching import (
+from gribuki_trade.services.ashare.paper_day.ashare_paper_matching import (
     ASharePaperOrderMatcher,
     PaperBarConflictError,
     PaperMatchingError,
     PaperMatchingSequenceError,
     PaperOrderConflictError,
 )
-from gribuki_trade.services.ashare_paper_recovery import (
+from gribuki_trade.services.ashare.paper_day.ashare_paper_recovery import (
     DurableASharePaperOrderMatcher,
     PaperRecoveryRequiredError,
     PaperRecoverySummary,
 )
-from gribuki_trade.services.ashare_preopen_screening import (
+from gribuki_trade.services.ashare.research.ashare_preopen_screening import (
     ASharePreopenScreeningError,
     ASharePreopenScreeningRun,
     ASharePreopenScreeningService,
 )
-from gribuki_trade.services.ashare_research import (
+from gribuki_trade.services.ashare.research.ashare_research import (
     AShareMarketDataCollection,
     AShareResearchRequest,
     AShareResearchRun,
@@ -128,19 +114,19 @@ from gribuki_trade.services.ashare_research import (
     ResearchNotificationTarget,
     format_recommendation_notification,
 )
-from gribuki_trade.services.ashare_screening import (
+from gribuki_trade.services.ashare.research.ashare_screening import (
     AShareScreeningPointInTimeError,
     AShareScreeningRun,
     AShareScreeningRunStatus,
     AShareScreeningService,
 )
-from gribuki_trade.services.ashare_surveillance import (
+from gribuki_trade.services.ashare.research.ashare_surveillance import (
     AShareIntradaySurveillanceService,
     AShareMarketSessionError,
     AShareSurveillanceRun,
     AShareSurveillanceRunStatus,
 )
-from gribuki_trade.services.binance_execution import (
+from gribuki_trade.services.binance.binance_execution import (
     BinanceSpotExecutionGateway,
     BinanceSpotExecutionService,
     BinanceSpotTestnetExecutionService,
@@ -148,26 +134,26 @@ from gribuki_trade.services.binance_execution import (
     BinanceTestnetOnlyError,
     BinanceUserDataSource,
 )
-from gribuki_trade.services.binance_futures_execution import (
+from gribuki_trade.services.binance.binance_futures_execution import (
     BinanceFuturesExecutionService,
 )
-from gribuki_trade.services.binance_futures_unattended import (
+from gribuki_trade.services.binance.binance_futures_unattended import (
     BinanceFuturesUnattendedExecutionService,
     FuturesStartupReconciliation,
 )
-from gribuki_trade.services.binance_monitor import (
+from gribuki_trade.services.binance.binance_monitor import (
     BinanceMarketMonitor,
     BinanceMonitorSnapshot,
 )
-from gribuki_trade.services.binance_orderbook import BinanceOrderBookRecoveryService
-from gribuki_trade.services.binance_paper import (
+from gribuki_trade.services.binance.binance_orderbook import BinanceOrderBookRecoveryService
+from gribuki_trade.services.binance.binance_paper import (
     BinanceMarketSource,
     BinancePaperEngine,
     PaperDecision,
     PaperEngineSnapshot,
     PaperRiskLimits,
 )
-from gribuki_trade.services.binance_shadow import (
+from gribuki_trade.services.binance.binance_shadow import (
     BinanceShadowConfig,
     BinanceShadowSession,
     BinanceShadowStatistics,
@@ -179,21 +165,22 @@ from gribuki_trade.services.binance_shadow import (
     ShadowTermination,
     ShadowTrendDecisionAdapter,
 )
-from gribuki_trade.services.binance_spot_advanced import (
+from gribuki_trade.services.binance.binance_spot_advanced import (
     BinanceSpotAdvancedExecutionService,
 )
-from gribuki_trade.services.candidate_universe import (
-    CandidateDiscovery,
-    CandidateLifecycleError,
-    CandidateMutation,
-    CandidateUniversePolicy,
-    CandidateUniverseService,
+from gribuki_trade.services.communications.news_collection import (
+    NewsCollectionService,
+    NewsSourceResiliencePolicy,
+    SourceCollectionObservation,
+    SourceCollectionResult,
+    SourceRunStatus,
 )
-from gribuki_trade.services.cross_market_relation_evidence import (
-    CrossMarketRelationEvidenceBundle,
-    build_cross_market_relation_evidence,
+from gribuki_trade.services.communications.notification_dispatch import (
+    DispatchRunStatistics,
+    NotificationDispatchService,
+    NotificationDispatchServiceError,
 )
-from gribuki_trade.services.exit_plan_lifecycle import (
+from gribuki_trade.services.exit.exit_plan_lifecycle import (
     DeepExitPlanApplication,
     ExitBarrierObservation,
     ExitPlanEventStore,
@@ -204,21 +191,17 @@ from gribuki_trade.services.exit_plan_lifecycle import (
     PostFillExitPlanEvents,
     QuickExitPlanCreation,
 )
-from gribuki_trade.services.global_risk_evidence import (
-    GlobalRiskEvidenceBundle,
-    build_vix_evidence,
-)
-from gribuki_trade.services.live_market_tracking import (
+from gribuki_trade.services.live.live_market_tracking import (
     LiveMarketTrackingCycleService,
     LiveTrackingCycleSummary,
     LiveTrackingTargetFailure,
 )
-from gribuki_trade.services.live_protection_inputs import (
+from gribuki_trade.services.live.live_protection_inputs import (
     LiveDualExitSemanticAnalyzer,
     ProductionLiveDualExitSemanticAnalyzer,
     PublicMarketLiveProtectionInputProvider,
 )
-from gribuki_trade.services.live_trade_orchestration import (
+from gribuki_trade.services.live.live_trade_orchestration import (
     LiveProtectionInputError,
     LiveProtectionInputProvider,
     LiveProtectionInputs,
@@ -226,7 +209,7 @@ from gribuki_trade.services.live_trade_orchestration import (
     LiveTradeOrchestrationService,
     LiveWorkRunSummary,
 )
-from gribuki_trade.services.live_trade_records import (
+from gribuki_trade.services.live.live_trade_records import (
     LiveInboundOutcome,
     LiveInboundOutcomeStatus,
     LiveTradeRecordError,
@@ -235,14 +218,32 @@ from gribuki_trade.services.live_trade_records import (
     parse_onebot_private_message,
     project_live_account,
 )
-from gribuki_trade.services.llm_production import (
+from gribuki_trade.services.llm.llm_production import (
     OwnedProductionDualTrackAnalyzer,
     PaperDayDualTrackDeepExitAssessmentProvider,
     ProductionLLMProfile,
     build_production_dual_track_analyzer,
     recommended_intraday_review_timeout,
 )
-from gribuki_trade.services.macro_research import (
+from gribuki_trade.services.macro.adversarial_macro import (
+    AdversarialFeatureMode,
+    AdversarialMacroAnalyzer,
+    AdversarialMacroConfig,
+    AdversarialMacroDepth,
+    AdversarialMacroRole,
+    AdversarialMacroRun,
+    AdversarialRoleOpinion,
+    AdversarialRound,
+    AdversarialShadowRecord,
+    AdversarialTermination,
+    FeatureFlaggedAdversarialMacroAnalyzer,
+    ProductionDualTrackMacroAnalyzer,
+)
+from gribuki_trade.services.macro.global_risk_evidence import (
+    GlobalRiskEvidenceBundle,
+    build_vix_evidence,
+)
+from gribuki_trade.services.macro.macro_research import (
     EvidenceCorroboration,
     EvidenceSelection,
     MacroEvidenceConfig,
@@ -251,35 +252,34 @@ from gribuki_trade.services.macro_research import (
     MacroResearchService,
     select_macro_evidence,
 )
-from gribuki_trade.services.news_collection import (
-    NewsCollectionService,
-    NewsSourceResiliencePolicy,
-    SourceCollectionObservation,
-    SourceCollectionResult,
-    SourceRunStatus,
-)
-from gribuki_trade.services.notification_dispatch import (
-    DispatchRunStatistics,
-    NotificationDispatchService,
-    NotificationDispatchServiceError,
-)
-from gribuki_trade.services.official_rates_evidence import (
+from gribuki_trade.services.macro.official_rates_evidence import (
     OfficialRatesEvidenceBundle,
     build_official_rates_evidence,
 )
-from gribuki_trade.services.recommendation_evaluation import (
+from gribuki_trade.services.research.candidate_universe import (
+    CandidateDiscovery,
+    CandidateLifecycleError,
+    CandidateMutation,
+    CandidateUniversePolicy,
+    CandidateUniverseService,
+)
+from gribuki_trade.services.research.cross_market_relation_evidence import (
+    CrossMarketRelationEvidenceBundle,
+    build_cross_market_relation_evidence,
+)
+from gribuki_trade.services.research.recommendation_evaluation import (
     HistoricalOutcomeDataError,
     RecommendationEvaluationFailure,
     RecommendationEvaluationRun,
     RecommendationEvaluationService,
 )
-from gribuki_trade.services.recommendation_review import (
+from gribuki_trade.services.research.recommendation_review import (
     RecommendationReviewError,
     RecommendationReviewPolicy,
     RecommendationReviewService,
     ReviewCaseMutation,
 )
-from gribuki_trade.services.research_watch import (
+from gribuki_trade.services.research.research_watch import (
     ResearchSymbolRun,
     ResearchSymbolStatus,
     ResearchWatchAlreadyRunningError,

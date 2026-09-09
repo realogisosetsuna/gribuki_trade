@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from gribuki_trade.trading.futures_models import (
+from gribuki_trade.trading.futures.futures_models import (
     FuturesCommandStatus,
     FuturesFill,
     FuturesOrderSnapshot,
@@ -15,7 +15,7 @@ from gribuki_trade.trading.futures_models import (
     FuturesStreamHealth,
     FuturesUserEvent,
 )
-from gribuki_trade.trading.futures_oms import FuturesOrderManagementStore
+from gribuki_trade.trading.futures.futures_oms import FuturesOrderManagementStore
 
 NOW = datetime(2026, 9, 9, 1, 0, tzinfo=UTC)
 

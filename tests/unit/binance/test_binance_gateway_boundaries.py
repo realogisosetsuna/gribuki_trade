@@ -1,12 +1,12 @@
-from gribuki_trade.adapters.binance.errors import (
+from gribuki_trade.adapters.binance.models import BinanceRateLimitUsage
+from gribuki_trade.adapters.binance.transport.errors import (
     BinanceAPIError,
     BinanceError,
     BinanceUncertainResultError,
 )
-from gribuki_trade.adapters.binance.gateway import BinanceAPIError as GatewayAPIError
-from gribuki_trade.adapters.binance.gateway import BinanceError as GatewayError
-from gribuki_trade.adapters.binance.models import BinanceRateLimitUsage
-from gribuki_trade.adapters.binance.rate_limit import parse_rate_limit_usage
+from gribuki_trade.adapters.binance.transport.gateway import BinanceAPIError as GatewayAPIError
+from gribuki_trade.adapters.binance.transport.gateway import BinanceError as GatewayError
+from gribuki_trade.adapters.binance.transport.rate_limit import parse_rate_limit_usage
 
 
 def test_gateway_error_exports_are_compatible_with_pure_error_module() -> None:

@@ -5,12 +5,12 @@ from collections.abc import AsyncIterator
 from decimal import Decimal
 from unittest import IsolatedAsyncioTestCase
 
-from gribuki_trade.adapters.binance.stream import (
+from gribuki_trade.adapters.binance.spot.stream import (
     BinanceBookTickerEvent,
     BinanceMarketEvent,
     BinanceTradeEvent,
 )
-from gribuki_trade.services.binance_monitor import BinanceMarketMonitor
+from gribuki_trade.services.binance.binance_monitor import BinanceMarketMonitor
 
 
 class FakeMarket(AsyncIterator[BinanceMarketEvent]):

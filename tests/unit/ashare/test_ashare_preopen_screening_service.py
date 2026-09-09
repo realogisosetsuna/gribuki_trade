@@ -18,7 +18,7 @@ from gribuki_trade.ports.ashare_screening import (
     ScreeningHistoryPolicy,
     ScreeningSourceQuality,
 )
-from gribuki_trade.services.ashare_preopen_screening import (
+from gribuki_trade.services.ashare.research.ashare_preopen_screening import (
     ASharePreopenScreeningError,
     ASharePreopenScreeningService,
 )

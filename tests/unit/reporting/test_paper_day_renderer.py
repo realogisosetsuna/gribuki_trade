@@ -2,15 +2,15 @@
 
 from decimal import Decimal
 
-from gribuki_trade.reporting import paper_day_summary as facade
-from gribuki_trade.reporting.paper_day_renderer import (
+from gribuki_trade.reporting.paper_day import paper_day_summary as facade
+from gribuki_trade.reporting.paper_day.paper_day_renderer import (
     _daily_band,
     _explained_codes,
     _position_limit_display,
     _price_range,
     render_paper_day_summary,
 )
-from gribuki_trade.reporting.paper_day_summary import PaperDayPriceAcceptanceProjection
+from gribuki_trade.reporting.paper_day.paper_day_summary import PaperDayPriceAcceptanceProjection
 
 
 def test_renderer_helpers_are_pure_and_preserve_facade_compatibility() -> None:

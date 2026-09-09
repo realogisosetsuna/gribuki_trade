@@ -208,7 +208,7 @@ seal 与 SQLite 追加拦截触发器在同一事务内生效：旧日一经封�
 
 - [live_records.py（领域）](../../src/gribuki_trade/domain/live_records.py)
 - [live_trade_records.py](../../src/gribuki_trade/services/live_trade_records.py)
-- [live_records.py（存储）](../../src/gribuki_trade/storage/live_records.py)
+- [live_records.py（存储）](../../src/gribuki_trade/storage/live_records/live_records.py)
 
 `live-sync ingest` 会把 OneBot 私聊事件规范化，只接受白名单发送者、私聊 friend 消息、合理时间窗和严格的
 `GT-LIVE/1` 结构化字段。第一条消息仅形成 proposal；同一发送者必须用系统返回的指纹发送第二条

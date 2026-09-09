@@ -1,7 +1,7 @@
 import sqlite3
 from unittest import TestCase
 
-from gribuki_trade.trading.oms_schema import initialize_oms_schema
+from gribuki_trade.trading.core.oms_schema import initialize_oms_schema
 
 
 class OmsSchemaTests(TestCase):

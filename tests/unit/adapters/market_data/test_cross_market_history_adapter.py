@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import pytest
 
-from gribuki_trade.adapters.cross_market_history import (
+from gribuki_trade.adapters.market_data.cross_market_history import (
     DEFAULT_CROSS_MARKET_HISTORY_UNIVERSE,
     AKShareCrossMarketHistoryAdapter,
     CrossMarketHistorySpec,

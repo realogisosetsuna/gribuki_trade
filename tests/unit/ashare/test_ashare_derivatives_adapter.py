@@ -6,7 +6,7 @@ from decimal import Decimal
 import httpx
 import pytest
 
-from gribuki_trade.adapters.ashare_derivatives import (
+from gribuki_trade.adapters.ashare.market.derivatives import (
     SSE_QUERY_URL,
     SSEETFShareAdapter,
     SSEOptionRiskAdapter,

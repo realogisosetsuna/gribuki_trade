@@ -21,7 +21,7 @@ from gribuki_trade.reporting.contracts import (
     report_contract,
     validate_markdown_report_contract,
 )
-from gribuki_trade.reporting.paper_day_summary import PaperDayExecutiveProjection
+from gribuki_trade.reporting.paper_day.paper_day_summary import PaperDayExecutiveProjection
 
 
 def render_post_close_review(

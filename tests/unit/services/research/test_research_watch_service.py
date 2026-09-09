@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from gribuki_trade.services.research_watch import (
+from gribuki_trade.services.research.research_watch import (
     ResearchSymbolStatus,
     ResearchWatchAlreadyRunningError,
     ResearchWatchService,

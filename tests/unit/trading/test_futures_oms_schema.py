@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 import unittest
 
-from gribuki_trade.trading.futures_oms_schema import initialize_futures_oms_schema
+from gribuki_trade.trading.futures.futures_oms_schema import initialize_futures_oms_schema
 
 
 class FuturesOMSSchemaTests(unittest.TestCase):

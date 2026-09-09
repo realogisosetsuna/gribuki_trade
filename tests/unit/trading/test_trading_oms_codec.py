@@ -7,8 +7,8 @@ from decimal import Decimal
 import pytest
 
 from gribuki_trade.domain.orders import OrderIntent, OrderStatus, Side
-from gribuki_trade.trading.models import OrderSnapshot
-from gribuki_trade.trading.oms_codec import (
+from gribuki_trade.trading.core.models import OrderSnapshot
+from gribuki_trade.trading.core.oms_codec import (
     decimal_text,
     identifier,
     json_text,

@@ -247,17 +247,17 @@ from gribuki_trade.security.post_close_urls import (  # noqa: F401 - facade expo
     PostCloseSearxngURLValidationError,
     validate_post_close_searxng_url,
 )
-from gribuki_trade.services.binance_execution import (
+from gribuki_trade.services.binance.binance_execution import (
     BinanceSpotExecutionService,
     BinanceSpotTestnetExecutionService,
     BinanceStartupReconciliation,
 )
-from gribuki_trade.services.binance_futures_execution import BinanceFuturesExecutionService
-from gribuki_trade.services.binance_futures_unattended import (
+from gribuki_trade.services.binance.binance_futures_execution import BinanceFuturesExecutionService
+from gribuki_trade.services.binance.binance_futures_unattended import (
     BinanceFuturesUnattendedExecutionService,
 )
-from gribuki_trade.services.binance_shadow import BinanceShadowConfig, BinanceShadowSession
-from gribuki_trade.services.crypto_research import (
+from gribuki_trade.services.binance.binance_shadow import BinanceShadowConfig, BinanceShadowSession
+from gribuki_trade.services.research.crypto_research import (
     CryptoResearchRequest,
     CryptoResearchService,
     binance_klines_to_crypto_bars,
@@ -1011,7 +1011,7 @@ async def _ashare_market_screen_once(
         "top_n": top_n,
     }
 
-    from gribuki_trade.adapters.ashare_screening import (
+    from gribuki_trade.adapters.ashare.screening.screening import (
         AKShareAShareScreeningAdapter,
         AKShareScreeningCoverageError,
         AKShareScreeningDataError,
@@ -1020,7 +1020,7 @@ async def _ashare_market_screen_once(
         AKShareScreeningSourcesExhaustedError,
     )
     from gribuki_trade.features.ashare_screening import AShareScreeningConfig
-    from gribuki_trade.services.ashare_screening import (
+    from gribuki_trade.services.ashare.research.ashare_screening import (
         AShareScreeningPointInTimeError,
         AShareScreeningService,
     )
@@ -1167,9 +1167,9 @@ def _persist_close_screen_candidates(
     run: object,
     candidate_store_path: str,
 ) -> dict[str, object]:
-    from gribuki_trade.services.ashare_screening import AShareScreeningRun
-    from gribuki_trade.services.candidate_universe import CandidateUniverseService
-    from gribuki_trade.storage.candidate_store import SQLiteCandidateStore
+    from gribuki_trade.services.ashare.research.ashare_screening import AShareScreeningRun
+    from gribuki_trade.services.research.candidate_universe import CandidateUniverseService
+    from gribuki_trade.storage.research.candidate_store import SQLiteCandidateStore
 
     if not isinstance(run, AShareScreeningRun):
         raise TypeError("run must be an AShareScreeningRun")
@@ -1303,14 +1303,14 @@ async def _ashare_intraday_scan_once(
         "top_n": top_n,
     }
 
-    from gribuki_trade.adapters.ashare_surveillance import (
+    from gribuki_trade.adapters.ashare.market.surveillance import (
         AKShareAShareSurveillanceAdapter,
     )
     from gribuki_trade.features.ashare_surveillance import (
         AShareIntradaySurveillanceConfig,
     )
     from gribuki_trade.ports.ashare_surveillance import AShareSurveillanceDataError
-    from gribuki_trade.services.ashare_surveillance import (
+    from gribuki_trade.services.ashare.research.ashare_surveillance import (
         AShareIntradaySurveillanceService,
         AShareMarketSessionError,
     )
@@ -1357,8 +1357,8 @@ async def _ashare_intraday_scan_once(
     if candidate_store_path is None:
         result.update({"candidate_store": None, "candidates_appended": 0})
     else:
-        from gribuki_trade.services.candidate_universe import CandidateUniverseService
-        from gribuki_trade.storage.candidate_store import SQLiteCandidateStore
+        from gribuki_trade.services.research.candidate_universe import CandidateUniverseService
+        from gribuki_trade.storage.research.candidate_store import SQLiteCandidateStore
 
         path = Path(candidate_store_path).resolve()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1464,13 +1464,13 @@ def _live_sync(
 ) -> dict[str, object]:
     """单次处理 OneBot 私聊事件；没有监听端口或操作系统常驻任务。"""
 
-    from gribuki_trade.services.live_trade_records import (
+    from gribuki_trade.services.live.live_trade_records import (
         LiveTradeRecordError,
         LiveTradeRecordService,
         parse_onebot_private_message,
         project_live_account,
     )
-    from gribuki_trade.storage.live_records import SQLiteLiveRecordStore
+    from gribuki_trade.storage.live_records.live_records import SQLiteLiveRecordStore
 
     try:
         supplied_ledger = Path(ledger_db)
@@ -1565,7 +1565,7 @@ def _live_sync(
 def _verify_live_execution_session(executed_at: datetime) -> bool:
     """用 BaoStock 的精确自然日记录判断外部成交日是否开市。"""
 
-    from gribuki_trade.adapters.baostock import BaoStockDailyAdapter
+    from gribuki_trade.adapters.market_data.baostock import BaoStockDailyAdapter
 
     if executed_at.tzinfo is None or executed_at.utcoffset() is None:
         raise ValueError("executed_at must be timezone-aware")
@@ -1639,21 +1639,21 @@ async def _live_sync_post_confirm_quick_and_track(
     for path in paths:
         path.parent.mkdir(parents=True, exist_ok=True)
 
-    from gribuki_trade.adapters.akshare import AKShareMarketDataAdapter
-    from gribuki_trade.adapters.baostock import BaoStockDailyAdapter
+    from gribuki_trade.adapters.market_data.akshare import AKShareMarketDataAdapter
+    from gribuki_trade.adapters.market_data.baostock import BaoStockDailyAdapter
     from gribuki_trade.domain.live_records import LiveWorkKind
     from gribuki_trade.ports.notifier import NotificationTargetKind
-    from gribuki_trade.services.exit_plan_lifecycle import ExitPlanLifecycleService
-    from gribuki_trade.services.live_market_tracking import LiveMarketTrackingCycleService
-    from gribuki_trade.services.live_protection_inputs import (
+    from gribuki_trade.services.exit.exit_plan_lifecycle import ExitPlanLifecycleService
+    from gribuki_trade.services.live.live_market_tracking import LiveMarketTrackingCycleService
+    from gribuki_trade.services.live.live_protection_inputs import (
         PublicMarketLiveProtectionInputProvider,
     )
-    from gribuki_trade.services.live_trade_orchestration import (
+    from gribuki_trade.services.live.live_trade_orchestration import (
         LiveTradeOrchestrationService,
     )
-    from gribuki_trade.storage.exit_plans import SQLiteExitPlanStore
-    from gribuki_trade.storage.live_records import SQLiteLiveRecordStore
-    from gribuki_trade.storage.outbox import SQLiteOutbox
+    from gribuki_trade.storage.execution.exit_plans import SQLiteExitPlanStore
+    from gribuki_trade.storage.execution.outbox import SQLiteOutbox
+    from gribuki_trade.storage.live_records.live_records import SQLiteLiveRecordStore
 
     target_fallback = (target_kind_value is None) != (target_id is None)
     resolved_target_kind = NotificationTargetKind(
@@ -1931,34 +1931,34 @@ async def _live_sync_cycle(
 
     import httpx
 
-    from gribuki_trade.adapters.akshare import AKShareMarketDataAdapter
-    from gribuki_trade.adapters.baostock import BaoStockDailyAdapter
     from gribuki_trade.adapters.llm import (
         DeepSeekChatMacroAnalyzer,
         OpenAIResponsesMacroAnalyzer,
     )
+    from gribuki_trade.adapters.market_data.akshare import AKShareMarketDataAdapter
+    from gribuki_trade.adapters.market_data.baostock import BaoStockDailyAdapter
     from gribuki_trade.domain.live_records import LiveWorkKind
     from gribuki_trade.ports.llm_analyzer import MacroAnalyzer
     from gribuki_trade.ports.notifier import NotificationTargetKind
     from gribuki_trade.security.config import SecretValue
-    from gribuki_trade.services.exit_plan_lifecycle import ExitPlanLifecycleService
-    from gribuki_trade.services.live_market_tracking import (
+    from gribuki_trade.services.exit.exit_plan_lifecycle import ExitPlanLifecycleService
+    from gribuki_trade.services.live.live_market_tracking import (
         LiveMarketTrackingCycleService,
     )
-    from gribuki_trade.services.live_protection_inputs import (
+    from gribuki_trade.services.live.live_protection_inputs import (
         ProductionLiveDualExitSemanticAnalyzer,
         PublicMarketLiveProtectionInputProvider,
     )
-    from gribuki_trade.services.live_trade_orchestration import (
+    from gribuki_trade.services.live.live_trade_orchestration import (
         LiveTradeOrchestrationService,
     )
-    from gribuki_trade.services.llm_production import (
+    from gribuki_trade.services.llm.llm_production import (
         ProductionLLMProfile,
         build_production_dual_track_analyzer,
     )
-    from gribuki_trade.storage.exit_plans import SQLiteExitPlanStore
-    from gribuki_trade.storage.live_records import SQLiteLiveRecordStore
-    from gribuki_trade.storage.outbox import SQLiteOutbox
+    from gribuki_trade.storage.execution.exit_plans import SQLiteExitPlanStore
+    from gribuki_trade.storage.execution.outbox import SQLiteOutbox
+    from gribuki_trade.storage.live_records.live_records import SQLiteLiveRecordStore
 
     target_kind = NotificationTargetKind(target_kind_value)
     client = httpx.AsyncClient(
@@ -2137,8 +2137,8 @@ def _ashare_paper(
         PaperFillSource,
         PaperInstrumentType,
     )
-    from gribuki_trade.services.ashare_paper import ASharePaperTradingService
-    from gribuki_trade.storage.paper_ledger import SQLitePaperLedger
+    from gribuki_trade.services.ashare.paper_day.ashare_paper import ASharePaperTradingService
+    from gribuki_trade.storage.paper.paper_ledger import SQLitePaperLedger
 
     if action not in {"open", "snapshot", "rollover", "fill", "fills"}:
         raise ValueError("unsupported paper action")

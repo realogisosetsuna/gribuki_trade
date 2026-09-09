@@ -6,9 +6,9 @@ import pytest
 
 
 def test_paper_day_facade_preserves_llm_payload_helper_aliases() -> None:
-    facade = importlib.import_module("gribuki_trade.services.ashare_paper_day")
+    facade = importlib.import_module("gribuki_trade.services.ashare.paper_day.ashare_paper_day")
     payloads = importlib.import_module(
-        "gribuki_trade.services.ashare.ashare_paper_day_llm_payloads"
+        "gribuki_trade.services.ashare.paper_day.ashare_paper_day_llm_payloads"
     )
 
     assert facade._llm_review_from_document is payloads._llm_review_from_document
@@ -19,7 +19,7 @@ def test_paper_day_facade_preserves_llm_payload_helper_aliases() -> None:
 
 def test_llm_payload_type_guards_are_strict_and_side_effect_free() -> None:
     payloads = importlib.import_module(
-        "gribuki_trade.services.ashare.ashare_paper_day_llm_payloads"
+        "gribuki_trade.services.ashare.paper_day.ashare_paper_day_llm_payloads"
     )
 
     with pytest.raises(TypeError, match="claims must be a list"):

@@ -11,19 +11,19 @@ from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
-from gribuki_trade.adapters.binance.futures import BinanceFuturesRestClient
-from gribuki_trade.adapters.binance.futures_user_stream import (
+from gribuki_trade.adapters.binance.futures.client import BinanceFuturesRestClient
+from gribuki_trade.adapters.binance.futures.user_stream import (
     BinanceFuturesUserDataStream,
     normalize_futures_user_event,
 )
-from gribuki_trade.adapters.binance.futures_user_stream import (
+from gribuki_trade.adapters.binance.futures.user_stream import (
     FuturesUserEvent as AdapterFuturesUserEvent,
 )
 from gribuki_trade.runtime.guard import BrokerOperation, LiveTradingGuard
 from gribuki_trade.services.binance.binance_futures_unattended_models import (
     FuturesStartupReconciliation,
 )
-from gribuki_trade.trading.futures_models import (
+from gribuki_trade.trading.futures.futures_models import (
     FuturesBalanceSnapshot,
     FuturesCommandStatus,
     FuturesConfigSnapshot,
@@ -34,7 +34,7 @@ from gribuki_trade.trading.futures_models import (
     FuturesPositionSnapshot,
     FuturesUserEvent,
 )
-from gribuki_trade.trading.futures_oms import FuturesOrderManagementStore
+from gribuki_trade.trading.futures.futures_oms import FuturesOrderManagementStore
 
 __all__ = ["BinanceFuturesUnattendedExecutionService", "FuturesStartupReconciliation"]
 
@@ -636,7 +636,7 @@ class BinanceFuturesUnattendedExecutionService:
         )
 
     def _mark_health(self, state: str, reason: str | None, epoch: int) -> None:
-        from gribuki_trade.trading.futures_models import FuturesStreamHealth
+        from gribuki_trade.trading.futures.futures_models import FuturesStreamHealth
 
         self._oms.set_stream_health(
             FuturesStreamHealth(

@@ -17,9 +17,9 @@ files have grown beyond practical review size:
 
 - `cli.py` is roughly 445 KiB and contains parser construction, command
   handlers, service wiring, and presentation formatting.
-- `adapters/binance/gateway.py` is roughly 85 KiB and combines transport,
+- `adapters/binance/transport/gateway.py` is roughly 85 KiB and combines transport,
   signing, market data, account queries, order commands, and response parsing.
-- `trading/futures_oms.py`, `services/binance_execution.py`, and several
+- `trading/futures/futures_oms.py`, `services/binance_execution.py`, and several
   A-share workflows also combine persistence, state transitions, and runtime
   orchestration.
 
@@ -41,7 +41,7 @@ files have grown beyond practical review size:
 ## Increment 1 scope (completed)
 
 - Extract one or more cohesive internal modules from the Binance Spot gateway,
-  retaining `adapters.binance.gateway` exports.
+  with canonical modules under `adapters.binance.transport`, `spot`, `futures`, `market_data`, and `auth`; the package root re-exports the stable public API.
 - Extract one low-risk CLI concern behind `gribuki_trade.cli:main`.
 - Extract one low-risk execution/OMS concern without importing adapter code
   into broker-neutral modules.
@@ -70,7 +70,7 @@ by arbitrary line ranges:
 - Reporting and GUI integrations: artifact serialization, provider adapters,
   and presentation-only code.
 
-The storage slice now includes `storage/paper_day_codec.py` and `storage/live_record_codec.py`. The latter owns pure live-record scalar validation, canonical JSON, event/protection/work identifiers, and event hashes; `storage/live_records.py` retains SQLite transactions, leases, and orchestration boundaries. It owns pure
+The storage slice now includes `storage/paper/paper_day_codec.py` and `storage/live_records/live_record_codec.py`. The latter owns pure live-record scalar validation, canonical JSON, event/protection/work identifiers, and event hashes; `storage/live_records/live_records.py` retains SQLite transactions, leases, and orchestration boundaries. It owns pure
 SQLite row decoding, hash-chain digest construction, identifier validation,
 and lease-argument normalization for `SQLitePaperDayStore`; the facade keeps
 all connections, transactions, leases, and append-only transitions.
@@ -82,14 +82,14 @@ wrappers while continuing to own scheduling, persistence, and side effects.
 
 The nested PAPER-day runner also delegates pure K-line/technical-bar codecs,
 exit-barrier helpers, UTC normalization, canonical hashing, and event JSONL/file
-primitives to `services/ashare/ashare_paper_day_serialization.py`. Historical
+primitives to `services/ashare/paper_day/ashare_paper_day_serialization.py`. Historical
 private helper names remain aliases in the runner module. Focused validation is
 covered by `tests/unit/ashare/test_ashare_paper_day_serialization.py` and the existing
 PAPER-day compatibility suite.
 
 The nested runner now also delegates watchlist, intraday-candidate, pending-order,
 and fill document codecs to
-`services/ashare/ashare_paper_day_documents.py`. The module owns only pure
+`services/ashare/paper_day/ashare_paper_day_documents.py`. The module owns only pure
 object/document conversion, A-share board resolution, and strict scalar
 validation; the runner keeps recovery orchestration, journal transactions,
 scheduling, and notifications. `PaperDayWatchEntry` and historical private
@@ -105,7 +105,7 @@ re-exports the historical exception and enum names through imports.
 
 The reporting slice now includes `reporting/paper_day_codec.py`. It owns the
 sidecar JSON object reader, JSONL event decoder, timestamp/date validation, and
-scalar coercion helpers. `reporting/paper_day_summary.py` keeps the historical
+scalar coercion helpers. `reporting/paper_day/paper_day_summary.py` keeps the historical
 private helper names as small compatibility wrappers and continues to own
 projection assembly, Markdown rendering, and atomic report writing.
 
@@ -263,7 +263,7 @@ remain required after this follow-up is staged.
 
 Status: implementation complete; parent full-repository validation complete.
 
-`adapters/binance/futures_parsing.py` now owns pure Futures response decoding and
+`adapters/binance/futures/parsing.py` now owns pure Futures response decoding and
 scalar validation. It contains the USD-M/COIN-M Ticker shape adapter, order-book
 level/snapshot parser, and symbol/enum/listen-key checks. `futures.py` remains a
 compatibility facade and still owns HTTP signing, credentials, transport, clock
@@ -295,7 +295,7 @@ facades retain their historical private helper names and durable side effects.
 
 The A-share screening payload slice now follows the same boundary: provider row
 decoding, security/date/number validation, coverage checks, and revision hashes
-are isolated in `adapters/ashare/screening_payload.py`; the adapter facade keeps
+are isolated in `adapters/ashare/screening/screening_payload.py`; the adapter facade keeps
 AKShare calls, timeout/concurrency control, fallback selection, and degradation
 reporting.
 
@@ -314,7 +314,7 @@ mypy (338 source files), compileall, and 1765 tests passed, with five
 environment skips and 41 subtests.
 
 The live-record protection slice now isolates A-share T+1 sellable-quantity and
-FIFO buy-lot allocation in `storage/live_record_protection_policy.py`; the
+FIFO buy-lot allocation in `storage/live_records/live_record_protection_policy.py`; the
 work-policy module also exposes a pure retry/dead-state projection. The store
 facade continues to own SQLite reads, allocation writes, lease fencing, and
 transaction boundaries. Focused validation covers the new policy tests together
@@ -342,7 +342,7 @@ handler module-layout contract and projection type checks; the existing CLI rout
 continues to exercise the source-health and screening projection behavior.
 
 The PAPER-day document boundary is now also isolated in
-`services/ashare/ashare_paper_day_documents.py`. It owns the immutable watch-entry
+`services/ashare/paper_day/ashare_paper_day_documents.py`. It owns the immutable watch-entry
 model and watchlist, candidate, order, and fill codecs, while the runner retains
 calendar, recovery, persistence, transaction, scheduling, and notification side
 effects through explicit compatibility aliases. The new CLI-handler and PAPER-day
@@ -367,10 +367,10 @@ facade, dispatch paths, provider calls, and runtime validation are unchanged.
 The focused parser route passed 25 tests; the recurring Windows pytest-cache
 permission warning remains environment-only.
 
-The remaining pure integrity boundary of `storage/live_records.py` is now
-isolated in `storage/live_record_integrity.py`. It owns strict JSON object and
+The remaining pure integrity boundary of `storage/live_records/live_records.py` is now
+isolated in `storage/live_records/live_record_integrity.py`. It owns strict JSON object and
 field validation used by legacy projection recovery, plus append-only event
-payload and hash-chain verification. `storage/live_record_errors.py` owns the
+payload and hash-chain verification. `storage/live_records/live_record_errors.py` owns the
 shared store error hierarchy so the pure module can fail closed without
 importing the SQLite facade. `live_records.py` retains transaction, lease,
 projection, migration orchestration, and historical private helper aliases.
@@ -395,7 +395,7 @@ existing monkeypatch and embedding contracts. The focused CLI/runtime and module
 layout route passed 10 tests.
 
 The A-share PAPER-day risk boundary is now isolated in
-`services/ashare/ashare_paper_day_risk.py`. It owns exact risk-policy migration
+`services/ashare/paper_day/ashare_paper_day_risk.py`. It owns exact risk-policy migration
 authorization, legacy baseline reconstruction, pending-order/incomplete-fill
 guards, and pure price/quantity policy documents. The runner facade retains
 historical private names as aliases and continues to own event-chain writes,
@@ -412,7 +412,7 @@ retains SQLite transactions, outbox leases, order events, and durable writes.
 The focused OMS command-policy route passed 17 tests before the next full gate.
 
 The A-share context adapter now has a dedicated pure parsing boundary in
-`adapters/ashare/context_parsing.py`. It owns provider column resolution,
+`adapters/ashare/market/context_parsing.py`. It owns provider column resolution,
 security/ETF symbol normalization, scalar and temporal parsing, and source
 metadata mappings. `context.py` retains provider calls, timeout/thread
 orchestration, and degradation projection. Focused context parsing and adapter
@@ -454,7 +454,7 @@ with five environment-skipped tests, 41 subtests, and the recurring Windows
 pytest-cache permission warning.
 
 The Spot Binance user-data stream now separates event parsing into
-`adapters/binance/user_stream_parsing.py`. It owns immutable event models,
+`adapters/binance/spot/user_stream_parsing.py`. It owns immutable event models,
 signature payload encoding, frame/envelope decoding, and strict field validation;
 the stream facade retains WebSocket authentication, reconnect, buffering, and
 rotation. The facade re-exports the parser's public types and functions, and the
@@ -464,7 +464,7 @@ The parser's sanitization regression now also covers JSON-quoted `apiKey`,
 
 The A-share intraday LLM service now moves its immutable configuration,
 point-in-time context/review, journal acceptance, schedule, and gate outcome
-models into `services/ashare/ashare_intraday_llm_models.py`. The original module
+models into `services/ashare/intraday/ashare_intraday_llm_models.py`. The original module
 retains the synchronous gate algorithm and asynchronous coordinator while
 re-exporting historical models and serialization helpers. The focused intraday
 LLM policy/serialization and module-layout route passed after the split.
@@ -475,7 +475,7 @@ environment-skipped tests, 41 subtests, and the recurring Windows pytest-cache
 permission warning.
 
 The PAPER-day event publisher now lives in
-`services/ashare/ashare_paper_day_events.py` with its narrow event-store protocol.
+`services/ashare/paper_day/ashare_paper_day_events.py` with its narrow event-store protocol.
 It owns journal publication, sidecar heartbeat/rebuild, delivery projection, and
 notification outbox reconciliation. The runner retains the historical class
 exports and sidecar append injection hook, preserving the nonfatal collision and
@@ -494,7 +494,7 @@ dependency. Focused NapCat and module-layout tests passed after the extraction.
 
 ### 2026-09-09 — PAPER-day execution projections
 
-Extracted pure event interpretation from `reporting/paper_day_summary.py` into
+Extracted pure event interpretation from `reporting/paper_day/paper_day_summary.py` into
 `reporting/paper_day_execution_projection.py`. The new module owns watchlist,
 risk policy, price/quantity acceptance, stable rejection, and source transition
 projections; the facade retains compatibility aliases and file/report assembly.
@@ -545,8 +545,8 @@ and compatibility exports. Focused tests, Ruff, mypy, and compile checks pass.
 ### 2026-09-09 — close-notification splitting helpers
 
 Extracted pure contractual report envelopes, line/character payload splitting, and
-双轨宏观摘要行 from `services/ashare/ashare_close_notifications.py` into
-`services/ashare/ashare_close_notification_splitting.py`. The notification facade
+双轨宏观摘要行 from `services/ashare/close/ashare_close_notifications.py` into
+`services/ashare/close/ashare_close_notification_splitting.py`. The notification facade
 retains historical private helper aliases and report assembly; the new module has
 no network, storage, notifier, or service state dependency. Focused close-analysis
 and module-layout tests cover the compatibility boundary.
@@ -579,7 +579,7 @@ identities. Focused tests, Ruff, mypy, and compile checks pass.
 
 The paper-order storage slice now places immutable event/run models, SQLite row
 decoding, canonical JSON, hash-chain verification, and scalar normalization in
-`storage/paper_orders_codec.py`. The SQLite facade retains schema initialization,
+`storage/paper/paper_orders_codec.py`. The SQLite facade retains schema initialization,
 WAL transactions, leases, idempotent appends, and restart recovery while its
 historical model and exception identities remain stable. Focused paper-order
 recovery and broker tests passed.
@@ -665,7 +665,7 @@ preserved.
 ### 2026-09-09 — A-share PAPER result model
 
 Extracted the immutable `PaperDayResult` completion record into
-`services/ashare/ashare_paper_day_models.py`. The large runner facade continues to
+`services/ashare/paper_day/ashare_paper_day_models.py`. The large runner facade continues to
 own scheduling, state recovery, paper execution, durable writes, and notification
 orchestration; historical facade exports and type identity are preserved.
 
@@ -704,7 +704,7 @@ module-layout, Ruff, and mypy checks pass.
 ### 2026-09-10 — Binance public stream models
 
 Extracted public market event value objects and pure stream-name/environment URL
-validation into `adapters/binance/stream_models.py`. The stream facade retains
+validation into `adapters/binance/spot/stream_models.py`. The stream facade retains
 WebSocket connection lifecycle, reconnect policy, frame parsing, and sequence
 monotonicity. Binance-focused tests, Ruff, and mypy pass.
 
@@ -723,15 +723,15 @@ Ruff, mypy, and compile checks pass.
 
 Extracted official SSE option-risk and ETF-share document decoding, visibility
 checks, scalar validation, and row projections into
-`adapters/ashare/derivatives_parsing.py`. The adapter facade retains HTTP client
+`adapters/ashare/market/derivatives_parsing.py`. The adapter facade retains HTTP client
 ownership, request limits, timeout/transport mapping, and the historical public
 exports. Adapter and module-layout tests plus Ruff, mypy, and compile checks pass.
 
 ### 2026-09-10 — PAPER-day report rendering helpers
 
 Moved the pure audit sections, table/value formatting, and artifact-link
-projection helpers from `reporting/paper_day_renderer.py` to
-`reporting/paper_day_rendering.py`. The renderer facade still owns full report
+projection helpers from `reporting/paper_day/paper_day_renderer.py` to
+`reporting/paper_day/paper_day_rendering.py`. The renderer facade still owns full report
 section ordering, immutable event JSON serialization, and Markdown contract
 validation; historical private helper identities remain available. Focused
 renderer and module-layout tests plus Ruff, mypy, and compile checks pass.
@@ -740,7 +740,7 @@ renderer and module-layout tests plus Ruff, mypy, and compile checks pass.
 
 Extracted the pure analyzer identity, point-in-time evidence snapshot, preopen
 LLM context, and restart manifest compatibility contracts into
-`services/ashare/ashare_paper_day_llm_manifest.py`. The PAPER-day runner retains
+`services/ashare/paper_day/ashare_paper_day_llm_manifest.py`. The PAPER-day runner retains
 session scheduling, recovery, persistence, and execution orchestration while
 the facade re-exports the historical names. Focused PAPER-day and module-layout
 tests pass; transaction and trading side effects were not moved.
@@ -786,7 +786,7 @@ monkeypatch names.
 ### 2026-09-10 — Binance Spot order-list parsing
 
 Extracted OCO/OTO/OTOCO order-list and bulk-order snapshot decoding into
-`adapters/binance/spot_order_list_parsing.py`. The Spot gateway retains signed
+`adapters/binance/spot/order_list_parsing.py`. The Spot gateway retains signed
 transport, credentials, order tracking, execution authority, and uncertain
 result reconciliation; historical parser names remain available through the
 gateway facade.
@@ -794,8 +794,8 @@ gateway facade.
 ### 2026-09-10 — PAPER-day account and report projections
 
 Moved the side-effect-free account summary and Markdown daily-report projection
-from `services/ashare/ashare_paper_day.py` to
-`services/ashare/ashare_paper_day_reports.py`. The new module consumes immutable
+from `services/ashare/paper_day/ashare_paper_day.py` to
+`services/ashare/paper_day/ashare_paper_day_reports.py`. The new module consumes immutable
 account snapshots, fills, events, and resolved exit plans only. The runner keeps
 authoritative SQLite/event-store reads, exit-plan lookup, report file writes,
 artifact delivery, leases, and all state transitions; historical facade methods

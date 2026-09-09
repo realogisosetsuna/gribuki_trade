@@ -16,10 +16,10 @@ from gribuki_trade.domain.exit_plans import (
     exit_plan_id,
 )
 from gribuki_trade.features.technical import TechnicalBar
-from gribuki_trade.services.exit_plan_lifecycle import (
+from gribuki_trade.services.exit.exit_plan_lifecycle import (
     ExitPlanLifecycleService,
 )
-from gribuki_trade.storage.exit_plans import SQLiteExitPlanStore
+from gribuki_trade.storage.execution.exit_plans import SQLiteExitPlanStore
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 DECISION = datetime(2026, 8, 14, 10, 0, 30, tzinfo=SHANGHAI)

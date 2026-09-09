@@ -4,8 +4,8 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from gribuki_trade.domain.paper_day import PaperDayRunManifest
-from gribuki_trade.services.ashare.ashare_intraday_paper import IntradayPaperRiskConfig
-from gribuki_trade.services.ashare.ashare_paper_day_config import (
+from gribuki_trade.services.ashare.intraday.ashare_intraday_paper import IntradayPaperRiskConfig
+from gribuki_trade.services.ashare.paper_day.ashare_paper_day_config import (
     PAPER_RISK_POLICY_CHANGE_CONFIRMATION,
     ASharePaperDayConfig,
     _entry_policy_document,

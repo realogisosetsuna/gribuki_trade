@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from gribuki_trade.domain.instruments import ResearchInstrumentProfile
 
 if TYPE_CHECKING:
-    from gribuki_trade.reporting.paper_day_summary import PaperDayExecutiveProjection
+    from gribuki_trade.reporting.paper_day.paper_day_summary import PaperDayExecutiveProjection
 
 
 def _paper_session_instrument_profiles(

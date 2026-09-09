@@ -47,7 +47,7 @@ from gribuki_trade.services import (
     GlobalRiskEvidenceBundle,
     ResearchNotificationTarget,
 )
-from gribuki_trade.services.ashare_close_analysis import (
+from gribuki_trade.services.ashare.close.ashare_close_analysis import (
     _risk_metric_lines,
     _split_notification_text,
     _track_evidence_coverage,
@@ -619,7 +619,7 @@ def test_close_report_replaces_raw_evidence_ids_with_numbered_index() -> None:
 
 
 def test_model_prose_cannot_echo_raw_evidence_hashes() -> None:
-    from gribuki_trade.services.ashare_close_analysis import _humanize_model_text
+    from gribuki_trade.services.ashare.close.ashare_close_analysis import _humanize_model_text
 
     known = "a" * 64
     unknown = "b" * 64

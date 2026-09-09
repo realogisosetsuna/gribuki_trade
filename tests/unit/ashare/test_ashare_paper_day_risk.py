@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from gribuki_trade.ports.ashare_screening import AShareBoard
-from gribuki_trade.services.ashare import ashare_paper_day as paper_day_facade
-from gribuki_trade.services.ashare.ashare_intraday_paper import (
+from gribuki_trade.services.ashare.intraday.ashare_intraday_paper import (
     IntradayPaperRiskConfig,
     build_intraday_sell_quantity_plan,
     intraday_order_quantity_rule,
 )
-from gribuki_trade.services.ashare.ashare_paper_day_risk import (
+from gribuki_trade.services.ashare.paper_day import ashare_paper_day as paper_day_facade
+from gribuki_trade.services.ashare.paper_day.ashare_paper_day_risk import (
     _ADD_BOARD_QUANTITY_RULES,
     _ADD_PRICE_ACCEPTANCE_BOUNDS,
     _REMOVE_POSITION_COUNT_CAP,

@@ -20,7 +20,7 @@ from gribuki_trade.ports.cross_market_history import (
     CrossMarketHistorySeries,
     CrossMarketHistorySnapshot,
 )
-from gribuki_trade.services.cross_market_relation_evidence import (
+from gribuki_trade.services.research.cross_market_relation_evidence import (
     build_cross_market_relation_evidence,
 )
 

@@ -3,8 +3,8 @@ from decimal import Decimal
 
 import pytest
 
-from gribuki_trade.trading.futures_models import FuturesUserEvent
-from gribuki_trade.trading.futures_oms_codec import (
+from gribuki_trade.trading.futures.futures_models import FuturesUserEvent
+from gribuki_trade.trading.futures.futures_oms_codec import (
     event_identity,
     json_payload,
     mapping_payload,

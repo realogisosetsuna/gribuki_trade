@@ -5,8 +5,8 @@ from decimal import Decimal
 import pytest
 
 from gribuki_trade.ports.ashare_screening import AShareBoard
-from gribuki_trade.services.ashare import ashare_intraday_paper as facade
-from gribuki_trade.services.ashare.ashare_intraday_quantity import (
+from gribuki_trade.services.ashare.intraday import ashare_intraday_paper as facade
+from gribuki_trade.services.ashare.intraday.ashare_intraday_quantity import (
     IntradaySellQuantityStatus,
     build_intraday_sell_quantity_plan,
     intraday_order_quantity_rule,

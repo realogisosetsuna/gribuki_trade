@@ -8,8 +8,10 @@ from enum import StrEnum
 
 import pytest
 
-from gribuki_trade.services.ashare import ashare_intraday_llm as facade
-from gribuki_trade.services.ashare import ashare_intraday_llm_serialization as serialization
+from gribuki_trade.services.ashare.intraday import ashare_intraday_llm as facade
+from gribuki_trade.services.ashare.intraday import (
+    ashare_intraday_llm_serialization as serialization,
+)
 
 
 class _Decision(StrEnum):

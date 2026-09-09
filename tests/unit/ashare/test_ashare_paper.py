@@ -16,7 +16,7 @@ from gribuki_trade.domain.paper_trading import (
     PaperFillSource,
     PaperInstrumentType,
 )
-from gribuki_trade.services.ashare_paper import (
+from gribuki_trade.services.ashare.paper_day.ashare_paper import (
     ASharePaperTradingService,
     InsufficientAvailablePositionError,
     InsufficientPaperCashError,
@@ -24,7 +24,7 @@ from gribuki_trade.services.ashare_paper import (
     PaperSessionError,
     replay_paper_account,
 )
-from gribuki_trade.storage.paper_ledger import SQLitePaperLedger
+from gribuki_trade.storage.paper.paper_ledger import SQLitePaperLedger
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 SESSION = date(2026, 8, 14)

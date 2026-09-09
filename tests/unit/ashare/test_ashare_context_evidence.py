@@ -20,7 +20,7 @@ from gribuki_trade.ports.cross_market import (
     CrossMarketSegment,
     CrossMarketSnapshot,
 )
-from gribuki_trade.services.ashare_context_evidence import (
+from gribuki_trade.services.ashare.evidence.ashare_context_evidence import (
     build_ashare_context_evidence,
 )
 

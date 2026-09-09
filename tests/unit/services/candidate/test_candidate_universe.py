@@ -22,21 +22,21 @@ from gribuki_trade.features.ashare_surveillance import (
     IntradayCandidateClass,
 )
 from gribuki_trade.ports.ashare_screening import AShareBoard
-from gribuki_trade.services.ashare_screening import (
+from gribuki_trade.services.ashare.research.ashare_screening import (
     AShareScreeningRun,
     AShareScreeningRunStatus,
 )
-from gribuki_trade.services.ashare_surveillance import (
+from gribuki_trade.services.ashare.research.ashare_surveillance import (
     AShareSurveillanceRun,
     AShareSurveillanceRunStatus,
 )
-from gribuki_trade.services.candidate_universe import (
+from gribuki_trade.services.research.candidate_universe import (
     CandidateDiscovery,
     CandidateLifecycleError,
     CandidateUniversePolicy,
     CandidateUniverseService,
 )
-from gribuki_trade.storage.candidate_store import SQLiteCandidateStore
+from gribuki_trade.storage.research.candidate_store import SQLiteCandidateStore
 
 NOW = datetime(2026, 8, 14, 1, 0, tzinfo=UTC)
 

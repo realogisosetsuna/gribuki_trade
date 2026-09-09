@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from gribuki_trade.adapters.binance.gateway import BinanceProtocolError
 from gribuki_trade.adapters.binance.models import BinanceAccount, BinanceBalance
+from gribuki_trade.adapters.binance.transport.gateway import BinanceProtocolError
 from gribuki_trade.cli_commands.binance_results import (
     _binance_balance_decimal,
     _testnet_balance_diff,

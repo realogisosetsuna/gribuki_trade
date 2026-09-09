@@ -36,7 +36,9 @@ from gribuki_trade.services import (
     AShareResearchService,
     ResearchNotificationTarget,
 )
-from gribuki_trade.services.ashare_research import format_recommendation_notification
+from gribuki_trade.services.ashare.research.ashare_research import (
+    format_recommendation_notification,
+)
 from gribuki_trade.storage import SQLiteOutbox
 
 NOW = datetime(2026, 8, 13, 2, 35, tzinfo=UTC)

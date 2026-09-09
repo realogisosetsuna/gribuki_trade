@@ -456,7 +456,7 @@ CLI 在运行准备阶段从 BaoStock 读取会话日前后自然日窗口，验
 
 - [实盘观察领域模型](../src/gribuki_trade/domain/live_records.py)
 - [入站成交服务](../src/gribuki_trade/services/live_trade_records.py)
-- [实盘观察存储](../src/gribuki_trade/storage/live_records.py)
+- [实盘观察存储](../src/gribuki_trade/storage/live_records/live_records.py)
 - [保护工作编排](../src/gribuki_trade/services/live_trade_orchestration.py)
 - [单轮行情跟踪](../src/gribuki_trade/services/live_market_tracking.py)
 - [真实保护输入装配](../src/gribuki_trade/services/live_protection_inputs.py)
@@ -552,7 +552,7 @@ Windows 任务、服务或常驻监听器。
 报告落地位置包括：
 
 - PAPER-day 日报与增强摘要：
-  [paper_day_summary.py](../src/gribuki_trade/reporting/paper_day_summary.py)；
+  [paper_day_summary.py](../src/gribuki_trade/reporting/paper_day/paper_day_summary.py)；
 - 盘后日报和逐持仓复核：
   [post_close.py](../src/gribuki_trade/reporting/post_close.py)；
 - 单标的深研：

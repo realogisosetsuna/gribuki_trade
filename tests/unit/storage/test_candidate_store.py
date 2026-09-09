@@ -16,7 +16,7 @@ from gribuki_trade.domain.candidates import (
     CandidateStatus,
     canonical_ashare_symbol,
 )
-from gribuki_trade.storage.candidate_store import (
+from gribuki_trade.storage.research.candidate_store import (
     CandidateEventCollisionError,
     CandidateNotFoundError,
     SQLiteCandidateStore,

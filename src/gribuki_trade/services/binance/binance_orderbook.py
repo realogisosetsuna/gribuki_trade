@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
-from gribuki_trade.adapters.binance.orderbook import (
+from gribuki_trade.adapters.binance.market_data.orderbook import (
     BinanceLocalOrderBook,
     LocalOrderBookView,
     SnapshotFetcher,

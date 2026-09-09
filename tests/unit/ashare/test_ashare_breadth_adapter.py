@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import pytest
 
-from gribuki_trade.adapters.ashare_breadth import (
+from gribuki_trade.adapters.ashare.market.breadth import (
     EASTMONEY_BREADTH_SOURCE_ID,
     TENCENT_BREADTH_SOURCE_ID,
     AKShareAShareBreadthAdapter,

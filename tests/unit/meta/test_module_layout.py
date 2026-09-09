@@ -30,12 +30,12 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "services/binance/binance_futures_unattended_models.py",
         ),
         (
-            "gribuki_trade.services.ashare.ashare_paper_day_models",
-            "services/ashare/ashare_paper_day_models.py",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day_models",
+            "services/ashare/paper_day/ashare_paper_day_models.py",
         ),
         (
-            "gribuki_trade.services.ashare.ashare_paper_day_reasons",
-            "services/ashare/ashare_paper_day_reasons.py",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day_reasons",
+            "services/ashare/paper_day/ashare_paper_day_reasons.py",
         ),
         (
             "gribuki_trade.cli_commands.handlers.ashare_review",
@@ -54,16 +54,16 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "ingest/search_providers.py",
         ),
         (
-            "gribuki_trade.adapters.binance.stream_models",
-            "adapters/binance/stream_models.py",
+            "gribuki_trade.adapters.binance.spot.stream_models",
+            "adapters/binance/spot/stream_models.py",
         ),
         (
-            "gribuki_trade.adapters.binance.spot_order_list_parsing",
-            "adapters/binance/spot_order_list_parsing.py",
+            "gribuki_trade.adapters.binance.spot.order_list_parsing",
+            "adapters/binance/spot/order_list_parsing.py",
         ),
         (
-            "gribuki_trade.adapters.ashare.derivatives_parsing",
-            "adapters/ashare/derivatives_parsing.py",
+            "gribuki_trade.adapters.ashare.market.derivatives_parsing",
+            "adapters/ashare/market/derivatives_parsing.py",
         ),
         (
             "gribuki_trade.cli_commands.handlers.ashare_paper_day",
@@ -90,55 +90,70 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "features/cross_market_models.py",
         ),
         (
-            "gribuki_trade.services.exit_plan_lifecycle_models",
+            "gribuki_trade.services.exit.exit_plan_lifecycle_models",
             "services/exit/exit_plan_lifecycle_models.py",
         ),
-        ("gribuki_trade.adapters.akshare", "adapters/market_data/akshare.py"),
-        ("gribuki_trade.adapters.ashare_screening", "adapters/ashare/screening.py"),
-        ("gribuki_trade.adapters.paper", "adapters/simulated/paper.py"),
-        ("gribuki_trade.services.ashare_paper_day", "services/ashare/ashare_paper_day.py"),
-        ("gribuki_trade.services.binance_execution", "services/binance/binance_execution.py"),
+        ("gribuki_trade.adapters.market_data.akshare", "adapters/market_data/akshare.py"),
         (
-            "gribuki_trade.services.exit_plan_lifecycle",
+            "gribuki_trade.adapters.ashare.screening.screening",
+            "adapters/ashare/screening/screening.py",
+        ),
+        ("gribuki_trade.adapters.simulated.paper", "adapters/simulated/paper.py"),
+        (
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day",
+            "services/ashare/paper_day/ashare_paper_day.py",
+        ),
+        (
+            "gribuki_trade.services.binance.binance_execution",
+            "services/binance/binance_execution.py",
+        ),
+        (
+            "gribuki_trade.services.exit.exit_plan_lifecycle",
             "services/exit/exit_plan_lifecycle.py",
         ),
         (
-            "gribuki_trade.services.candidate_universe",
+            "gribuki_trade.services.research.candidate_universe",
             "services/research/candidate_universe.py",
         ),
         (
-            "gribuki_trade.services.notification_dispatch",
+            "gribuki_trade.services.communications.notification_dispatch",
             "services/communications/notification_dispatch.py",
         ),
         (
-            "gribuki_trade.services.llm_production",
+            "gribuki_trade.services.llm.llm_production",
             "services/llm/llm_production.py",
         ),
         (
-            "gribuki_trade.services.live_trade_orchestration_models",
+            "gribuki_trade.services.live.live_trade_orchestration_models",
             "services/live/live_trade_orchestration_models.py",
         ),
         (
-            "gribuki_trade.services.live_trade_records_parsing",
+            "gribuki_trade.services.live.live_trade_records_parsing",
             "services/live/live_trade_records_parsing.py",
         ),
         (
-            "gribuki_trade.services.macro_evidence_selection",
+            "gribuki_trade.services.macro.macro_evidence_selection",
             "services/macro/macro_evidence_selection.py",
         ),
-        ("gribuki_trade.services.macro_models", "services/macro/macro_models.py"),
+        ("gribuki_trade.services.macro.macro_models", "services/macro/macro_models.py"),
         (
-            "gribuki_trade.services.adversarial_macro_feature_flag",
+            "gribuki_trade.services.macro.adversarial_macro_feature_flag",
             "services/macro/adversarial_macro_feature_flag.py",
         ),
         (
-            "gribuki_trade.adapters.binance.spot_order_params",
-            "adapters/binance/spot_order_params.py",
+            "gribuki_trade.adapters.binance.spot.order_params",
+            "adapters/binance/spot/order_params.py",
         ),
-        ("gribuki_trade.reporting.paper_day_renderer", "reporting/paper_day_renderer.py"),
-        ("gribuki_trade.reporting.paper_day_rendering", "reporting/paper_day_rendering.py"),
         (
-            "gribuki_trade.services.adversarial_macro_serialization",
+            "gribuki_trade.reporting.paper_day.paper_day_renderer",
+            "reporting/paper_day/paper_day_renderer.py",
+        ),
+        (
+            "gribuki_trade.reporting.paper_day.paper_day_rendering",
+            "reporting/paper_day/paper_day_rendering.py",
+        ),
+        (
+            "gribuki_trade.services.macro.adversarial_macro_serialization",
             "services/macro/adversarial_macro_serialization.py",
         ),
         ("gribuki_trade.strategy_lab.exit_simulation", "strategy_lab/exit_simulation.py"),
@@ -163,12 +178,12 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "features/close_analysis_models.py",
         ),
         (
-            "gribuki_trade.services.ashare.ashare_paper_day_config",
-            "services/ashare/ashare_paper_day_config.py",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day_config",
+            "services/ashare/paper_day/ashare_paper_day_config.py",
         ),
         (
-            "gribuki_trade.services.ashare.ashare_paper_day_reports",
-            "services/ashare/ashare_paper_day_reports.py",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day_reports",
+            "services/ashare/paper_day/ashare_paper_day_reports.py",
         ),
         ("gribuki_trade.gui.napcat_process", "gui/napcat_process.py"),
         (
@@ -179,11 +194,23 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "gribuki_trade.cli_commands.binance_results",
             "cli_commands/binance_results.py",
         ),
-        ("gribuki_trade.trading.oms_schema", "trading/oms_schema.py"),
-        ("gribuki_trade.storage.live_record_models", "storage/live_record_models.py"),
-        ("gribuki_trade.adapters.ashare.screening_factors", "adapters/ashare/screening_factors.py"),
-        ("gribuki_trade.storage.live_record_schema", "storage/live_record_schema.py"),
-        ("gribuki_trade.adapters.binance.request_builder", "adapters/binance/request_builder.py"),
+        ("gribuki_trade.trading.core.oms_schema", "trading/core/oms_schema.py"),
+        (
+            "gribuki_trade.storage.live_records.live_record_models",
+            "storage/live_records/live_record_models.py",
+        ),
+        (
+            "gribuki_trade.adapters.ashare.screening.screening_factors",
+            "adapters/ashare/screening/screening_factors.py",
+        ),
+        (
+            "gribuki_trade.storage.live_records.live_record_schema",
+            "storage/live_records/live_record_schema.py",
+        ),
+        (
+            "gribuki_trade.adapters.binance.transport.request_builder",
+            "adapters/binance/transport/request_builder.py",
+        ),
         (
             "gribuki_trade.adapters.market_data.akshare_daily_stitch",
             "adapters/market_data/akshare_daily_stitch.py",
@@ -197,58 +224,67 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "adapters/market_data/akshare_payload.py",
         ),
         (
-            "gribuki_trade.services.ashare.ashare_intraday_llm_serialization",
-            "services/ashare/ashare_intraday_llm_serialization.py",
+            "gribuki_trade.services.ashare.intraday.ashare_intraday_llm_serialization",
+            "services/ashare/intraday/ashare_intraday_llm_serialization.py",
         ),
         (
-            "gribuki_trade.services.ashare.ashare_intraday_llm_policy",
-            "services/ashare/ashare_intraday_llm_policy.py",
+            "gribuki_trade.services.ashare.intraday.ashare_intraday_llm_policy",
+            "services/ashare/intraday/ashare_intraday_llm_policy.py",
         ),
         (
-            "gribuki_trade.services.ashare.ashare_intraday_llm_models",
-            "services/ashare/ashare_intraday_llm_models.py",
+            "gribuki_trade.services.ashare.intraday.ashare_intraday_llm_models",
+            "services/ashare/intraday/ashare_intraday_llm_models.py",
         ),
         (
-            "gribuki_trade.reporting.paper_day_llm_projection",
-            "reporting/paper_day_llm_projection.py",
+            "gribuki_trade.reporting.paper_day.paper_day_llm_projection",
+            "reporting/paper_day/paper_day_llm_projection.py",
         ),
         (
-            "gribuki_trade.services.ashare.ashare_intraday_policy",
-            "services/ashare/ashare_intraday_policy.py",
+            "gribuki_trade.services.ashare.intraday.ashare_intraday_policy",
+            "services/ashare/intraday/ashare_intraday_policy.py",
         ),
         (
             "gribuki_trade.cli_commands.close_research_payloads",
             "cli_commands/close_research_payloads.py",
         ),
         (
-            "gribuki_trade.adapters.binance.futures_order_params",
-            "adapters/binance/futures_order_params.py",
+            "gribuki_trade.adapters.binance.futures.order_params",
+            "adapters/binance/futures/order_params.py",
         ),
         (
-            "gribuki_trade.adapters.binance.futures_parsing",
-            "adapters/binance/futures_parsing.py",
+            "gribuki_trade.adapters.binance.futures.parsing",
+            "adapters/binance/futures/parsing.py",
         ),
         (
-            "gribuki_trade.services.ashare.ashare_paper_day_notifications",
-            "services/ashare/ashare_paper_day_notifications.py",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day_notifications",
+            "services/ashare/paper_day/ashare_paper_day_notifications.py",
         ),
         (
-            "gribuki_trade.services.ashare.ashare_paper_day_schedule",
-            "services/ashare/ashare_paper_day_schedule.py",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day_schedule",
+            "services/ashare/paper_day/ashare_paper_day_schedule.py",
         ),
         (
-            "gribuki_trade.services.ashare.ashare_paper_day_events",
-            "services/ashare/ashare_paper_day_events.py",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day_events",
+            "services/ashare/paper_day/ashare_paper_day_events.py",
         ),
-        ("gribuki_trade.trading.futures_oms_schema", "trading/futures_oms_schema.py"),
-        ("gribuki_trade.trading.futures_oms_policy", "trading/futures_oms_policy.py"),
-        ("gribuki_trade.trading.oms_position_policy", "trading/oms_position_policy.py"),
+        (
+            "gribuki_trade.trading.futures.futures_oms_schema",
+            "trading/futures/futures_oms_schema.py",
+        ),
+        (
+            "gribuki_trade.trading.futures.futures_oms_policy",
+            "trading/futures/futures_oms_policy.py",
+        ),
+        (
+            "gribuki_trade.trading.core.oms_position_policy",
+            "trading/core/oms_position_policy.py",
+        ),
         (
             "gribuki_trade.ingest.search_discovery_policy",
             "ingest/search_discovery_policy.py",
         ),
         (
-            "gribuki_trade.services.adversarial_macro_policy",
+            "gribuki_trade.services.macro.adversarial_macro_policy",
             "services/macro/adversarial_macro_policy.py",
         ),
         (
@@ -257,33 +293,45 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         ),
         ("gribuki_trade.cli_commands.runtime", "cli_commands/runtime.py"),
         (
-            "gribuki_trade.services.ashare.ashare_paper_day_llm_payloads",
-            "services/ashare/ashare_paper_day_llm_payloads.py",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day_llm_payloads",
+            "services/ashare/paper_day/ashare_paper_day_llm_payloads.py",
         ),
         (
-            "gribuki_trade.services.ashare.ashare_paper_day_llm_manifest",
-            "services/ashare/ashare_paper_day_llm_manifest.py",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day_llm_manifest",
+            "services/ashare/paper_day/ashare_paper_day_llm_manifest.py",
         ),
         (
-            "gribuki_trade.services.ashare.ashare_paper_day_documents",
-            "services/ashare/ashare_paper_day_documents.py",
-        ),
-        ("gribuki_trade.adapters.binance.errors", "adapters/binance/errors.py"),
-        ("gribuki_trade.adapters.binance.rate_limit", "adapters/binance/rate_limit.py"),
-        (
-            "gribuki_trade.adapters.binance.user_stream_parsing",
-            "adapters/binance/user_stream_parsing.py",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day_documents",
+            "services/ashare/paper_day/ashare_paper_day_documents.py",
         ),
         (
-            "gribuki_trade.storage.live_record_work_policy",
-            "storage/live_record_work_policy.py",
+            "gribuki_trade.adapters.binance.transport.errors",
+            "adapters/binance/transport/errors.py",
         ),
         (
-            "gribuki_trade.storage.live_record_protection_policy",
-            "storage/live_record_protection_policy.py",
+            "gribuki_trade.adapters.binance.transport.rate_limit",
+            "adapters/binance/transport/rate_limit.py",
         ),
-        ("gribuki_trade.storage.live_record_errors", "storage/live_record_errors.py"),
-        ("gribuki_trade.storage.live_record_integrity", "storage/live_record_integrity.py"),
+        (
+            "gribuki_trade.adapters.binance.spot.user_stream_parsing",
+            "adapters/binance/spot/user_stream_parsing.py",
+        ),
+        (
+            "gribuki_trade.storage.live_records.live_record_work_policy",
+            "storage/live_records/live_record_work_policy.py",
+        ),
+        (
+            "gribuki_trade.storage.live_records.live_record_protection_policy",
+            "storage/live_records/live_record_protection_policy.py",
+        ),
+        (
+            "gribuki_trade.storage.live_records.live_record_errors",
+            "storage/live_records/live_record_errors.py",
+        ),
+        (
+            "gribuki_trade.storage.live_records.live_record_integrity",
+            "storage/live_records/live_record_integrity.py",
+        ),
         (
             "gribuki_trade.services.binance.binance_execution_records",
             "services/binance/binance_execution_records.py",
@@ -293,36 +341,36 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "services/binance/binance_execution_models.py",
         ),
         (
-            "gribuki_trade.reporting.paper_day_account_projection",
-            "reporting/paper_day_account_projection.py",
+            "gribuki_trade.reporting.paper_day.paper_day_account_projection",
+            "reporting/paper_day/paper_day_account_projection.py",
         ),
         (
-            "gribuki_trade.reporting.paper_day_projection_models",
-            "reporting/paper_day_projection_models.py",
+            "gribuki_trade.reporting.paper_day.paper_day_projection_models",
+            "reporting/paper_day/paper_day_projection_models.py",
         ),
         (
-            "gribuki_trade.reporting.paper_day_execution_projection",
-            "reporting/paper_day_execution_projection.py",
+            "gribuki_trade.reporting.paper_day.paper_day_execution_projection",
+            "reporting/paper_day/paper_day_execution_projection.py",
         ),
         (
-            "gribuki_trade.adapters.ashare.screening_payload",
-            "adapters/ashare/screening_payload.py",
+            "gribuki_trade.adapters.ashare.screening.screening_payload",
+            "adapters/ashare/screening/screening_payload.py",
         ),
         (
-            "gribuki_trade.services.adversarial_macro_boundaries",
+            "gribuki_trade.services.macro.adversarial_macro_boundaries",
             "services/macro/adversarial_macro_boundaries.py",
         ),
         (
-            "gribuki_trade.storage.paper_orders_codec",
-            "storage/paper_orders_codec.py",
+            "gribuki_trade.storage.paper.paper_orders_codec",
+            "storage/paper/paper_orders_codec.py",
         ),
         (
             "gribuki_trade.cli_commands.handlers.napcat",
             "cli_commands/handlers/napcat.py",
         ),
         (
-            "gribuki_trade.services.ashare.ashare_close_notification_splitting",
-            "services/ashare/ashare_close_notification_splitting.py",
+            "gribuki_trade.services.ashare.close.ashare_close_notification_splitting",
+            "services/ashare/close/ashare_close_notification_splitting.py",
         ),
     )
     for name, suffix in modules:
@@ -393,8 +441,8 @@ def test_napcat_handler_is_directly_importable() -> None:
 def test_paper_order_store_reexports_codec_models() -> None:
     """订单存储保留历史模型身份，同时纯 codec 可独立导航。"""
 
-    facade = importlib.import_module("gribuki_trade.storage.paper_orders")
-    codec = importlib.import_module("gribuki_trade.storage.paper_orders_codec")
+    facade = importlib.import_module("gribuki_trade.storage.paper.paper_orders")
+    codec = importlib.import_module("gribuki_trade.storage.paper.paper_orders_codec")
     for name in (
         "PaperOrderEvent",
         "PaperOrderEventType",
@@ -411,7 +459,7 @@ def test_close_notification_splitting_is_directly_importable() -> None:
     """盘后通知分段辅助可独立导入，且不依赖通知 facade 初始化。"""
 
     module = importlib.import_module(
-        "gribuki_trade.services.ashare.ashare_close_notification_splitting"
+        "gribuki_trade.services.ashare.close.ashare_close_notification_splitting"
     )
     for name in (
         "_split_contractual_instrument_report",
@@ -422,7 +470,7 @@ def test_close_notification_splitting_is_directly_importable() -> None:
         assert callable(getattr(module, name))
 
     facade = importlib.import_module(
-        "gribuki_trade.services.ashare.ashare_close_notifications"
+        "gribuki_trade.services.ashare.close.ashare_close_notifications"
     )
     assert facade._split_notification_text is module._split_notification_text
 
@@ -446,8 +494,8 @@ def test_binance_execution_models_keep_facade_contract_identity() -> None:
 def test_paper_day_summary_models_keep_facade_type_identity() -> None:
     """摘要模型独立可导航，同时旧导入路径保留相同类型身份。"""
 
-    summary = importlib.import_module("gribuki_trade.reporting.paper_day_summary")
-    models = importlib.import_module("gribuki_trade.reporting.paper_day_summary_models")
+    summary = importlib.import_module("gribuki_trade.reporting.paper_day.paper_day_summary")
+    models = importlib.import_module("gribuki_trade.reporting.paper_day.paper_day_summary_models")
     for name in (
         "PaperDayExecutiveProjection",
         "PaperDayPriceAcceptanceProjection",
@@ -504,8 +552,8 @@ def test_model_extractions_keep_facade_type_identity() -> None:
             ("TargetCloseObservation", "CrossMarketFactorSeries", "CrossMarketRelationsReport"),
         ),
         (
-            "gribuki_trade.services.exit_plan_lifecycle",
-            "gribuki_trade.services.exit_plan_lifecycle_models",
+            "gribuki_trade.services.exit.exit_plan_lifecycle",
+            "gribuki_trade.services.exit.exit_plan_lifecycle_models",
             ("ExitPlanEventStore", "ExitBarrierObservation", "ExitPlanLifecycleError"),
         ),
         (
@@ -524,13 +572,13 @@ def test_model_extractions_keep_facade_type_identity() -> None:
             ("FuturesStartupReconciliation",),
         ),
         (
-            "gribuki_trade.services.ashare.ashare_paper_day",
-            "gribuki_trade.services.ashare.ashare_paper_day_models",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day_models",
             ("PaperDayResult",),
         ),
         (
-            "gribuki_trade.services.ashare.ashare_paper_day",
-            "gribuki_trade.services.ashare.ashare_paper_day_llm_manifest",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day_llm_manifest",
             (
                 "PaperDayLLMPreopenContext",
                 "PaperDayIntradayLLMPlanFactory",
@@ -539,8 +587,8 @@ def test_model_extractions_keep_facade_type_identity() -> None:
             ),
         ),
         (
-            "gribuki_trade.services.ashare.ashare_paper_day",
-            "gribuki_trade.services.ashare.ashare_paper_day_reasons",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day_reasons",
             (
                 "_ENTRY_REJECTION_EXPLANATIONS",
                 "_MATCH_REASON_EXPLANATIONS",
@@ -549,8 +597,8 @@ def test_model_extractions_keep_facade_type_identity() -> None:
             ),
         ),
         (
-            "gribuki_trade.services.ashare.ashare_paper_day",
-            "gribuki_trade.services.ashare.ashare_paper_day_reports",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day",
+            "gribuki_trade.services.ashare.paper_day.ashare_paper_day_reports",
             ("account_summary_document", "account_summary_text", "render_report"),
         ),
         (
@@ -569,8 +617,8 @@ def test_model_extractions_keep_facade_type_identity() -> None:
             ),
         ),
         (
-            "gribuki_trade.adapters.binance.stream",
-            "gribuki_trade.adapters.binance.stream_models",
+            "gribuki_trade.adapters.binance.spot.stream",
+            "gribuki_trade.adapters.binance.spot.stream_models",
             (
                 "BinanceBookTickerEvent",
                 "BinanceTradeEvent",
@@ -580,13 +628,13 @@ def test_model_extractions_keep_facade_type_identity() -> None:
             ),
         ),
         (
-            "gribuki_trade.adapters.binance.gateway",
-            "gribuki_trade.adapters.binance.spot_order_list_parsing",
+            "gribuki_trade.adapters.binance.transport.gateway",
+            "gribuki_trade.adapters.binance.spot.order_list_parsing",
             ("parse_order_list_snapshot", "parse_order_snapshots"),
         ),
         (
-            "gribuki_trade.adapters.ashare.derivatives",
-            "gribuki_trade.adapters.ashare.derivatives_parsing",
+            "gribuki_trade.adapters.ashare.market.derivatives",
+            "gribuki_trade.adapters.ashare.market.derivatives_parsing",
             (
                 "SSE_OPTION_RISK_SOURCE_ID",
                 "SSE_ETF_SHARE_SOURCE_ID",
@@ -595,8 +643,8 @@ def test_model_extractions_keep_facade_type_identity() -> None:
             ),
         ),
         (
-            "gribuki_trade.reporting.paper_day_renderer",
-            "gribuki_trade.reporting.paper_day_rendering",
+            "gribuki_trade.reporting.paper_day.paper_day_renderer",
+            "gribuki_trade.reporting.paper_day.paper_day_rendering",
             (
                 "_explained_codes",
                 "_risk_policy_audit_lines",
@@ -652,25 +700,23 @@ def test_model_extractions_keep_facade_type_identity() -> None:
             assert getattr(facade, name) is getattr(model, name)
 
 
-def test_live_services_keep_legacy_facades() -> None:
-    """实盘服务按业务目录归档后，历史模块仍指向同一实现对象。"""
+def test_live_services_are_directly_navigable() -> None:
+    """实盘服务实现集中在 live 子包。"""
 
-    names = (
+    for name in (
         "live_market_tracking",
         "live_protection_inputs",
         "live_trade_orchestration",
         "live_trade_orchestration_models",
         "live_trade_records",
         "live_trade_records_parsing",
-    )
-    for name in names:
-        facade = importlib.import_module(f"gribuki_trade.services.{name}")
-        implementation = importlib.import_module(f"gribuki_trade.services.live.{name}")
-        assert facade is implementation
+    ):
+        module = importlib.import_module(f"gribuki_trade.services.live.{name}")
+        assert module.__file__ is not None
 
 
-def test_macro_services_keep_legacy_facades() -> None:
-    """宏观服务按职责归档后，历史模块仍指向同一实现对象。"""
+def test_macro_services_are_directly_navigable() -> None:
+    """宏观服务实现集中在 macro 子包。"""
 
     names = (
         "adversarial_macro",
@@ -686,13 +732,12 @@ def test_macro_services_keep_legacy_facades() -> None:
         "official_rates_evidence",
     )
     for name in names:
-        facade = importlib.import_module(f"gribuki_trade.services.{name}")
-        implementation = importlib.import_module(f"gribuki_trade.services.macro.{name}")
-        assert facade is implementation
+        module = importlib.import_module(f"gribuki_trade.services.macro.{name}")
+        assert module.__file__ is not None
 
 
-def test_research_communication_and_llm_services_keep_legacy_facades() -> None:
-    """研究、通信和生产 LLM 服务归档后仍保留旧模块身份。"""
+def test_research_communication_and_llm_services_are_directly_navigable() -> None:
+    """研究、通信和生产 LLM 服务按职责子包归档。"""
 
     groups = {
         "research": (
@@ -709,6 +754,17 @@ def test_research_communication_and_llm_services_keep_legacy_facades() -> None:
     }
     for group, names in groups.items():
         for name in names:
-            facade = importlib.import_module(f"gribuki_trade.services.{name}")
-            implementation = importlib.import_module(f"gribuki_trade.services.{group}.{name}")
-            assert facade is implementation
+            module = importlib.import_module(f"gribuki_trade.services.{group}.{name}")
+            assert module.__file__ is not None
+
+
+def test_adapter_and_service_roots_are_namespace_only() -> None:
+    """根目录不再堆放供应商或业务实现文件。"""
+    from pathlib import Path
+
+    import gribuki_trade.adapters as adapters
+    import gribuki_trade.services as services
+    for package in (adapters, services):
+        root = Path(package.__file__).parent
+        files = {p.name for p in root.glob("*.py") if p.name != "__init__.py"}
+        assert files == set()

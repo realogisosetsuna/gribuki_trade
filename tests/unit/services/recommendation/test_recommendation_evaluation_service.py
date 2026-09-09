@@ -16,10 +16,10 @@ from gribuki_trade.domain.recommendations import (
     RecommendationHorizon,
     ResearchRecommendation,
 )
-from gribuki_trade.services.recommendation_evaluation import (
+from gribuki_trade.services.research.recommendation_evaluation import (
     RecommendationEvaluationService,
 )
-from gribuki_trade.storage.research_store import SQLiteResearchStore
+from gribuki_trade.storage.research.research_store import SQLiteResearchStore
 
 AS_OF = datetime(2026, 8, 3, 7, 0, tzinfo=UTC)
 EVALUATED_AT = datetime(2026, 8, 12, 1, 0, tzinfo=UTC)

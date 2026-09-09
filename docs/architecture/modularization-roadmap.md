@@ -29,17 +29,17 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | Original facade | New cohesive module | Responsibility |
 |---|---|---|
 | `cli.py` | `cli_commands/parsers/`, `cli_commands/handlers/binance.py`, `cli_commands/handlers/ashare.py`, `cli_commands/runtime.py`, `cli_parsing.py`, `cli_output.py` | Command-family registration, Binance and read-only A-share workflow handlers, shared runtime/default handling, argparse converters, Decimal formatting, and atomic JSON output |
-| `adapters/binance/gateway.py` | `adapters/binance/spot_parsing.py`, `adapters/binance/spot_order_params.py` | Spot wire parsing, order snapshot/status mapping, scalar validation, signing/redaction, and pure Spot/OCO/OTO/OTOCO parameter encoding |
-| `adapters/binance/gateway.py` | `adapters/binance/spot_order_list_parsing.py` | Pure OCO/OTO/OTOCO order-list and bulk-order snapshot decoding; gateway retains signed transport, order authority, tracking, and reconciliation |
-| `trading/futures_oms.py` | `trading/futures_oms_codec.py` | Futures SQLite codecs, JSON/Decimal/time conversion, event identity |
-| `trading/futures_oms.py` | `trading/futures_oms_schema.py` | Futures OMS SQLite DDL and indexes with caller-owned transaction scope |
-| `trading/futures_oms.py` | `trading/futures_oms_policy.py` | Pure order-status projection, protection-plan version policy, and restart-recovery query parameters |
-| `trading/oms.py` | `trading/oms_codec.py` | Broker-neutral OMS SQLite row codecs, JSON/Decimal/time conversion, identifiers, and status projection |
-| `trading/oms.py` | `trading/oms_position_policy.py` | Pure fill-to-position quantity, average-price, reversal, and realized-P&L projection |
-| `trading/oms.py` | `trading/oms_command_policy.py` | Command scope normalization, lease validation, and UNKNOWN recovery projection |
-| `storage/paper_day.py` | `storage/paper_day_codec.py` | PAPER-day row decoding, event digests, identifiers, and lease argument validation |
-| `storage/live_records.py` | `storage/live_record_codec.py` | Live-record scalar validation, canonical JSON, event/protection/work identifiers, and event hashes |
-| `storage/paper_orders.py` | `storage/paper_orders_codec.py` | Immutable event/run models, row decoding, canonical JSON, hash-chain verification, and scalar normalization |
+| `adapters/binance/transport/gateway.py` | `adapters/binance/spot/parsing.py`, `adapters/binance/spot/order_params.py` | Spot wire parsing, order snapshot/status mapping, scalar validation, signing/redaction, and pure Spot/OCO/OTO/OTOCO parameter encoding |
+| `adapters/binance/transport/gateway.py` | `adapters/binance/spot/order_list_parsing.py` | Pure OCO/OTO/OTOCO order-list and bulk-order snapshot decoding; gateway retains signed transport, order authority, tracking, and reconciliation |
+| `trading/futures/futures_oms.py` | `trading/futures_oms_codec.py` | Futures SQLite codecs, JSON/Decimal/time conversion, event identity |
+| `trading/futures/futures_oms.py` | `trading/futures_oms_schema.py` | Futures OMS SQLite DDL and indexes with caller-owned transaction scope |
+| `trading/futures/futures_oms.py` | `trading/futures_oms_policy.py` | Pure order-status projection, protection-plan version policy, and restart-recovery query parameters |
+| `trading/core/oms.py` | `trading/oms_codec.py` | Broker-neutral OMS SQLite row codecs, JSON/Decimal/time conversion, identifiers, and status projection |
+| `trading/core/oms.py` | `trading/oms_position_policy.py` | Pure fill-to-position quantity, average-price, reversal, and realized-P&L projection |
+| `trading/core/oms.py` | `trading/oms_command_policy.py` | Command scope normalization, lease validation, and UNKNOWN recovery projection |
+| `storage/paper/paper_day.py` | `storage/paper/paper_day_codec.py` | PAPER-day row decoding, event digests, identifiers, and lease argument validation |
+| `storage/live_records/live_records.py` | `storage/live_records/live_record_codec.py` | Live-record scalar validation, canonical JSON, event/protection/work identifiers, and event hashes |
+| `storage/paper_orders.py` | `storage/paper/paper_orders_codec.py` | Immutable event/run models, row decoding, canonical JSON, hash-chain verification, and scalar normalization |
 | `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_serialization.py`, `strategy_lab/exit_simulation.py`, `strategy_lab/exit_walk_forward.py` | Exit documents, pure daily replay/cost metrics, and trading-day walk-forward fold/index planning |
 | `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_models.py` | Frozen bars/episodes/datasets, costs, outcomes, metrics, and research-only trial registry models |
 | `strategy_lab/ashare_evaluator.py` | `strategy_lab/ashare_evaluator_models.py` | A-share execution/action enums, point-in-time scores, completed bars, observations, evaluator configuration, and result records |
@@ -48,23 +48,23 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `strategy_lab/discovery.py` | `strategy_lab/discovery_models.py` | Factor-template grammar, search budgets, candidate inventories, and redundancy-filter value objects |
 | `services/binance/binance_shadow.py` | `services/binance/binance_shadow_models.py` | Shadow configuration, safety watermark, market quote, adapter snapshot, and session statistics |
 | `services/binance/binance_futures_unattended.py` | `services/binance/binance_futures_unattended_models.py` | Immutable startup and reconciliation summary returned by the unattended Futures service |
-| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_models.py` | Immutable PAPER-day completion result; the runner retains scheduling, state recovery, execution, persistence, and notification orchestration |
-| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_llm_manifest.py` | Pure LLM analyzer identity, evidence snapshot, preopen context, and restart manifest compatibility; the runner retains session scheduling, storage, and execution orchestration |
+| `services/ashare/paper_day/ashare_paper_day.py` | `services/ashare/paper_day/ashare_paper_day_models.py` | Immutable PAPER-day completion result; the runner retains scheduling, state recovery, execution, persistence, and notification orchestration |
+| `services/ashare/paper_day/ashare_paper_day.py` | `services/ashare/paper_day/ashare_paper_day_llm_manifest.py` | Pure LLM analyzer identity, evidence snapshot, preopen context, and restart manifest compatibility; the runner retains session scheduling, storage, and execution orchestration |
 | `cli.py` | `cli_commands/handlers/ashare_review.py` | Candidate-universe mutations and research-review state-machine handlers; the CLI facade retains dispatch and compatibility exports |
 | `cli.py` | `cli_commands/handlers/strategy_lab.py` | Research-only factor discovery, exit-policy evaluation, and result projection handlers |
 | `gui/integrations.py` | `gui/integration_gateway.py` | NapCat/LLM health models, gateway protocol, and credential-backed health/configuration operations; Qt panel remains in the GUI facade |
 | `ingest/search_discovery.py` | `ingest/search_providers.py` | Tavily/SearXNG HTTP/JSON provider boundaries, endpoint validation, response decoding, and typed provider failures; discovery facade retains concurrency, backoff, clustering, and event construction |
-| `adapters/binance/stream.py` | `adapters/binance/stream_models.py` | Public market event models, stream-name validation, environment URL selection, and stream URL construction; WebSocket reconnect/sequence handling remains in the stream facade |
-| `adapters/ashare/derivatives.py` | `adapters/ashare/derivatives_parsing.py` | SSE official-document decoding, visibility checks, symbol/date validation, and pure option/ETF row projections; the adapter facade retains HTTP requests, retries, and provider error mapping |
+| `adapters/binance/spot/stream.py` | `adapters/binance/spot/stream_models.py` | Public market event models, stream-name validation, environment URL selection, and stream URL construction; WebSocket reconnect/sequence handling remains in the stream facade |
+| `adapters/ashare/market/derivatives.py` | `adapters/ashare/market/derivatives_parsing.py` | SSE official-document decoding, visibility checks, symbol/date validation, and pure option/ETF row projections; the adapter facade retains HTTP requests, retries, and provider error mapping |
 | `cli.py` | `cli_commands/handlers/ashare_paper_day.py`, `cli_commands/handlers/ashare_paper_day_run.py`, `cli_commands/ashare_paper_day_results.py` | A-share PAPER-day validation/dispatch, resource/run lifecycle, and sidecar-only status/report projection; CLI facade retains command dispatch and compatibility exports |
 | `cli.py` | `cli_commands/handlers/ashare_post_close.py` | A-share post-close command state machine, existing-close-research adapter, artifact validation, and durable NapCat outbox delivery; CLI facade retains historical handlers and monkeypatch seams |
 | `cli.py` | `cli_commands/handlers/ashare_research.py` | Bounded A-share research watch orchestration and dynamic watchlist/candidate symbol resolution; CLI facade retains single-run research execution and compatibility hooks |
 | `cli.py` | `cli_commands/handlers/ashare_research.py` | Bounded A-share research-watch polling and dynamic watchlist/ACTIVE-candidate symbol resolution; CLI facade retains single-run research execution and compatibility exports |
 | `services/ashare_paper_day.py` | `services/ashare_paper_day_projection.py` | LLM gate and DEEP exit audit/notification projections |
-| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_serialization.py` | K-line/technical-bar codecs, exit-barrier/time helpers, UTC normalization, canonical hashes, and event JSONL/file primitives |
-| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_reasons.py` | Entry-rejection and single-minute match reason-code mappings plus pure display fallbacks; runner facade keeps historical names and execution orchestration |
-| `reporting/paper_day_summary.py` | `reporting/paper_day_codec.py` | Sidecar JSON and JSONL event decoding for reports |
-| `reporting/paper_day_summary.py` | `reporting/paper_day_sidecar_codec.py` | Deterministic sidecar tuple/counter codecs and final-result identity filtering |
+| `services/ashare/paper_day/ashare_paper_day.py` | `services/ashare/paper_day/ashare_paper_day_serialization.py` | K-line/technical-bar codecs, exit-barrier/time helpers, UTC normalization, canonical hashes, and event JSONL/file primitives |
+| `services/ashare/paper_day/ashare_paper_day.py` | `services/ashare/paper_day/ashare_paper_day_reasons.py` | Entry-rejection and single-minute match reason-code mappings plus pure display fallbacks; runner facade keeps historical names and execution orchestration |
+| `reporting/paper_day/paper_day_summary.py` | `reporting/paper_day_codec.py` | Sidecar JSON and JSONL event decoding for reports |
+| `reporting/paper_day/paper_day_summary.py` | `reporting/paper_day_sidecar_codec.py` | Deterministic sidecar tuple/counter codecs and final-result identity filtering |
 | `adapters/akshare_daily.py` | `adapters/akshare_daily_parsing.py` | Symbol/date normalization, frame parsing, and DailyBar validation |
 | `adapters/market_data/cross_market.py` | `adapters/market_data/cross_market_payload.py` | DataFrame/quote/date/number parsing and exact-universe validation |
 | `features/cross_market_relations.py` | `features/cross_market_models.py` | Cross-market risk enums, point-in-time observations, relation metrics, reports, and calculation-internal pair records |
@@ -82,55 +82,55 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/adversarial_macro.py` | `services/adversarial_macro_feature_flag.py` | BASELINE/SHADOW/ENFORCE progressive-release adapter and shadow observer delivery |
 | `services/adversarial_macro.py` | `services/adversarial_macro_models.py` | Adversarial roles, immutable configuration, round/opinion/run records, and audit value objects |
 | `ingest/search_discovery.py` | `ingest/search_discovery_policy.py` | Pure result sanitization, publisher identity, discovery clustering, and confirmation basis selection |
-| `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_quantity.py` | Pure lot/quantity rules and sell-quantity planning for A-share intraday PAPER execution |
-| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_config.py` | Frozen schedule/risk configuration and policy manifest projections |
-| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_risk.py` | Runtime risk-policy migration validation and price/quantity audit projections |
-| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_llm_payloads.py` | Strict LLM audit payload recovery, type validation, and pure gate/text projections |
-| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_documents.py` | Watchlist/candidate/order/fill document codecs, A-share symbol resolution, and strict positive-integer validation |
-| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_risk.py` | Pure risk-policy migration authorization, incomplete-fill checks, and price/quantity execution-policy documents |
+| `services/ashare/intraday/ashare_intraday_paper.py` | `services/ashare/intraday/ashare_intraday_quantity.py` | Pure lot/quantity rules and sell-quantity planning for A-share intraday PAPER execution |
+| `services/ashare/paper_day/ashare_paper_day.py` | `services/ashare/paper_day/ashare_paper_day_config.py` | Frozen schedule/risk configuration and policy manifest projections |
+| `services/ashare/paper_day/ashare_paper_day.py` | `services/ashare/paper_day/ashare_paper_day_risk.py` | Runtime risk-policy migration validation and price/quantity audit projections |
+| `services/ashare/paper_day/ashare_paper_day.py` | `services/ashare/paper_day/ashare_paper_day_llm_payloads.py` | Strict LLM audit payload recovery, type validation, and pure gate/text projections |
+| `services/ashare/paper_day/ashare_paper_day.py` | `services/ashare/paper_day/ashare_paper_day_documents.py` | Watchlist/candidate/order/fill document codecs, A-share symbol resolution, and strict positive-integer validation |
+| `services/ashare/paper_day/ashare_paper_day.py` | `services/ashare/paper_day/ashare_paper_day_risk.py` | Pure risk-policy migration authorization, incomplete-fill checks, and price/quantity execution-policy documents |
 | `services/binance/binance_execution.py` | `services/binance/binance_execution_records.py` | Pure snapshot/fill/balance/order-list record projections and timestamp normalization |
 | `services/binance/binance_execution.py` | `services/binance/binance_execution_models.py` | Execution gateway and private-stream protocols, testnet guard error, and startup reconciliation result |
 | `services/live_trade_orchestration.py` | `services/live_trade_orchestration_models.py` | Live protection input contracts, provider protocol, work-run summary, tracking observation, and stable input errors |
 | `services/live_trade_records.py` | `services/live_trade_records_parsing.py` | OneBot private-event parsing and versioned propose/confirm/cancel command decoding |
 | `services/exit_plan_lifecycle.py` | `services/exit_plan_lifecycle_models.py` | Lifecycle errors, append-only event-store protocol, QUICK/DEEP application results, and barrier observations |
 | `services/binance/binance_execution.py` | `services/binance/binance_execution_policy.py` | Environment, clock, order allow-list, and exchange-snapshot merge policy |
-| `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_serialization.py` | Safe audit documents, stable JSON normalization, and hashes |
-| `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_policy.py` | Pure context/review identity, scalar validation, score bounds, and UTC normalization |
-| `services/ashare/ashare_intraday_paper.py` | `services/ashare/ashare_intraday_policy.py` | Risk config, price acceptance, board price bands, and validation |
-| `reporting/paper_day_summary.py` | `reporting/paper_day_llm_projection.py` | LLM sidecar data classes and pure projection statistics |
-| `reporting/paper_day_summary.py` | `reporting/paper_day_projection_models.py`, `reporting/paper_day_account_projection.py` | Immutable sidecar models and pure account/order/fill/notification projections |
-| `reporting/paper_day_summary.py` | `reporting/paper_day_summary_models.py` | Immutable executive, risk, price/quantity, execution, watchlist, and source-state summary models |
-| `reporting/paper_day_summary.py` | `reporting/paper_day_execution_projection.py` | Pure watchlist, risk-policy, price/quantity, execution-acceptance, stable-reason, and source-transition event projections |
+| `services/ashare/intraday/ashare_intraday_llm.py` | `services/ashare/intraday/ashare_intraday_llm_serialization.py` | Safe audit documents, stable JSON normalization, and hashes |
+| `services/ashare/intraday/ashare_intraday_llm.py` | `services/ashare/intraday/ashare_intraday_llm_policy.py` | Pure context/review identity, scalar validation, score bounds, and UTC normalization |
+| `services/ashare/intraday/ashare_intraday_paper.py` | `services/ashare/intraday/ashare_intraday_policy.py` | Risk config, price acceptance, board price bands, and validation |
+| `reporting/paper_day/paper_day_summary.py` | `reporting/paper_day_llm_projection.py` | LLM sidecar data classes and pure projection statistics |
+| `reporting/paper_day/paper_day_summary.py` | `reporting/paper_day_projection_models.py`, `reporting/paper_day_account_projection.py` | Immutable sidecar models and pure account/order/fill/notification projections |
+| `reporting/paper_day/paper_day_summary.py` | `reporting/paper_day_summary_models.py` | Immutable executive, risk, price/quantity, execution, watchlist, and source-state summary models |
+| `reporting/paper_day/paper_day_summary.py` | `reporting/paper_day_execution_projection.py` | Pure watchlist, risk-policy, price/quantity, execution-acceptance, stable-reason, and source-transition event projections |
 | `adapters/market_data/akshare_daily.py` | `adapters/market_data/akshare_daily_router.py` | Provider protocol, fallback routing, source diagnostics, and controlled tail-stitch coordination |
-| `adapters/binance/user_stream.py` | `adapters/binance/user_stream_parsing.py` | Spot user-data event models, signature encoding, strict frame/event parsing, and field validation |
-| `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_models.py` | Immutable configuration, PIT review context, journal acceptance, schedule, and gate outcome models |
-| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_events.py` | Event store protocol, publisher, sidecar heartbeat/recovery, and notification outbox reconciliation |
-| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_reports.py` | Pure account-summary and Markdown daily-report projections; runner retains store reads, exit-plan lookup, artifact writing, and state transitions |
-| `services/ashare/ashare_close_notifications.py` | `services/ashare/ashare_close_notification_splitting.py` | Pure report-contract envelopes, line/character payload splitting, and dual-track macro summary rendering |
+| `adapters/binance/spot/user_stream.py` | `adapters/binance/spot/user_stream_parsing.py` | Spot user-data event models, signature encoding, strict frame/event parsing, and field validation |
+| `services/ashare/intraday/ashare_intraday_llm.py` | `services/ashare/intraday/ashare_intraday_llm_models.py` | Immutable configuration, PIT review context, journal acceptance, schedule, and gate outcome models |
+| `services/ashare/paper_day/ashare_paper_day.py` | `services/ashare/paper_day/ashare_paper_day_events.py` | Event store protocol, publisher, sidecar heartbeat/recovery, and notification outbox reconciliation |
+| `services/ashare/paper_day/ashare_paper_day.py` | `services/ashare/paper_day/ashare_paper_day_reports.py` | Pure account-summary and Markdown daily-report projections; runner retains store reads, exit-plan lookup, artifact writing, and state transitions |
+| `services/ashare/close/ashare_close_notifications.py` | `services/ashare/close/ashare_close_notification_splitting.py` | Pure report-contract envelopes, line/character payload splitting, and dual-track macro summary rendering |
 | `cli_commands/handlers/binance.py` | `cli_commands/binance_results.py` | Balance validation, testnet deltas, and reconciliation payload shaping |
 | `cli_commands/handlers/binance.py` | `cli_commands/handlers/binance_live.py` | LIVE Spot/Futures guards, account queries, order tests, execution, and private stream orchestration |
 | `cli.py` | `cli_commands/close_research_payloads.py` | Close-research archive/profile payload projections |
-| `adapters/binance/futures.py` | `adapters/binance/futures_order_params.py` | Futures order/protection parameter validation and encoding |
-| `adapters/binance/futures.py` | `adapters/binance/futures_parsing.py` | Futures Ticker and local-order-book response decoding, plus symbol/enum/listen-key validation |
-| `adapters/binance/gateway.py` | `adapters/binance/errors.py`, `adapters/binance/rate_limit.py` | Shared error hierarchy and pure rate-limit response-header parsing |
-| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_notifications.py` | Stable notification kind, artifact identity, and report text projections |
+| `adapters/binance/futures/client.py` | `adapters/binance/futures/order_params.py` | Futures order/protection parameter validation and encoding |
+| `adapters/binance/futures/client.py` | `adapters/binance/futures/parsing.py` | Futures Ticker and local-order-book response decoding, plus symbol/enum/listen-key validation |
+| `adapters/binance/transport/gateway.py` | `adapters/binance/transport/errors.py`, `adapters/binance/transport/rate_limit.py` | Shared error hierarchy and pure rate-limit response-header parsing |
+| `services/ashare/paper_day/ashare_paper_day.py` | `services/ashare/paper_day/ashare_paper_day_notifications.py` | Stable notification kind, artifact identity, and report text projections |
 | `gui/integrations.py` | `gui/napcat_process.py` | NapCat launch-command validation and owned process lifecycle |
-| `reporting/paper_day_summary.py` | `reporting/paper_day_renderer.py` | Pure Markdown rendering and audit sections from immutable projections |
-| `reporting/paper_day_renderer.py` | `reporting/paper_day_rendering.py` | Pure audit sections, table formatting, and artifact projection helpers; the renderer facade retains report section ordering and contract validation |
-| `storage/live_records.py` | `storage/live_record_models.py` | Durable-row dataclasses and pure SQLite row-to-domain decoding |
-| `storage/live_records.py` | `storage/live_record_schema.py` | Live-record DDL, append-only triggers, and idempotent schema migration |
-| `trading/oms.py` | `trading/oms_schema.py` | SQLite DDL and idempotent schema migration, with connection ownership left to the OMS facade |
-| `adapters/ashare/screening.py` | `adapters/ashare/screening_factors.py` | Historical-bar model, raw factor calculations, and corporate-action guards |
-| `adapters/ashare/screening.py` | `adapters/ashare/screening_payload.py` | Provider row decoding, validation, coverage checks, and deterministic revision hashes |
-| `adapters/ashare/context.py` | `adapters/ashare/context_parsing.py` | Provider field resolution, ETF/security symbol normalization, scalar/date parsing, and source metadata mappings |
-| `adapters/binance/gateway.py` | `adapters/binance/request_builder.py` | Deterministic REST query/form encoding and signed request assembly |
-| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_schedule.py` | Session timezone, phase boundaries, and scheduler sleep calculations |
+| `reporting/paper_day/paper_day_summary.py` | `reporting/paper_day/paper_day_renderer.py` | Pure Markdown rendering and audit sections from immutable projections |
+| `reporting/paper_day/paper_day_renderer.py` | `reporting/paper_day/paper_day_rendering.py` | Pure audit sections, table formatting, and artifact projection helpers; the renderer facade retains report section ordering and contract validation |
+| `storage/live_records/live_records.py` | `storage/live_records/live_record_models.py` | Durable-row dataclasses and pure SQLite row-to-domain decoding |
+| `storage/live_records/live_records.py` | `storage/live_records/live_record_schema.py` | Live-record DDL, append-only triggers, and idempotent schema migration |
+| `trading/core/oms.py` | `trading/oms_schema.py` | SQLite DDL and idempotent schema migration, with connection ownership left to the OMS facade |
+| `adapters/ashare/screening/screening.py` | `adapters/ashare/screening/screening_factors.py` | Historical-bar model, raw factor calculations, and corporate-action guards |
+| `adapters/ashare/screening/screening.py` | `adapters/ashare/screening/screening_payload.py` | Provider row decoding, validation, coverage checks, and deterministic revision hashes |
+| `adapters/ashare/market/context.py` | `adapters/ashare/market/context_parsing.py` | Provider field resolution, ETF/security symbol normalization, scalar/date parsing, and source metadata mappings |
+| `adapters/binance/transport/gateway.py` | `adapters/binance/transport/request_builder.py` | Deterministic REST query/form encoding and signed request assembly |
+| `services/ashare/paper_day/ashare_paper_day.py` | `services/ashare/paper_day/ashare_paper_day_schedule.py` | Session timezone, phase boundaries, and scheduler sleep calculations |
 | `cli.py` | `cli_commands/live_sync_payloads.py` | Pure live-sync status, ingest, protection, cycle, and receipt result documents |
 | `cli_commands/parsers/*.py` | `cli_commands/parsers/ashare_common.py` | Shared A-share news-feed choices and optional notification-target argument registration |
-| `storage/live_records.py` | `storage/live_record_work_policy.py` | Work-claim SQL construction and lease/failure parameter normalization |
-| `storage/live_records.py` | `storage/live_record_protection_policy.py` | T+1 sellable-quantity and FIFO protection-lot allocation projections |
-| `storage/live_records.py` | `storage/live_record_integrity.py`, `storage/live_record_errors.py` | Legacy JSON recovery validation, append-only event hash-chain verification, and shared durable-store error types |
-| `storage/live_records.py` | `storage/live_record_confirmation_policy.py` | Pure two-phase live-fill identity validation for command, sender, and confirmation fingerprint |
+| `storage/live_records/live_records.py` | `storage/live_records/live_record_work_policy.py` | Work-claim SQL construction and lease/failure parameter normalization |
+| `storage/live_records/live_records.py` | `storage/live_records/live_record_protection_policy.py` | T+1 sellable-quantity and FIFO protection-lot allocation projections |
+| `storage/live_records/live_records.py` | `storage/live_records/live_record_integrity.py`, `storage/live_records/live_record_errors.py` | Legacy JSON recovery validation, append-only event hash-chain verification, and shared durable-store error types |
+| `storage/live_records/live_records.py` | `storage/live_records/live_record_confirmation_policy.py` | Pure two-phase live-fill identity validation for command, sender, and confirmation fingerprint |
 
 | `cli.py` | `cli_commands/handlers/ashare_news.py` | One-shot A-share news collection, continuous news polling, and CNINFO disclosure ingestion with source-health persistence |
 ## Next slices
@@ -140,11 +140,11 @@ The next large files are grouped by the responsibilities they mix:
 | Area | Large files | Extraction order |
 |---|---|---|
 | A-share execution | `services/ashare_paper_day.py`, remaining `services/ashare_intraday_paper.py` orchestration | projections/configuration → calendar/session logic → orchestration |
-| Durable state | `storage/live_records.py` | row models/schema/codecs, T+1/FIFO protection policy, and lease policy are split; transaction methods remain |
-| Broker-neutral execution | `trading/oms.py` | schema/migration is split; command/outbox/fill transaction methods remain |
-| A-share screening | `adapters/ashare/screening.py` | pure factor calculations are split; provider calls and degradation policy remain |
+| Durable state | `storage/live_records/live_records.py` | row models/schema/codecs, T+1/FIFO protection policy, and lease policy are split; transaction methods remain |
+| Broker-neutral execution | `trading/core/oms.py` | schema/migration is split; command/outbox/fill transaction methods remain |
+| A-share screening | `adapters/ashare/screening/screening.py` | pure factor calculations are split; provider calls and degradation policy remain |
 | Research | remaining `services/adversarial_macro.py` orchestration and other strategy/research facades | pure calculations → dataset/manifest IO → orchestration |
-| Presentation | remaining `reporting/paper_day_summary.py`, `gui/integrations.py` | sidecar loading/projection assembly → provider boundary → UI wiring |
+| Presentation | remaining `reporting/paper_day/paper_day_summary.py`, `gui/integrations.py` | sidecar loading/projection assembly → provider boundary → UI wiring |
 | CLI | `cli.py` | remaining A-share workflow handlers and orchestration → compatibility migration |
 
 The original import path remains a facade until all in-repository callers have
@@ -158,8 +158,8 @@ before it is committed.
 Current source evidence includes `src/gribuki_trade/cli_parsing.py`,
 `src/gribuki_trade/cli_output.py`,
 `src/gribuki_trade/gui/integration_validation.py`,
-`src/gribuki_trade/adapters/binance/spot_parsing.py`,
-`src/gribuki_trade/adapters/binance/spot_order_params.py`,
+`src/gribuki_trade/adapters/binance/spot/parsing.py`,
+`src/gribuki_trade/adapters/binance/spot/order_params.py`,
 `src/gribuki_trade/adapters/market_data/cross_market_payload.py`,
 `src/gribuki_trade/trading/futures_oms_codec.py`,
 `src/gribuki_trade/trading/oms_codec.py`,
@@ -167,25 +167,25 @@ Current source evidence includes `src/gribuki_trade/cli_parsing.py`,
 `src/gribuki_trade/services/ashare_close_models.py`,
 `src/gribuki_trade/services/ashare_close_projection.py`,
 `src/gribuki_trade/services/ashare_close_notifications.py`,
-`src/gribuki_trade/storage/paper_day_codec.py`, and
+`src/gribuki_trade/storage/paper/paper_day_codec.py`, and
 `src/gribuki_trade/strategy_lab/exit_serialization.py`,
 `src/gribuki_trade/strategy_lab/exit_simulation.py`,
 `src/gribuki_trade/strategy_lab/exit_walk_forward.py`,
 `src/gribuki_trade/services/adversarial_macro_serialization.py`,
-`src/gribuki_trade/reporting/paper_day_renderer.py`,
-`src/gribuki_trade/services/ashare/ashare_intraday_quantity.py`,
-`src/gribuki_trade/services/ashare/ashare_paper_day_config.py`,
-`src/gribuki_trade/services/ashare/ashare_paper_day_llm_payloads.py`,
-`src/gribuki_trade/adapters/binance/errors.py`,
-`src/gribuki_trade/adapters/binance/rate_limit.py`,
-`src/gribuki_trade/storage/live_record_work_policy.py`,
+`src/gribuki_trade/reporting/paper_day/paper_day_renderer.py`,
+`src/gribuki_trade/services/ashare/intraday/ashare_intraday_quantity.py`,
+`src/gribuki_trade/services/ashare/paper_day/ashare_paper_day_config.py`,
+`src/gribuki_trade/services/ashare/paper_day/ashare_paper_day_llm_payloads.py`,
+`src/gribuki_trade/adapters/binance/transport/errors.py`,
+`src/gribuki_trade/adapters/binance/transport/rate_limit.py`,
+`src/gribuki_trade/storage/live_records/live_record_work_policy.py`,
 `src/gribuki_trade/services/binance/binance_execution_records.py`,
-`src/gribuki_trade/adapters/ashare/screening_payload.py`,
+`src/gribuki_trade/adapters/ashare/screening/screening_payload.py`,
 `src/gribuki_trade/services/adversarial_macro_boundaries.py`,
 `src/gribuki_trade/features/close_analysis_indicators.py`, and
-`src/gribuki_trade/storage/live_record_models.py`,
+`src/gribuki_trade/storage/live_records/live_record_models.py`,
 `src/gribuki_trade/trading/oms_schema.py`,
-`src/gribuki_trade/adapters/ashare/screening_factors.py`, and
+`src/gribuki_trade/adapters/ashare/screening/screening_factors.py`, and
 `src/gribuki_trade/strategy_lab/experiment_serialization.py`. Focused verification is
 covered by `tests/unit/test_cli_parsing.py`,
 `tests/unit/test_cli_output.py`, `tests/unit/binance/test_binance_spot_parsing.py`,
@@ -217,14 +217,14 @@ monkeypatch hooks.
 Representative routing tests include `tests/unit/test_akshare_market_data.py`,
 `tests/unit/ashare/test_ashare_paper_day.py`, `tests/unit/binance/test_binance_execution.py`,
 and `tests/unit/test_cli.py`. The remaining oversized orchestration facades
-(`ashare_paper_day.py`, `storage/live_records.py`, the remaining sidecar loading in
-`reporting/paper_day_summary.py`, and the A-share workflow branches in `cli.py`)
+(`ashare_paper_day.py`, `storage/live_records/live_records.py`, the remaining sidecar loading in
+`reporting/paper_day/paper_day_summary.py`, and the A-share workflow branches in `cli.py`)
 are the next vertical slices; each must first
 extract pure projections or codecs before moving transaction and dispatch
 logic.
 
 The Futures adapter parsing slice now places deterministic Ticker and
-local-order-book decoding in `adapters/binance/futures_parsing.py`. It accepts
+local-order-book decoding in `adapters/binance/futures/parsing.py`. It accepts
 the documented USD-M object and COIN-M single-element-array Ticker forms,
 preserves Decimal precision and snapshot sequence identity, and centralizes
 symbol, enum, and listen-key validation. The `futures.py` facade retains signed
@@ -248,7 +248,7 @@ compatible while command dispatch stays in the facade.
 
 The paper-order storage slice now places immutable event/run models, SQLite row
 decoding, canonical JSON, hash-chain verification, and scalar normalization in
-`storage/paper_orders_codec.py`. The SQLite facade retains schema initialization,
+`storage/paper/paper_orders_codec.py`. The SQLite facade retains schema initialization,
 WAL transactions, leases, idempotent appends, and restart recovery while its
 historical model and exception identities remain stable.
 

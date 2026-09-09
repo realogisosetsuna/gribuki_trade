@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import IsolatedAsyncioTestCase, TestCase
 
-from gribuki_trade.adapters.paper import PaperBroker
+from gribuki_trade.adapters.simulated.paper import PaperBroker
 from gribuki_trade.domain.orders import OrderIntent, OrderStatus, Side
 from gribuki_trade.trading import (
     BalanceValue,

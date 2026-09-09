@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from decimal import ROUND_DOWN, ROUND_UP, Decimal
 
 from gribuki_trade.adapters.binance.models import BinanceEnvironment
-from gribuki_trade.adapters.binance.stream import (
+from gribuki_trade.adapters.binance.spot.stream import (
     BinanceBookTickerEvent,
     BinanceKlineEvent,
     BinanceMarketEvent,
@@ -23,8 +23,8 @@ from gribuki_trade.adapters.binance.stream import (
     book_ticker_stream,
     kline_stream,
 )
-from gribuki_trade.adapters.paper import PaperBroker
-from gribuki_trade.adapters.paper_account import (
+from gribuki_trade.adapters.simulated.paper import PaperBroker
+from gribuki_trade.adapters.simulated.paper_account import (
     PaperFeeSchedule,
     PaperSpotAccount,
 )

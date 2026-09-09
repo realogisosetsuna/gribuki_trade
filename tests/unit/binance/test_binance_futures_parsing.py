@@ -3,10 +3,9 @@ from types import MappingProxyType
 
 import pytest
 
-from gribuki_trade.adapters.binance.errors import BinanceProtocolError
-from gribuki_trade.adapters.binance.futures import BinanceFuturesRestClient
-from gribuki_trade.adapters.binance.futures import BinanceFuturesTicker as FacadeTicker
-from gribuki_trade.adapters.binance.futures_parsing import (
+from gribuki_trade.adapters.binance.futures.client import BinanceFuturesRestClient
+from gribuki_trade.adapters.binance.futures.client import BinanceFuturesTicker as FacadeTicker
+from gribuki_trade.adapters.binance.futures.parsing import (
     BinanceFuturesTicker,
     enum_value,
     normalize_symbol,
@@ -17,6 +16,7 @@ from gribuki_trade.adapters.binance.futures_parsing import (
     validate_listen_key,
 )
 from gribuki_trade.adapters.binance.models import OrderBookLevel
+from gribuki_trade.adapters.binance.transport.errors import BinanceProtocolError
 
 
 @pytest.mark.parametrize(

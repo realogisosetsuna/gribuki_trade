@@ -16,25 +16,25 @@ from gribuki_trade.domain.recommendations import (
 )
 from gribuki_trade.features.close_analysis import CloseTechnicalAssessment
 from gribuki_trade.reporting.contracts import ReportKind, validate_text_report_contract
-from gribuki_trade.services.ashare_close_analysis import (
+from gribuki_trade.services.ashare.close.ashare_close_analysis import (
     AShareCloseAnalysisRequest as FacadeRequest,
 )
-from gribuki_trade.services.ashare_close_analysis import (
+from gribuki_trade.services.ashare.close.ashare_close_analysis import (
     format_close_analysis_notifications as facade_notifications,
 )
-from gribuki_trade.services.ashare_close_models import (
+from gribuki_trade.services.ashare.close.ashare_close_models import (
     AShareCloseAnalysisRequest,
     AShareCloseMarketDataCollection,
     canonical_symbol,
 )
-from gribuki_trade.services.ashare_close_notifications import (
+from gribuki_trade.services.ashare.close.ashare_close_notifications import (
     format_close_analysis_notifications,
 )
-from gribuki_trade.services.ashare_close_projection import (
+from gribuki_trade.services.ashare.close.ashare_close_projection import (
     _as_technical_signal,
     _recommendation_evidence,
 )
-from gribuki_trade.services.ashare_research import ResearchNotificationTarget
+from gribuki_trade.services.ashare.research.ashare_research import ResearchNotificationTarget
 
 NOW = datetime(2026, 8, 13, 8, 30, tzinfo=UTC)
 NEXT = date(2026, 8, 14)

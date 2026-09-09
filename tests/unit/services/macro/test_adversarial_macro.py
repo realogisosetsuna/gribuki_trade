@@ -15,7 +15,7 @@ from gribuki_trade.analysis.schemas import (
     MacroClaim,
 )
 from gribuki_trade.ports.llm_analyzer import AnalyzerAuditIdentity
-from gribuki_trade.services.adversarial_macro import (
+from gribuki_trade.services.macro.adversarial_macro import (
     AdversarialFeatureMode,
     AdversarialMacroAnalyzer,
     AdversarialMacroConfig,

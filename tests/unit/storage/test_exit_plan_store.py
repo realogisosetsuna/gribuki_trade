@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from gribuki_trade.domain.exit_plans import ExitPlanEventType, NewExitPlanEvent
-from gribuki_trade.storage.exit_plans import (
+from gribuki_trade.storage.execution.exit_plans import (
     ExitPlanStoreConcurrencyError,
     ExitPlanStoreConflictError,
     ExitPlanStoreIntegrityError,

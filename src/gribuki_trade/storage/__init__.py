@@ -1,23 +1,29 @@
 """本地不可变存储适配器。"""
 
-from gribuki_trade.storage.adversarial_audit import (
+from gribuki_trade.storage.execution.adversarial_audit import (
     AdversarialAuditIntegrityError,
     SQLiteAdversarialAuditStore,
 )
-from gribuki_trade.storage.candidate_store import (
-    CandidateEventCollisionError,
-    CandidateNotFoundError,
-    SQLiteCandidateStore,
-)
-from gribuki_trade.storage.event_store import NewsSourceProbeClaim, SQLiteEventStore
-from gribuki_trade.storage.exit_plans import (
+from gribuki_trade.storage.execution.exit_plans import (
     ExitPlanStoreConcurrencyError,
     ExitPlanStoreConflictError,
     ExitPlanStoreError,
     ExitPlanStoreIntegrityError,
     SQLiteExitPlanStore,
 )
-from gribuki_trade.storage.live_records import (
+from gribuki_trade.storage.execution.outbox import (
+    DispatchSummary,
+    OutboxDispatcher,
+    OutboxItem,
+    OutboxStatus,
+    SQLiteOutbox,
+)
+from gribuki_trade.storage.execution.strategy_experiments import (
+    SQLiteStrategyExperimentStore,
+    StoredStrategyExperiment,
+    StrategyExperimentCollisionError,
+)
+from gribuki_trade.storage.live_records.live_records import (
     LiveConfirmationCommit,
     LiveRecordConflictError,
     LiveRecordIntegrityError,
@@ -26,33 +32,21 @@ from gribuki_trade.storage.live_records import (
     SQLiteLiveRecordStore,
     StoredLiveCommand,
 )
-from gribuki_trade.storage.market_evidence import (
-    ArchivedDailyBarEvidence,
-    archive_daily_bar_evidence,
-    daily_bar_evidence_canonical_url,
-)
-from gribuki_trade.storage.outbox import (
-    DispatchSummary,
-    OutboxDispatcher,
-    OutboxItem,
-    OutboxStatus,
-    SQLiteOutbox,
-)
-from gribuki_trade.storage.paper_day import (
+from gribuki_trade.storage.paper.paper_day import (
     PaperDayStoreConflictError,
     PaperDayStoreError,
     PaperDayStoreIntegrityError,
     PaperDayStoreLeaseError,
     SQLitePaperDayStore,
 )
-from gribuki_trade.storage.paper_ledger import (
+from gribuki_trade.storage.paper.paper_ledger import (
     PaperLedgerConcurrencyError,
     PaperLedgerConflictError,
     PaperLedgerError,
     PaperLedgerIntegrityError,
     SQLitePaperLedger,
 )
-from gribuki_trade.storage.paper_orders import (
+from gribuki_trade.storage.paper.paper_orders import (
     PaperOrderEvent,
     PaperOrderEventType,
     PaperOrderStoreConflictError,
@@ -62,39 +56,45 @@ from gribuki_trade.storage.paper_orders import (
     PaperRunRecord,
     SQLitePaperOrderStore,
 )
-from gribuki_trade.storage.raw_store import (
+from gribuki_trade.storage.research.candidate_store import (
+    CandidateEventCollisionError,
+    CandidateNotFoundError,
+    SQLiteCandidateStore,
+)
+from gribuki_trade.storage.research.event_store import NewsSourceProbeClaim, SQLiteEventStore
+from gribuki_trade.storage.research.market_evidence import (
+    ArchivedDailyBarEvidence,
+    archive_daily_bar_evidence,
+    daily_bar_evidence_canonical_url,
+)
+from gribuki_trade.storage.research.raw_store import (
     BodyNotRetainedError,
     FileRawDocumentStore,
     StoredRawDocument,
 )
-from gribuki_trade.storage.research_runs import (
+from gribuki_trade.storage.research.research_runs import (
     ResearchRunCollisionError,
     SQLiteResearchRunStore,
     StoredResearchRun,
     research_run_document_sha256,
     research_run_id,
 )
-from gribuki_trade.storage.research_store import (
+from gribuki_trade.storage.research.research_store import (
     ResearchRecordCollisionError,
     SQLiteResearchStore,
 )
-from gribuki_trade.storage.review_case_store import (
+from gribuki_trade.storage.research.review_case_store import (
     InvalidReviewCaseTransitionError,
     ReviewCaseEventCollisionError,
     ReviewCaseNotFoundError,
     SQLiteReviewCaseStore,
 )
-from gribuki_trade.storage.source_health import (
+from gribuki_trade.storage.research.source_health import (
     ProviderRun,
     ProviderRunStatus,
     SourceHealthCollisionError,
     SourceHealthSummary,
     SQLiteSourceHealthStore,
-)
-from gribuki_trade.storage.strategy_experiments import (
-    SQLiteStrategyExperimentStore,
-    StoredStrategyExperiment,
-    StrategyExperimentCollisionError,
 )
 
 __all__ = [

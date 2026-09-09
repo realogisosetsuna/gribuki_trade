@@ -16,7 +16,7 @@ from functools import partial
 from queue import Empty, Queue
 from typing import Any
 
-from gribuki_trade.adapters.ashare.screening import _SINA_HISTORY_LOCK
+from gribuki_trade.adapters.ashare.screening.screening import _SINA_HISTORY_LOCK
 from gribuki_trade.ports.cross_market import (
     CrossMarketDataError,
     CrossMarketDataTimeoutError,

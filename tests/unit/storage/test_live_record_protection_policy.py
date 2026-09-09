@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from gribuki_trade.storage.live_record_protection_policy import (
+from gribuki_trade.storage.live_records.live_record_protection_policy import (
     SellLot,
     SellLotAllocation,
     SellLotAllocationError,

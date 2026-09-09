@@ -35,11 +35,11 @@ from gribuki_trade.reporting.contracts import (
     validate_markdown_report_contract,
 )
 from gribuki_trade.reporting.post_close import write_post_close_review
-from gribuki_trade.services.ashare_close_sessions import (
+from gribuki_trade.services.ashare.close.ashare_close_sessions import (
     CloseAnalysisMode,
     CloseSessionResolution,
 )
-from gribuki_trade.services.ashare_post_close import (
+from gribuki_trade.services.ashare.close.ashare_post_close import (
     ASharePostCloseOrchestrator,
     ExistingCloseAnalysisResearch,
     PostCloseOrchestrationError,

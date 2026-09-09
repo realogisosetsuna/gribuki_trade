@@ -3,8 +3,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from gribuki_trade.analysis.schemas import MacroAnalysisDecision
-from gribuki_trade.services import adversarial_macro as facade
-from gribuki_trade.services import adversarial_macro_policy as policy
+from gribuki_trade.services.macro import adversarial_macro as facade
+from gribuki_trade.services.macro import adversarial_macro_policy as policy
 
 
 def _opinion(role: str, *, claim: str = "claim") -> SimpleNamespace:

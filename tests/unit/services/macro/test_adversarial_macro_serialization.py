@@ -1,7 +1,7 @@
 from decimal import Decimal
 
-from gribuki_trade.services import adversarial_macro as facade
-from gribuki_trade.services import adversarial_macro_serialization as serialization
+from gribuki_trade.services.macro import adversarial_macro as facade
+from gribuki_trade.services.macro import adversarial_macro_serialization as serialization
 
 
 def test_adversarial_facade_reexports_pure_serialization_helpers() -> None:

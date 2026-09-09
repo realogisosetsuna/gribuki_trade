@@ -12,7 +12,7 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 
-from gribuki_trade.adapters.binance.stream import BinanceMarketEvent
+from gribuki_trade.adapters.binance.spot.stream import BinanceMarketEvent
 
 ClockMs = Callable[[], int]
 EventHandler = Callable[[BinanceMarketEvent], Awaitable[None] | None]

@@ -6,18 +6,18 @@ from decimal import Decimal
 from unittest import IsolatedAsyncioTestCase, TestCase
 from urllib.parse import parse_qs, urlsplit
 
-from gribuki_trade.adapters.binance.envs import BinanceProduct, BinanceStage
-from gribuki_trade.adapters.binance.futures import (
+from gribuki_trade.adapters.binance.auth.envs import BinanceProduct, BinanceStage
+from gribuki_trade.adapters.binance.futures.client import (
     BinanceFuturesProtectionOrder,
     BinanceFuturesRestClient,
 )
-from gribuki_trade.adapters.binance.gateway import (
+from gribuki_trade.adapters.binance.models import BinanceCredentials
+from gribuki_trade.adapters.binance.transport.gateway import (
     BinanceAPIError,
     BinanceConfigurationError,
     BinanceProtocolError,
 )
-from gribuki_trade.adapters.binance.http import HttpRequest, HttpResponse
-from gribuki_trade.adapters.binance.models import BinanceCredentials
+from gribuki_trade.adapters.binance.transport.http import HttpRequest, HttpResponse
 
 
 def response(status: int, payload: object) -> HttpResponse:

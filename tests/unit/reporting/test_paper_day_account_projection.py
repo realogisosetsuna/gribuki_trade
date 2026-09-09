@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from gribuki_trade.reporting.paper_day_account_projection import (
+from gribuki_trade.reporting.paper_day.paper_day_account_projection import (
     applied_fill_sides,
     artifact_status_from_events,
     latest_account_event,
@@ -13,7 +13,7 @@ from gribuki_trade.reporting.paper_day_account_projection import (
     realized_by_symbol,
     unique_applied_fills,
 )
-from gribuki_trade.reporting.paper_day_projection_models import PaperDaySidecarEvent
+from gribuki_trade.reporting.paper_day.paper_day_projection_models import PaperDaySidecarEvent
 
 NOW = datetime(2026, 8, 14, 7, 0, tzinfo=UTC)
 

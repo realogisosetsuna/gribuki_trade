@@ -160,8 +160,8 @@ def _resolve_dynamic_research_symbols(
             )
         )
     if candidate_store_path is not None:
-        from gribuki_trade.services.candidate_universe import CandidateUniverseService
-        from gribuki_trade.storage.candidate_store import SQLiteCandidateStore
+        from gribuki_trade.services.research.candidate_universe import CandidateUniverseService
+        from gribuki_trade.storage.research.candidate_store import SQLiteCandidateStore
 
         path = Path(candidate_store_path).resolve()
         path.parent.mkdir(parents=True, exist_ok=True)

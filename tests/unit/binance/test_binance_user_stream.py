@@ -22,7 +22,7 @@ from gribuki_trade.adapters.binance import (
     parse_user_data_event,
     signature_payload,
 )
-from gribuki_trade.adapters.binance.user_stream_parsing import _sanitize_message
+from gribuki_trade.adapters.binance.spot.user_stream_parsing import _sanitize_message
 from gribuki_trade.domain.orders import OrderStatus, Side
 
 

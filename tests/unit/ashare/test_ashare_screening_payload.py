@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from gribuki_trade.adapters.ashare.screening_payload import (
+from gribuki_trade.adapters.ashare.screening.screening_payload import (
     AKShareScreeningPayloadError,
     _classify_symbol,
     _parse_history,

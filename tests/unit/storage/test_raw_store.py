@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from gribuki_trade.domain.events import RawDocument
-from gribuki_trade.storage.raw_store import BodyNotRetainedError, FileRawDocumentStore
+from gribuki_trade.storage.research.raw_store import BodyNotRetainedError, FileRawDocumentStore
 
 NOW = datetime(2026, 8, 13, 3, 0, tzinfo=UTC)
 

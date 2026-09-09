@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from unittest import IsolatedAsyncioTestCase
 
-from gribuki_trade.adapters.paper import (
+from gribuki_trade.adapters.simulated.paper import (
     ORDER_FILL_EVENT,
     ORDER_STATUS_EVENT,
     PaperBroker,

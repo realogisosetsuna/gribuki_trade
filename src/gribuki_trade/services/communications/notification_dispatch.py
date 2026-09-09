@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from gribuki_trade.ports.notifier import NotificationTargetKind, Notifier
-from gribuki_trade.storage.outbox import DispatchSummary, OutboxDispatcher, SQLiteOutbox
+from gribuki_trade.storage.execution.outbox import DispatchSummary, OutboxDispatcher, SQLiteOutbox
 
 
 class NotificationDispatchServiceError(RuntimeError):

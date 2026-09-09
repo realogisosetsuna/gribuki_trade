@@ -1,7 +1,7 @@
 from datetime import date
 from pathlib import Path
 
-from gribuki_trade.reporting.paper_day_sidecar_codec import (
+from gribuki_trade.reporting.paper_day.paper_day_sidecar_codec import (
     int_tuple,
     read_final_result,
     string_tuple,

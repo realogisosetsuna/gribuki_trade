@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from gribuki_trade.adapters.cross_market import (
+from gribuki_trade.adapters.market_data.cross_market import (
     DEFAULT_CROSS_MARKET_UNIVERSE,
     AKShareCrossMarketAdapter,
 )

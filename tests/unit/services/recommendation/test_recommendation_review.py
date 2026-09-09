@@ -21,12 +21,12 @@ from gribuki_trade.domain.recommendations import (
     ResearchRecommendation,
 )
 from gribuki_trade.domain.review_cases import ReviewActor, ReviewCaseStatus
-from gribuki_trade.services.recommendation_review import (
+from gribuki_trade.services.research.recommendation_review import (
     RecommendationReviewError,
     RecommendationReviewPolicy,
     RecommendationReviewService,
 )
-from gribuki_trade.storage.review_case_store import (
+from gribuki_trade.storage.research.review_case_store import (
     ReviewCaseEventCollisionError,
     SQLiteReviewCaseStore,
 )

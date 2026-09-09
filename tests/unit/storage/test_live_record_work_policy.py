@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from gribuki_trade.domain.live_records import LiveWorkKind, LiveWorkStatus
-from gribuki_trade.storage.live_record_work_policy import (
+from gribuki_trade.storage.live_records.live_record_work_policy import (
     build_claim_due_work_query,
     normalize_lease_for,
     normalize_work_claim,

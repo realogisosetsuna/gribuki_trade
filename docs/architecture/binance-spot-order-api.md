@@ -44,7 +44,7 @@ policy explicitly accepts a possible overlap.
 
 Official reference: [Spot Trade REST API](https://developers.binance.com/en/docs/catalog/core-trading-spot-trading/api/rest-api/trade).
 
-Implementation: `src/gribuki_trade/adapters/binance/gateway.py` and
+Implementation: `src/gribuki_trade/adapters/binance/transport/gateway.py` and
 `src/gribuki_trade/adapters/binance/models.py`. Verification:
 `tests/unit/binance/test_binance_gateway.py` and the Binance adapter test family under
 `tests/unit/`.

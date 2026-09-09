@@ -10,14 +10,14 @@ from pathlib import Path
 import pytest
 
 from gribuki_trade.reporting.contracts import ReportKind, validate_text_report_contract
-from gribuki_trade.services.live_trade_records import (
+from gribuki_trade.services.live.live_trade_records import (
     LiveInboundOutcomeStatus,
     LiveTradeRecordError,
     LiveTradeRecordService,
     parse_live_inbound_command,
     parse_onebot_private_message,
 )
-from gribuki_trade.storage.live_records import SQLiteLiveRecordStore
+from gribuki_trade.storage.live_records.live_records import SQLiteLiveRecordStore
 
 _SENDER = "123456"
 _SELF = "654321"

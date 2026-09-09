@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 
 from gribuki_trade.ports.notifier import NotificationTargetKind
 from gribuki_trade.reporting.contracts import ReportKind
-from gribuki_trade.services.ashare import ashare_paper_day as facade
-from gribuki_trade.services.ashare import ashare_paper_day_notifications as notifications
+from gribuki_trade.services.ashare.paper_day import ashare_paper_day as facade
+from gribuki_trade.services.ashare.paper_day import ashare_paper_day_notifications as notifications
 
 
 def test_notification_projection_is_reexported_by_runner_facade() -> None:

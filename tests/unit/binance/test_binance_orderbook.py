@@ -12,8 +12,8 @@ from gribuki_trade.adapters.binance import (
     OrderBookRecoveryState,
     OrderBookSnapshot,
 )
-from gribuki_trade.adapters.binance.futures import BinanceFuturesRestClient
-from gribuki_trade.adapters.binance.http import HttpRequest, HttpResponse
+from gribuki_trade.adapters.binance.futures.client import BinanceFuturesRestClient
+from gribuki_trade.adapters.binance.transport.http import HttpRequest, HttpResponse
 
 
 @dataclass(frozen=True)

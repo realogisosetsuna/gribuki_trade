@@ -5,8 +5,12 @@ from collections import deque
 from decimal import Decimal
 from unittest import IsolatedAsyncioTestCase, TestCase
 
-from gribuki_trade.adapters.binance.envs import BinanceProduct, BinanceStage, binance_environment
-from gribuki_trade.adapters.binance.futures_stream import (
+from gribuki_trade.adapters.binance.auth.envs import (
+    BinanceProduct,
+    BinanceStage,
+    binance_environment,
+)
+from gribuki_trade.adapters.binance.futures.stream import (
     BinanceFuturesMarketStream,
     FuturesDepthEvent,
     FuturesMarkPriceEvent,
@@ -14,7 +18,10 @@ from gribuki_trade.adapters.binance.futures_stream import (
     futures_stream_url,
     parse_futures_stream_message,
 )
-from gribuki_trade.adapters.binance.gateway import BinanceConfigurationError, BinanceProtocolError
+from gribuki_trade.adapters.binance.transport.gateway import (
+    BinanceConfigurationError,
+    BinanceProtocolError,
+)
 
 
 def depth_payload(first: int, final: int, previous: int) -> dict[str, object]:

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from gribuki_trade import cli as _runtime_cli
 
 if TYPE_CHECKING:
-    from gribuki_trade.storage.research_runs import StoredResearchRun
+    from gribuki_trade.storage.research.research_runs import StoredResearchRun
 
 _cli: Any = _runtime_cli
 
@@ -296,7 +296,7 @@ def _ashare_watchlist(config_path: str) -> dict[str, object]:
 def _ashare_screening_run_json(run: object) -> dict[str, object]:
     """序列化一次类型化筛选运行，且不泄露供应商对象。"""
 
-    from gribuki_trade.services.ashare_screening import AShareScreeningRun
+    from gribuki_trade.services.ashare.research.ashare_screening import AShareScreeningRun
 
     if not isinstance(run, AShareScreeningRun):
         raise TypeError("run must be an AShareScreeningRun")
@@ -402,7 +402,7 @@ def _ashare_screening_run_json(run: object) -> dict[str, object]:
     }
 
 def _ashare_intraday_run_json(run: object) -> dict[str, object]:
-    from gribuki_trade.services.ashare_surveillance import AShareSurveillanceRun
+    from gribuki_trade.services.ashare.research.ashare_surveillance import AShareSurveillanceRun
 
     if not isinstance(run, AShareSurveillanceRun):
         raise TypeError("run must be an AShareSurveillanceRun")

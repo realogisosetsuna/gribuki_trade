@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from gribuki_trade.adapters.manual_ticket import TICKET_COLUMNS, export_manual_tickets
+from gribuki_trade.adapters.simulated.manual_ticket import TICKET_COLUMNS, export_manual_tickets
 from gribuki_trade.domain.orders import OrderIntent, Side
 
 

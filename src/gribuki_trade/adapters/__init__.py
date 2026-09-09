@@ -1,13 +1,78 @@
 """面向外部系统与本地模拟的具体适配器集合。"""
 
-from gribuki_trade.adapters.akshare import (
+from gribuki_trade.adapters.ashare.market.breadth import (
+    EASTMONEY_BREADTH_SOURCE_ID,
+    EASTMONEY_BREADTH_SOURCE_URL,
+    TENCENT_BREADTH_SOURCE_ID,
+    TENCENT_BREADTH_SOURCE_URL,
+    AKShareAShareBreadthAdapter,
+)
+from gribuki_trade.adapters.ashare.market.context import (
+    AKShareETFContextAdapter,
+    AKShareIFContextAdapter,
+    AKShareLiquidityContextAdapter,
+)
+from gribuki_trade.adapters.ashare.market.derivatives import (
+    SSE_ETF_SCALE_PAGE_URL_TEMPLATE,
+    SSE_ETF_SHARE_SOURCE_ID,
+    SSE_OPTION_RISK_PAGE_URL,
+    SSE_OPTION_RISK_SOURCE_ID,
+    SSE_QUERY_URL,
+    SSEETFShareAdapter,
+    SSEOptionRiskAdapter,
+)
+from gribuki_trade.adapters.ashare.market.surveillance import (
+    EASTMONEY_SURVEILLANCE_SOURCE_ID,
+    TENCENT_ENRICHED_SURVEILLANCE_SOURCE_ID,
+    TENCENT_SURVEILLANCE_SOURCE_ID,
+    AKShareAShareSurveillanceAdapter,
+)
+from gribuki_trade.adapters.ashare.profile.instrument import (
+    AKSHARE_ETF_PROFILE_SOURCE_ID,
+    AKSHARE_STOCK_PROFILE_SOURCE_ID,
+    AKShareInstrumentProfileAdapter,
+    InstrumentProfileDataError,
+    InstrumentProfileFailureCode,
+    InstrumentProfilePointInTimeError,
+)
+from gribuki_trade.adapters.ashare.screening.preopen_screening import (
+    PREOPEN_FACTOR_SOURCE_ID,
+    PREOPEN_UNIVERSE_SOURCE_SUFFIX,
+    AKSharePreopenScreeningAdapter,
+)
+from gribuki_trade.adapters.ashare.screening.screening import (
+    AKSHARE_HISTORY_SOURCE_ID,
+    EASTMONEY_SCREENING_SOURCE_ID,
+    SINA_HISTORY_SOURCE_ID,
+    TENCENT_SCREENING_SOURCE_ID,
+    AKShareAShareScreeningAdapter,
+    AKShareScreeningCoverageError,
+    AKShareScreeningDataError,
+    AKShareScreeningPayloadError,
+    AKShareScreeningPointInTimeError,
+    AKShareScreeningSourcesExhaustedError,
+)
+from gribuki_trade.adapters.macro.cboe_vix import (
+    CBOE_VIX_EOD_CSV_URL,
+    CBOE_VIX_SOURCE_ID,
+    CboeVIXDailyAdapter,
+)
+from gribuki_trade.adapters.macro.official_rates import (
+    SAFE_CENTRAL_PARITY_URL,
+    SAFE_USD_CNY_SOURCE_ID,
+    SHIBOR_HISTORY_URL,
+    SHIBOR_SOURCE_ID,
+    OfficialShiborAdapter,
+    SafeCentralParityAdapter,
+)
+from gribuki_trade.adapters.market_data.akshare import (
     AKShareError,
     AKShareMarketDataAdapter,
     AKShareNoDataError,
     AKSharePayloadError,
     AKShareTimeoutError,
 )
-from gribuki_trade.adapters.akshare_daily import (
+from gribuki_trade.adapters.market_data.akshare_daily import (
     AKShareDailyAssetType,
     AKShareDailyError,
     AKShareDailyNoDataError,
@@ -25,7 +90,7 @@ from gribuki_trade.adapters.akshare_daily import (
     HistoricalDailyTailStitchError,
     HistoricalDailyTailStitchPolicy,
 )
-from gribuki_trade.adapters.archived_daily import (
+from gribuki_trade.adapters.market_data.archived_daily import (
     DEFAULT_ARCHIVED_DAILY_SOURCE_IDS,
     ArchivedDailyBarSnapshot,
     ArchivedDailyEvidenceError,
@@ -35,88 +100,23 @@ from gribuki_trade.adapters.archived_daily import (
     ArchivedHistoricalDailyAdapter,
     load_archived_daily_bar_evidence,
 )
-from gribuki_trade.adapters.ashare_breadth import (
-    EASTMONEY_BREADTH_SOURCE_ID,
-    EASTMONEY_BREADTH_SOURCE_URL,
-    TENCENT_BREADTH_SOURCE_ID,
-    TENCENT_BREADTH_SOURCE_URL,
-    AKShareAShareBreadthAdapter,
-)
-from gribuki_trade.adapters.ashare_context import (
-    AKShareETFContextAdapter,
-    AKShareIFContextAdapter,
-    AKShareLiquidityContextAdapter,
-)
-from gribuki_trade.adapters.ashare_derivatives import (
-    SSE_ETF_SCALE_PAGE_URL_TEMPLATE,
-    SSE_ETF_SHARE_SOURCE_ID,
-    SSE_OPTION_RISK_PAGE_URL,
-    SSE_OPTION_RISK_SOURCE_ID,
-    SSE_QUERY_URL,
-    SSEETFShareAdapter,
-    SSEOptionRiskAdapter,
-)
-from gribuki_trade.adapters.ashare_preopen_screening import (
-    PREOPEN_FACTOR_SOURCE_ID,
-    PREOPEN_UNIVERSE_SOURCE_SUFFIX,
-    AKSharePreopenScreeningAdapter,
-)
-from gribuki_trade.adapters.ashare_screening import (
-    AKSHARE_HISTORY_SOURCE_ID,
-    EASTMONEY_SCREENING_SOURCE_ID,
-    SINA_HISTORY_SOURCE_ID,
-    TENCENT_SCREENING_SOURCE_ID,
-    AKShareAShareScreeningAdapter,
-    AKShareScreeningCoverageError,
-    AKShareScreeningDataError,
-    AKShareScreeningPayloadError,
-    AKShareScreeningPointInTimeError,
-    AKShareScreeningSourcesExhaustedError,
-)
-from gribuki_trade.adapters.ashare_surveillance import (
-    EASTMONEY_SURVEILLANCE_SOURCE_ID,
-    TENCENT_ENRICHED_SURVEILLANCE_SOURCE_ID,
-    TENCENT_SURVEILLANCE_SOURCE_ID,
-    AKShareAShareSurveillanceAdapter,
-)
-from gribuki_trade.adapters.baostock import (
+from gribuki_trade.adapters.market_data.baostock import (
     BaoStockDailyAdapter,
     BaoStockError,
     BaoStockTimeoutError,
 )
-from gribuki_trade.adapters.cboe_vix import (
-    CBOE_VIX_EOD_CSV_URL,
-    CBOE_VIX_SOURCE_ID,
-    CboeVIXDailyAdapter,
-)
-from gribuki_trade.adapters.cross_market import (
+from gribuki_trade.adapters.market_data.cross_market import (
     DEFAULT_CROSS_MARKET_UNIVERSE,
     AKShareCrossMarketAdapter,
 )
-from gribuki_trade.adapters.cross_market_history import (
+from gribuki_trade.adapters.market_data.cross_market_history import (
     DEFAULT_CROSS_MARKET_HISTORY_UNIVERSE,
     AKShareCrossMarketHistoryAdapter,
     CrossMarketHistorySpec,
 )
-from gribuki_trade.adapters.instrument_profile import (
-    AKSHARE_ETF_PROFILE_SOURCE_ID,
-    AKSHARE_STOCK_PROFILE_SOURCE_ID,
-    AKShareInstrumentProfileAdapter,
-    InstrumentProfileDataError,
-    InstrumentProfileFailureCode,
-    InstrumentProfilePointInTimeError,
-)
-from gribuki_trade.adapters.manual_ticket import export_manual_tickets
-from gribuki_trade.adapters.official_rates import (
-    SAFE_CENTRAL_PARITY_URL,
-    SAFE_USD_CNY_SOURCE_ID,
-    SHIBOR_HISTORY_URL,
-    SHIBOR_SOURCE_ID,
-    OfficialShiborAdapter,
-    SafeCentralParityAdapter,
-)
-from gribuki_trade.adapters.paper import PaperBroker, PaperFill, PaperOrderUpdate
-from gribuki_trade.adapters.paper_account import (
+from gribuki_trade.adapters.simulated.manual_ticket import export_manual_tickets
+from gribuki_trade.adapters.simulated.paper import PaperBroker, PaperFill, PaperOrderUpdate
+from gribuki_trade.adapters.simulated.paper_account import (
     InsufficientPaperBalance,
     PaperAccountFill,
     PaperAccountSnapshot,

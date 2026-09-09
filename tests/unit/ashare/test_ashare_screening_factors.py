@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import Decimal
 
-from gribuki_trade.adapters.ashare.screening_factors import (
+from gribuki_trade.adapters.ashare.screening.screening_factors import (
     HistoryBar,
     average_amount_20,
     calculate_factors,

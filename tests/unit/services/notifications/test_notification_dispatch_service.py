@@ -9,7 +9,7 @@ from gribuki_trade.ports.notifier import (
     NotificationTargetKind,
     OutboundNotification,
 )
-from gribuki_trade.services.notification_dispatch import (
+from gribuki_trade.services.communications.notification_dispatch import (
     NotificationDispatchService,
     NotificationDispatchServiceError,
 )

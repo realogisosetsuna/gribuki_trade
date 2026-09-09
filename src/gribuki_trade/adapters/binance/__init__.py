@@ -1,6 +1,6 @@
 """Binance 现货、行情与期货适配器的公开 API。"""
 
-from .credentials import (
+from .auth.credentials import (
     BINANCE_COIN_FUTURES_DEMO_API_KEY_SECRET,
     BINANCE_COIN_FUTURES_DEMO_SECRET_KEY_SECRET,
     BINANCE_LIVE_API_KEY_SECRET,
@@ -15,7 +15,7 @@ from .credentials import (
     load_binance_credentials,
     load_binance_futures_demo_credentials,
 )
-from .envs import (
+from .auth.envs import (
     BINANCE_ENVIRONMENT_PROFILES,
     BinanceCapability,
     BinanceEnvironmentProfile,
@@ -24,12 +24,12 @@ from .envs import (
     UnsupportedBinanceEnvironment,
     binance_environment,
 )
-from .futures import (
+from .futures.client import (
     BinanceFuturesProtectionOrder,
     BinanceFuturesRestClient,
     BinanceFuturesTicker,
 )
-from .futures_stream import (
+from .futures.stream import (
     BinanceFuturesMarketStream,
     BinanceFuturesStreamConnectionError,
     FuturesAggTradeEvent,
@@ -45,7 +45,7 @@ from .futures_stream import (
     parse_futures_stream_message,
     validate_futures_stream,
 )
-from .futures_user_stream import (
+from .futures.user_stream import (
     BinanceFuturesUserDataStream,
     BinanceFuturesUserStreamConnectionError,
     FuturesAccountUpdate,
@@ -65,17 +65,7 @@ from .futures_user_stream import (
     normalize_futures_user_event,
     parse_futures_user_event,
 )
-from .gateway import (
-    BinanceAPIError,
-    BinanceConfigurationError,
-    BinanceError,
-    BinanceProtocolError,
-    BinanceSpotGateway,
-    BinanceTransportError,
-    BinanceUncertainResultError,
-    sign_hmac_sha256,
-)
-from .history import (
+from .market_data.history import (
     BinanceKlineArchive,
     BinanceKlineCollector,
     BinanceKlineSource,
@@ -85,12 +75,13 @@ from .history import (
     KlineIntegrityReport,
     KlineSyncResult,
 )
-from .http import (
-    AsyncHttpTransport,
-    HttpRequest,
-    HttpResponse,
-    HttpTransportError,
-    UrllibAsyncHttpTransport,
+from .market_data.orderbook import (
+    BinanceFuturesOrderBook,
+    BinanceLocalOrderBook,
+    BinanceSpotOrderBook,
+    LocalOrderBookView,
+    OrderBookRecoveryResult,
+    OrderBookRecoveryState,
 )
 from .models import (
     LIVE_REST_BASE_URL,
@@ -118,16 +109,8 @@ from .models import (
     OrderBookSnapshot,
     TickerPrice,
 )
-from .orderbook import (
-    BinanceFuturesOrderBook,
-    BinanceLocalOrderBook,
-    BinanceSpotOrderBook,
-    LocalOrderBookView,
-    OrderBookRecoveryResult,
-    OrderBookRecoveryState,
-)
 from .rules import BinanceValidationError, SymbolRules, decimal_to_fixed
-from .stream import (
+from .spot.stream import (
     KLINE_INTERVALS,
     LIVE_WS_BASE_URL,
     TESTNET_WS_BASE_URL,
@@ -150,7 +133,7 @@ from .stream import (
     validate_stream_name,
     websocket_base_url,
 )
-from .user_stream import (
+from .spot.user_stream import (
     LIVE_USER_WS_API_URL,
     TESTNET_USER_WS_API_URL,
     BinanceBalanceUpdate,
@@ -168,6 +151,23 @@ from .user_stream import (
     parse_user_data_event,
     signature_payload,
     user_websocket_api_url,
+)
+from .transport.gateway import (
+    BinanceAPIError,
+    BinanceConfigurationError,
+    BinanceError,
+    BinanceProtocolError,
+    BinanceSpotGateway,
+    BinanceTransportError,
+    BinanceUncertainResultError,
+    sign_hmac_sha256,
+)
+from .transport.http import (
+    AsyncHttpTransport,
+    HttpRequest,
+    HttpResponse,
+    HttpTransportError,
+    UrllibAsyncHttpTransport,
 )
 
 __all__ = [

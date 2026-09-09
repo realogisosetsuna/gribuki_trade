@@ -5,8 +5,8 @@ from datetime import timedelta
 import pytest
 
 from gribuki_trade.domain.orders import OrderStatus
-from gribuki_trade.trading.models import TradingCommandStatus
-from gribuki_trade.trading.oms_command_policy import (
+from gribuki_trade.trading.core.models import TradingCommandStatus
+from gribuki_trade.trading.core.oms_command_policy import (
     normalize_command_scope,
     project_unknown_command,
     unknown_command_event_id,

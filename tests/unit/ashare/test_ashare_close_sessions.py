@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from gribuki_trade.ports.market_data import TradeCalendarDay
-from gribuki_trade.services.ashare_close_sessions import (
+from gribuki_trade.services.ashare.close.ashare_close_sessions import (
     AShareCloseSessionResolver,
     CloseAnalysisMode,
     InvalidCloseSessionOverrideError,

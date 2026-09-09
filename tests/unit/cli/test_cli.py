@@ -1259,7 +1259,7 @@ def test_ashare_paper_day_run_owns_resources_and_awake_guard(
 ) -> None:
     import gribuki_trade.adapters.notifiers as notifiers
     import gribuki_trade.runtime as runtime
-    import gribuki_trade.services.ashare_paper_day as paper_day_service
+    import gribuki_trade.services.ashare.paper_day.ashare_paper_day as paper_day_service
 
     lifecycle: list[str] = []
     runner_kwargs: list[dict[str, object]] = []
@@ -1371,7 +1371,7 @@ def test_ashare_paper_day_llm_wiring_freezes_once_and_replays_manifest_snapshot(
 
     import gribuki_trade.adapters.notifiers as notifiers
     import gribuki_trade.runtime as runtime
-    import gribuki_trade.services.ashare_paper_day as paper_day_service
+    import gribuki_trade.services.ashare.paper_day.ashare_paper_day as paper_day_service
     from gribuki_trade.adapters.llm import DeepSeekChatMacroAnalyzer
     from gribuki_trade.analysis.schemas import (
         MacroAnalysis,
@@ -1638,13 +1638,13 @@ def test_ashare_paper_day_reuses_legacy_manifest_when_risk_policy_is_upgraded(
 
     import gribuki_trade.adapters.notifiers as notifiers
     import gribuki_trade.runtime as runtime
-    import gribuki_trade.services.ashare_paper_day as paper_day_service
+    import gribuki_trade.services.ashare.paper_day.ashare_paper_day as paper_day_service
     from gribuki_trade.domain.paper_day import (
         PaperDayRunManifest,
         paper_day_target_hash,
     )
-    from gribuki_trade.services.ashare_paper_day import ASharePaperDayConfig
-    from gribuki_trade.storage.paper_day import SQLitePaperDayStore
+    from gribuki_trade.services.ashare.paper_day.ashare_paper_day import ASharePaperDayConfig
+    from gribuki_trade.storage.paper.paper_day import SQLitePaperDayStore
 
     session = date(2026, 8, 14)
     created_at = datetime.fromisoformat("2026-08-14T08:00:00+08:00")
@@ -2261,7 +2261,7 @@ def test_ashare_review_cli_open_get_confirm_and_list_offline(tmp_path: Path) -> 
         RecommendationHorizon,
         ResearchRecommendation,
     )
-    from gribuki_trade.storage.research_store import SQLiteResearchStore
+    from gribuki_trade.storage.research.research_store import SQLiteResearchStore
 
     now = datetime.fromisoformat("2026-08-14T10:00:00+08:00")
     evidence_at = now - timedelta(minutes=10)
@@ -2517,7 +2517,7 @@ def test_ashare_market_screen_serializes_candidate_contributions_and_exclusions(
         AShareBoard,
         ScreeningFactorId,
     )
-    from gribuki_trade.services.ashare_screening import (
+    from gribuki_trade.services.ashare.research.ashare_screening import (
         AShareScreeningRun,
         AShareScreeningRunStatus,
     )
@@ -2705,7 +2705,7 @@ def test_ashare_market_screen_helper_rejects_inconsistent_limits() -> None:
 
 
 def test_ashare_market_screen_sanitizes_typed_provider_failure() -> None:
-    from gribuki_trade.adapters.ashare_screening import (
+    from gribuki_trade.adapters.ashare.screening.screening import (
         AKShareScreeningSourcesExhaustedError,
     )
 
@@ -4621,11 +4621,11 @@ def test_research_watch_isolates_symbol_failures_and_runs_exact_cycles(
 
 def test_research_watch_can_resolve_active_candidates_only(tmp_path: Path) -> None:
     from gribuki_trade.domain.candidates import CandidateSource
-    from gribuki_trade.services.candidate_universe import (
+    from gribuki_trade.services.research.candidate_universe import (
         CandidateDiscovery,
         CandidateUniverseService,
     )
-    from gribuki_trade.storage.candidate_store import SQLiteCandidateStore
+    from gribuki_trade.storage.research.candidate_store import SQLiteCandidateStore
 
     candidate_db = tmp_path / "candidates.sqlite3"
     at = datetime.fromisoformat("2026-08-14T10:00:00+08:00")

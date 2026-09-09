@@ -17,7 +17,7 @@ from gribuki_trade.domain.paper_day import (
     paper_day_event_id,
     paper_day_target_hash,
 )
-from gribuki_trade.storage.paper_day import (
+from gribuki_trade.storage.paper.paper_day import (
     PaperDayStoreConflictError,
     PaperDayStoreIntegrityError,
     PaperDayStoreLeaseError,

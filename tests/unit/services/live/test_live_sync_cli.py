@@ -138,9 +138,9 @@ def test_live_sync_post_confirm_builds_only_its_quick_without_llm_key(
     tmp_path: Path,
     failure_mode: str,
 ) -> None:
-    import gribuki_trade.adapters.akshare as akshare_module
-    import gribuki_trade.adapters.baostock as baostock_module
-    import gribuki_trade.services.live_protection_inputs as input_module
+    import gribuki_trade.adapters.market_data.akshare as akshare_module
+    import gribuki_trade.adapters.market_data.baostock as baostock_module
+    import gribuki_trade.services.live.live_protection_inputs as input_module
     from gribuki_trade.features.deep_exit_planning import (
         DeepExitTimeframe,
         aggregate_completed_bars,
@@ -153,13 +153,13 @@ def test_live_sync_post_confirm_builds_only_its_quick_without_llm_key(
         MinuteInterval,
         SourceSemantics,
     )
-    from gribuki_trade.services.live_trade_orchestration import LiveProtectionInputs
-    from gribuki_trade.services.live_trade_records import (
+    from gribuki_trade.services.live.live_trade_orchestration import LiveProtectionInputs
+    from gribuki_trade.services.live.live_trade_records import (
         LiveTradeRecordService,
         parse_onebot_private_message,
     )
-    from gribuki_trade.storage.live_records import SQLiteLiveRecordStore
-    from gribuki_trade.storage.outbox import SQLiteOutbox
+    from gribuki_trade.storage.execution.outbox import SQLiteOutbox
+    from gribuki_trade.storage.live_records.live_records import SQLiteLiveRecordStore
 
     ledger = tmp_path / "live.sqlite3"
     exit_db = tmp_path / "exit.sqlite3"
@@ -401,7 +401,7 @@ def test_live_sync_cli_calendar_failures_close_before_proposal_is_stored(
     assert code == 1
     assert result["error_code"] == expected_code
 
-    from gribuki_trade.storage.live_records import SQLiteLiveRecordStore
+    from gribuki_trade.storage.live_records.live_records import SQLiteLiveRecordStore
 
     with SQLiteLiveRecordStore(ledger) as store:
         assert store.events("live-main") == ()
@@ -410,7 +410,7 @@ def test_live_sync_cli_calendar_failures_close_before_proposal_is_stored(
 def test_live_execution_session_verifier_uses_exact_baostock_natural_day(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import gribuki_trade.adapters.baostock as baostock_module
+    import gribuki_trade.adapters.market_data.baostock as baostock_module
     from gribuki_trade.ports.market_data import TradeCalendarDay
 
     calls: list[tuple[object, object]] = []
@@ -534,11 +534,11 @@ def test_live_sync_cycle_tracks_and_dispatches_before_one_bounded_build(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    import gribuki_trade.adapters.akshare as akshare_module
-    import gribuki_trade.adapters.baostock as baostock_module
-    import gribuki_trade.services.live_market_tracking as tracking_module
-    import gribuki_trade.services.live_trade_orchestration as orchestration_module
-    import gribuki_trade.services.llm_production as llm_module
+    import gribuki_trade.adapters.market_data.akshare as akshare_module
+    import gribuki_trade.adapters.market_data.baostock as baostock_module
+    import gribuki_trade.services.live.live_market_tracking as tracking_module
+    import gribuki_trade.services.live.live_trade_orchestration as orchestration_module
+    import gribuki_trade.services.llm.llm_production as llm_module
 
     events: list[str] = []
 
@@ -629,11 +629,11 @@ def test_live_sync_cycle_keeps_building_protection_when_napcat_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    import gribuki_trade.adapters.akshare as akshare_module
-    import gribuki_trade.adapters.baostock as baostock_module
-    import gribuki_trade.services.live_market_tracking as tracking_module
-    import gribuki_trade.services.live_trade_orchestration as orchestration_module
-    import gribuki_trade.services.llm_production as llm_module
+    import gribuki_trade.adapters.market_data.akshare as akshare_module
+    import gribuki_trade.adapters.market_data.baostock as baostock_module
+    import gribuki_trade.services.live.live_market_tracking as tracking_module
+    import gribuki_trade.services.live.live_trade_orchestration as orchestration_module
+    import gribuki_trade.services.llm.llm_production as llm_module
 
     work_kinds: list[str] = []
 
@@ -720,11 +720,11 @@ def test_live_sync_cycle_pumps_two_tracking_rounds_while_deep_is_slow(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    import gribuki_trade.adapters.akshare as akshare_module
-    import gribuki_trade.adapters.baostock as baostock_module
-    import gribuki_trade.services.live_market_tracking as tracking_module
-    import gribuki_trade.services.live_trade_orchestration as orchestration_module
-    import gribuki_trade.services.llm_production as llm_module
+    import gribuki_trade.adapters.market_data.akshare as akshare_module
+    import gribuki_trade.adapters.market_data.baostock as baostock_module
+    import gribuki_trade.services.live.live_market_tracking as tracking_module
+    import gribuki_trade.services.live.live_trade_orchestration as orchestration_module
+    import gribuki_trade.services.llm.llm_production as llm_module
 
     events: list[str] = []
     tracking_calls = 0

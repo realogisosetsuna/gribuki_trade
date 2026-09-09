@@ -23,7 +23,7 @@ from gribuki_trade.domain.recommendations import (
     ResearchRecommendation,
 )
 from gribuki_trade.ports.market_data import AsyncHistoricalDailyData
-from gribuki_trade.storage.research_store import SQLiteResearchStore
+from gribuki_trade.storage.research.research_store import SQLiteResearchStore
 
 EvaluationPhase = Literal["load", "fetch", "evaluate", "persist"]
 

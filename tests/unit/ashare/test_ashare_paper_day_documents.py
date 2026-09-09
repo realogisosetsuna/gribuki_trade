@@ -14,9 +14,9 @@ from gribuki_trade.features.ashare_surveillance import (
     IntradayCandidateClass,
 )
 from gribuki_trade.ports.ashare_screening import AShareBoard
-from gribuki_trade.services.ashare import ashare_paper_day as facade
-from gribuki_trade.services.ashare import ashare_paper_day_documents as documents
-from gribuki_trade.services.ashare.ashare_intraday_paper import IntradayPaperOrder
+from gribuki_trade.services.ashare.intraday.ashare_intraday_paper import IntradayPaperOrder
+from gribuki_trade.services.ashare.paper_day import ashare_paper_day as facade
+from gribuki_trade.services.ashare.paper_day import ashare_paper_day_documents as documents
 
 
 def _candidate() -> IntradayCandidate:

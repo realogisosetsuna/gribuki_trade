@@ -5,8 +5,8 @@ from datetime import UTC, date, datetime, time, timedelta
 import pytest
 
 from gribuki_trade.domain.paper_day import PaperDayPhase
-from gribuki_trade.services.ashare.ashare_paper_day_config import ASharePaperDayConfig
-from gribuki_trade.services.ashare.ashare_paper_day_schedule import (
+from gribuki_trade.services.ashare.paper_day.ashare_paper_day_config import ASharePaperDayConfig
+from gribuki_trade.services.ashare.paper_day.ashare_paper_day_schedule import (
     phase_at,
     scheduler_sleep_seconds,
     session_datetime,

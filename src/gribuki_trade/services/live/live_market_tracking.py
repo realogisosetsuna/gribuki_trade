@@ -23,7 +23,7 @@ from gribuki_trade.services.live.live_trade_orchestration import (
     LiveTradeOrchestrationService,
     LiveWorkRunSummary,
 )
-from gribuki_trade.storage.live_records import SQLiteLiveRecordStore
+from gribuki_trade.storage.live_records.live_records import SQLiteLiveRecordStore
 
 
 @dataclass(frozen=True, slots=True)

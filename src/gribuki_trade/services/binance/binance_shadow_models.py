@@ -9,8 +9,8 @@ from decimal import Decimal
 from enum import StrEnum
 
 from gribuki_trade.adapters.binance.models import BinanceEnvironment
-from gribuki_trade.adapters.binance.stream import KLINE_INTERVALS
-from gribuki_trade.adapters.paper_account import PaperAssetBalance, SpotSymbolAssets
+from gribuki_trade.adapters.binance.spot.stream import KLINE_INTERVALS
+from gribuki_trade.adapters.simulated.paper_account import PaperAssetBalance, SpotSymbolAssets
 from gribuki_trade.services.binance.binance_paper import PaperEngineSnapshot
 
 _ALLOWED_SYMBOL_ASSETS: Mapping[str, SpotSymbolAssets] = {

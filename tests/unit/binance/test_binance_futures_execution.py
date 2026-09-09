@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from unittest import IsolatedAsyncioTestCase
 
-from gribuki_trade.adapters.binance.envs import BinanceStage
-from gribuki_trade.adapters.binance.gateway import BinanceConfigurationError
+from gribuki_trade.adapters.binance.auth.envs import BinanceStage
+from gribuki_trade.adapters.binance.transport.gateway import BinanceConfigurationError
 from gribuki_trade.runtime.guard import (
     LIVE_CONFIRMATION_PHRASE,
     LiveTradingGuard,
@@ -11,7 +11,7 @@ from gribuki_trade.runtime.guard import (
     OperationNotAllowed,
 )
 from gribuki_trade.runtime.mode import TradingMode
-from gribuki_trade.services.binance_futures_execution import (
+from gribuki_trade.services.binance.binance_futures_execution import (
     BinanceFuturesExecutionService,
 )
 

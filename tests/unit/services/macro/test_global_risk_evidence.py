@@ -10,7 +10,7 @@ from gribuki_trade.ports.global_risk import (
     VIXDailyBar,
     VIXDailyHistory,
 )
-from gribuki_trade.services.global_risk_evidence import build_vix_evidence
+from gribuki_trade.services.macro.global_risk_evidence import build_vix_evidence
 
 AS_OF = datetime(2026, 8, 13, 8, 30, tzinfo=UTC)
 BODY = b"official-vix-document"

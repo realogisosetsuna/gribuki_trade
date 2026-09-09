@@ -46,11 +46,11 @@ if TYPE_CHECKING:
     from gribuki_trade.domain.instruments import ResearchInstrumentProfile
     from gribuki_trade.domain.paper_trading import PaperPosition
     from gribuki_trade.domain.post_close import PostCloseInstrumentResearch
-    from gribuki_trade.reporting.paper_day_summary import PaperDayExecutiveProjection
-    from gribuki_trade.services.ashare_close_sessions import CloseSessionResolution
-    from gribuki_trade.services.ashare_paper import ASharePaperTradingService
-    from gribuki_trade.services.ashare_post_close import PostCloseOrchestrationResult
-    from gribuki_trade.storage.candidate_store import SQLiteCandidateStore
+    from gribuki_trade.reporting.paper_day.paper_day_summary import PaperDayExecutiveProjection
+    from gribuki_trade.services.ashare.close.ashare_close_sessions import CloseSessionResolution
+    from gribuki_trade.services.ashare.close.ashare_post_close import PostCloseOrchestrationResult
+    from gribuki_trade.services.ashare.paper_day.ashare_paper import ASharePaperTradingService
+    from gribuki_trade.storage.research.candidate_store import SQLiteCandidateStore
 
 
 def _cli() -> Any:
@@ -491,23 +491,23 @@ async def _ashare_post_close_run(
     except PostCloseSearxngURLValidationError:
         raise _PostCloseCLIError("SEARXNG_URL_INVALID") from None
 
-    from gribuki_trade.adapters.baostock import BaoStockDailyAdapter
+    from gribuki_trade.adapters.market_data.baostock import BaoStockDailyAdapter
     from gribuki_trade.domain.paper_day import paper_day_target_hash
     from gribuki_trade.ports.notifier import NotificationTargetKind
-    from gribuki_trade.reporting.paper_day_summary import (
+    from gribuki_trade.reporting.paper_day.paper_day_summary import (
         PaperDaySidecarError,
         project_paper_day_sidecars,
     )
-    from gribuki_trade.services.ashare_close_sessions import (
+    from gribuki_trade.services.ashare.close.ashare_close_sessions import (
         AShareCloseSessionResolver,
         CloseAnalysisMode,
         CloseSessionResolutionError,
     )
-    from gribuki_trade.services.ashare_paper import ASharePaperTradingService
-    from gribuki_trade.services.ashare_post_close import PostCloseOrchestrationError
-    from gribuki_trade.storage.candidate_store import SQLiteCandidateStore
-    from gribuki_trade.storage.paper_day import SQLitePaperDayStore
-    from gribuki_trade.storage.paper_ledger import SQLitePaperLedger
+    from gribuki_trade.services.ashare.close.ashare_post_close import PostCloseOrchestrationError
+    from gribuki_trade.services.ashare.paper_day.ashare_paper import ASharePaperTradingService
+    from gribuki_trade.storage.paper.paper_day import SQLitePaperDayStore
+    from gribuki_trade.storage.paper.paper_ledger import SQLitePaperLedger
+    from gribuki_trade.storage.research.candidate_store import SQLiteCandidateStore
 
     local_now = now.astimezone(ZoneInfo("Asia/Shanghai"))
     if session_date != local_now.date():
@@ -972,7 +972,7 @@ async def _run_post_close_orchestrator(
     macro_weight: Decimal,
     now: datetime,
 ) -> PostCloseOrchestrationResult:
-    from gribuki_trade.services.ashare_post_close import (
+    from gribuki_trade.services.ashare.close.ashare_post_close import (
         ASharePostCloseOrchestrator,
         PostCloseOrchestrationRequest,
     )
@@ -1140,8 +1140,10 @@ async def _deliver_post_close_artifact(
         NotificationTargetKind,
         OutboundNotification,
     )
-    from gribuki_trade.services.notification_dispatch import NotificationDispatchService
-    from gribuki_trade.storage.outbox import OutboxStatus, SQLiteOutbox
+    from gribuki_trade.services.communications.notification_dispatch import (
+        NotificationDispatchService,
+    )
+    from gribuki_trade.storage.execution.outbox import OutboxStatus, SQLiteOutbox
 
     if not isinstance(target_kind, NotificationTargetKind):
         raise TypeError("target_kind must be a NotificationTargetKind")

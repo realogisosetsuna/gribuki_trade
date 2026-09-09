@@ -8,7 +8,7 @@ from gribuki_trade.ports.cross_market import (
     CrossMarketSegment,
     CrossMarketSnapshot,
 )
-from gribuki_trade.services.cross_market_evidence import (
+from gribuki_trade.services.research.cross_market_evidence import (
     build_cross_market_evidence,
     format_cross_market_report_lines,
 )

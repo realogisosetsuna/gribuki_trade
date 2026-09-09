@@ -297,7 +297,7 @@ async def _load_ashare_paper_day_calendar_window(
 ) -> tuple[date, tuple[date, ...], str]:
     """冻结前一交易日及未来退出时间门所需的真实 A 股交易日历。"""
 
-    from gribuki_trade.adapters.baostock import BaoStockDailyAdapter
+    from gribuki_trade.adapters.market_data.baostock import BaoStockDailyAdapter
 
     provider = calendar_provider or BaoStockDailyAdapter(
         max_attempts=1,
@@ -386,17 +386,17 @@ async def _run_ashare_paper_day(
     )
     from gribuki_trade.ports.llm_analyzer import MacroAnalyzer
     from gribuki_trade.security.config import SecretValue
-    from gribuki_trade.services.ashare_intraday_llm import (
+    from gribuki_trade.services.ashare.intraday.ashare_intraday_llm import (
         IntradayLLMConfig,
     )
-    from gribuki_trade.services.llm_production import (
+    from gribuki_trade.services.llm.llm_production import (
         OwnedProductionDualTrackAnalyzer,
         PaperDayDualTrackDeepExitAssessmentProvider,
         ProductionLLMProfile,
         build_production_dual_track_analyzer,
         recommended_intraday_review_timeout,
     )
-    from gribuki_trade.services.macro_research import MacroResearchService
+    from gribuki_trade.services.macro.macro_research import MacroResearchService
 
     if not isinstance(intraday_llm_enabled, bool):
         raise TypeError("intraday_llm_enabled must be bool")

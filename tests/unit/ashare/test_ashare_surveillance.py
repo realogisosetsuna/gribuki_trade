@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from gribuki_trade.adapters.ashare_surveillance import (
+from gribuki_trade.adapters.ashare.market.surveillance import (
     TENCENT_ENRICHED_SURVEILLANCE_SOURCE_ID,
     TENCENT_SURVEILLANCE_SOURCE_ID,
     AKShareAShareSurveillanceAdapter,
@@ -24,7 +24,7 @@ from gribuki_trade.ports.ashare_surveillance import (
     AShareIntradayUniverseSnapshot,
     SurveillanceSourceQuality,
 )
-from gribuki_trade.services.ashare_surveillance import (
+from gribuki_trade.services.ashare.research.ashare_surveillance import (
     AShareIntradaySurveillanceService,
     AShareMarketSessionError,
     AShareSurveillanceRunStatus,

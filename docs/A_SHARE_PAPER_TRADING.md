@@ -13,9 +13,9 @@
 - `storage/paper_orders.py`：append-only 委托/run 事件、hash chain、run identity 和 writer lease。
 - `services/ashare_paper_recovery.py`：跨订单库与资金账本的可恢复 saga。
 - `services/ashare_intraday_paper.py`：盘中价格接受区间、板块数量、组合风险与下一完整分钟 IOC。
-- `domain/paper_day.py`、`storage/paper_day.py`：单日 manifest、append-only journal、事件哈希链和单 writer lease。
+- `domain/paper_day.py`、`storage/paper/paper_day.py`：单日 manifest、append-only journal、事件哈希链和单 writer lease。
 - `services/ashare_paper_day.py`：盘前、盘中、收盘、outbox 与 sidecar 的单进程全天编排。
-- `reporting/paper_day_summary.py`：只从 sidecar 生成可审计增强摘要，不打开运行中的数据库。
+- `reporting/paper_day/paper_day_summary.py`：只从 sidecar 生成可审计增强摘要，不打开运行中的数据库。
 - `backtest/costs.py`：模拟盘与回测共用的费用计算器；现已包含可配置过户费。
 
 账本和日线 matcher 服务没有导入行情或券商适配器；PAPER-day 由 CLI 组合公开行情、交易日历与 OneBot 通知适配器，但没有真实 broker 依赖。人工成交和模拟成交都使用 `ASharePaperFill`，仅用 `source=MANUAL/SIMULATED` 区分来源。人工账单允许录入实际费用覆盖值；模拟成交必须使用配置费率。

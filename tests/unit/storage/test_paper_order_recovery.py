@@ -16,13 +16,13 @@ from gribuki_trade.domain.paper_orders import (
     SimulatedDailyBar,
 )
 from gribuki_trade.domain.paper_trading import PaperInstrumentType
-from gribuki_trade.services.ashare_paper import ASharePaperTradingService
-from gribuki_trade.services.ashare_paper_recovery import (
+from gribuki_trade.services.ashare.paper_day.ashare_paper import ASharePaperTradingService
+from gribuki_trade.services.ashare.paper_day.ashare_paper_recovery import (
     DurableASharePaperOrderMatcher,
     PaperRecoveryRequiredError,
 )
-from gribuki_trade.storage.paper_ledger import SQLitePaperLedger
-from gribuki_trade.storage.paper_orders import (
+from gribuki_trade.storage.paper.paper_ledger import SQLitePaperLedger
+from gribuki_trade.storage.paper.paper_orders import (
     PaperOrderEventType,
     PaperOrderStoreConflictError,
     PaperOrderStoreLeaseError,
