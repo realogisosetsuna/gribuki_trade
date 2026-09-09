@@ -559,3 +559,11 @@ summaries, tracking observations, and stable input errors into
 `services/live_trade_orchestration_models.py`. The orchestration facade retains
 work claiming, exit lifecycle calls, and outbox delivery. Focused tests, Ruff,
 mypy, and compile checks pass.
+
+
+### 2026-09-09 — macro evidence selection
+
+Extracted point-in-time evidence filtering, relevance ranking, injection rejection,
+publisher identity, and corroboration policy into `services/macro_evidence_selection.py`.
+The macro research facade retains request hashing, analyzer calls, and fail-closed
+execution. Focused tests, Ruff, mypy, and compile checks pass.

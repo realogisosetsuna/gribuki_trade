@@ -55,6 +55,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/ashare_close_analysis.py` | `services/ashare_close_models.py`, `services/ashare_close_projection.py`, `services/ashare_close_notifications.py` | Point-in-time request/result contracts, pure evidence/technical projections, and deterministic report rendering/message splitting |
 | `services/adversarial_macro.py` | `services/adversarial_macro_serialization.py` | Canonical request/identity/analysis documents, hashes, and scalar normalization |
 | `services/macro_research.py` | `services/macro_models.py` | Evidence configuration, corroboration and selection results, plus immutable research run records |
+| `services/macro_research.py` | `services/macro_evidence_selection.py` | Point-in-time evidence filtering, relevance ranking, injection rejection, publisher identity, and corroboration policy |
 | `services/adversarial_macro.py` | `services/adversarial_macro_policy.py` | Role validation, peer envelopes, conservative aggregation, and round stability |
 | `services/adversarial_macro.py` | `services/adversarial_macro_boundaries.py` | Role request construction, failure-safe ABSTAIN analysis, and sanitized failure-call documents |
 | `services/adversarial_macro.py` | `services/adversarial_macro_models.py` | Adversarial roles, immutable configuration, round/opinion/run records, and audit value objects |
