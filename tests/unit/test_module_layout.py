@@ -169,6 +169,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "services/binance/binance_execution_records.py",
         ),
         (
+            "gribuki_trade.services.binance.binance_execution_models",
+            "services/binance/binance_execution_models.py",
+        ),
+        (
             "gribuki_trade.reporting.paper_day_account_projection",
             "reporting/paper_day_account_projection.py",
         ),
@@ -187,6 +191,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
         (
             "gribuki_trade.services.adversarial_macro_boundaries",
             "services/adversarial_macro_boundaries.py",
+        ),
+        (
+            "gribuki_trade.storage.paper_orders_codec",
+            "storage/paper_orders_codec.py",
         ),
         (
             "gribuki_trade.cli_commands.handlers.napcat",
@@ -262,6 +270,23 @@ def test_napcat_handler_is_directly_importable() -> None:
         assert callable(getattr(handler, name))
 
 
+def test_paper_order_store_reexports_codec_models() -> None:
+    """订单存储保留历史模型身份，同时纯 codec 可独立导航。"""
+
+    facade = importlib.import_module("gribuki_trade.storage.paper_orders")
+    codec = importlib.import_module("gribuki_trade.storage.paper_orders_codec")
+    for name in (
+        "PaperOrderEvent",
+        "PaperOrderEventType",
+        "PaperRunRecord",
+        "PaperOrderStoreError",
+        "PaperOrderStoreConflictError",
+        "PaperOrderStoreLeaseError",
+        "PaperOrderStoreIntegrityError",
+    ):
+        assert getattr(facade, name) is getattr(codec, name)
+
+
 def test_close_notification_splitting_is_directly_importable() -> None:
     """盘后通知分段辅助可独立导入，且不依赖通知 facade 初始化。"""
 
@@ -280,6 +305,22 @@ def test_close_notification_splitting_is_directly_importable() -> None:
         "gribuki_trade.services.ashare.ashare_close_notifications"
     )
     assert facade._split_notification_text is module._split_notification_text
+
+
+def test_binance_execution_models_keep_facade_contract_identity() -> None:
+    """Binance 执行协议与启动结果可独立导航，旧 facade 继续导出相同身份。"""
+
+    models = importlib.import_module(
+        "gribuki_trade.services.binance.binance_execution_models"
+    )
+    facade = importlib.import_module("gribuki_trade.services.binance.binance_execution")
+    for name in (
+        "BinanceSpotExecutionGateway",
+        "BinanceStartupReconciliation",
+        "BinanceTestnetOnlyError",
+        "BinanceUserDataSource",
+    ):
+        assert getattr(facade, name) is getattr(models, name)
 
 
 def test_paper_day_summary_models_keep_facade_type_identity() -> None:

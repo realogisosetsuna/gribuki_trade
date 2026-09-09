@@ -567,3 +567,28 @@ Extracted point-in-time evidence filtering, relevance ranking, injection rejecti
 publisher identity, and corroboration policy into `services/macro_evidence_selection.py`.
 The macro research facade retains request hashing, analyzer calls, and fail-closed
 execution. Focused tests, Ruff, mypy, and compile checks pass.
+
+
+### 2026-09-09 — A-share evaluator models
+
+Extracted A-share execution/action enums, point-in-time scores, completed bars,
+observations, evaluator configuration, and result records into
+`strategy_lab/ashare_evaluator_models.py`. The evaluator facade retains matching,
+performance calculation, and serialization helpers while re-exporting historical
+identities. Focused tests, Ruff, mypy, and compile checks pass.
+
+The paper-order storage slice now places immutable event/run models, SQLite row
+decoding, canonical JSON, hash-chain verification, and scalar normalization in
+`storage/paper_orders_codec.py`. The SQLite facade retains schema initialization,
+WAL transactions, leases, idempotent appends, and restart recovery while its
+historical model and exception identities remain stable. Focused paper-order
+recovery and broker tests passed.
+
+
+### 2026-09-09 — Binance execution boundary models
+
+Extracted the Binance execution gateway and private-stream protocols, testnet guard
+error, and startup reconciliation result into
+`services/binance/binance_execution_models.py`. The execution facade retains OMS
+transactions, broker calls, stream processing, reconciliation, and runtime guards.
+Focused tests, Ruff, mypy, and compile checks pass.

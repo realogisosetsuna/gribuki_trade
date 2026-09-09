@@ -40,6 +40,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `storage/live_records.py` | `storage/live_record_codec.py` | Live-record scalar validation, canonical JSON, event/protection/work identifiers, and event hashes |
 | `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_serialization.py`, `strategy_lab/exit_simulation.py`, `strategy_lab/exit_walk_forward.py` | Exit documents, pure daily replay/cost metrics, and trading-day walk-forward fold/index planning |
 | `strategy_lab/exit_evaluator.py` | `strategy_lab/exit_models.py` | Frozen bars/episodes/datasets, costs, outcomes, metrics, and research-only trial registry models |
+| `strategy_lab/ashare_evaluator.py` | `strategy_lab/ashare_evaluator_models.py` | A-share execution/action enums, point-in-time scores, completed bars, observations, evaluator configuration, and result records |
 | `strategy_lab/experiments.py` | `strategy_lab/experiment_serialization.py` | Strategy/data manifests, trial folds, metrics and holdout JSON plus SHA-256 serialization |
 | `services/ashare_paper_day.py` | `services/ashare_paper_day_projection.py` | LLM gate and DEEP exit audit/notification projections |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_serialization.py` | K-line/technical-bar codecs, exit-barrier/time helpers, UTC normalization, canonical hashes, and event JSONL/file primitives |
@@ -67,6 +68,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_documents.py` | Watchlist/candidate/order/fill document codecs, A-share symbol resolution, and strict positive-integer validation |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_risk.py` | Pure risk-policy migration authorization, incomplete-fill checks, and price/quantity execution-policy documents |
 | `services/binance/binance_execution.py` | `services/binance/binance_execution_records.py` | Pure snapshot/fill/balance/order-list record projections and timestamp normalization |
+| `services/binance/binance_execution.py` | `services/binance/binance_execution_models.py` | Execution gateway and private-stream protocols, testnet guard error, and startup reconciliation result |
 | `services/live_trade_orchestration.py` | `services/live_trade_orchestration_models.py` | Live protection input contracts, provider protocol, work-run summary, tracking observation, and stable input errors |
 | `services/binance/binance_execution.py` | `services/binance/binance_execution_policy.py` | Environment, clock, order allow-list, and exchange-snapshot merge policy |
 | `services/ashare/ashare_intraday_llm.py` | `services/ashare/ashare_intraday_llm_serialization.py` | Safe audit documents, stable JSON normalization, and hashes |
@@ -218,3 +220,9 @@ delivery in `cli_commands/handlers/napcat.py`. The handler is directly
 importable and resolves secret/configuration hooks through a lazy CLI facade, so
 the historical `gribuki_trade.cli` functions and monkeypatch points remain
 compatible while command dispatch stays in the facade.
+
+The paper-order storage slice now places immutable event/run models, SQLite row
+decoding, canonical JSON, hash-chain verification, and scalar normalization in
+`storage/paper_orders_codec.py`. The SQLite facade retains schema initialization,
+WAL transactions, leases, idempotent appends, and restart recovery while its
+historical model and exception identities remain stable.
