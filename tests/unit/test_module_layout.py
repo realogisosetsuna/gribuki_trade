@@ -18,6 +18,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "strategy_lab/experiment_models.py",
         ),
         (
+            "gribuki_trade.strategy_lab.discovery_models",
+            "strategy_lab/discovery_models.py",
+        ),
+        (
             "gribuki_trade.features.cross_market_models",
             "features/cross_market_models.py",
         ),

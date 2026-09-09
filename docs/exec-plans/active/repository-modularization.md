@@ -635,3 +635,12 @@ Extracted the BASELINE/SHADOW/ENFORCE progressive-release adapter and shadow
 observer delivery into `services/adversarial_macro_feature_flag.py`. The main
 facade retains adversarial and dual-track provider orchestration. Focused tests,
 Ruff, mypy, and compile checks pass.
+
+
+### 2026-09-09 — factor discovery models
+
+Extracted factor-template grammar, search budgets, candidate inventories, and
+redundancy-filter value objects into `strategy_lab/discovery_models.py`. The
+discovery facade retains candidate enumeration and redundancy correlation
+calculations while preserving historical imports. Focused tests, Ruff, mypy, and
+compile checks pass.
