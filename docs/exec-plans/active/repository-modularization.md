@@ -419,3 +419,10 @@ orchestration, and degradation projection. Focused context parsing and adapter
 tests passed; the repository gate then passed readiness, Ruff, mypy (356 source
 files), compileall, and 1835 tests with five environment-skipped tests, 41
 subtests, and the recurring Windows pytest-cache permission warning.
+
+The Binance CLI handler is now split at the execution-mode boundary. The new
+`cli_commands/handlers/binance_live.py` owns LIVE Spot and USDⓈ-M Futures guard,
+account, order-test, submit/cancel, and private-stream orchestration. The
+original `handlers/binance.py` keeps testnet, history-sync, backtest, and shadow
+workflows while re-exporting the LIVE names for `cli.py` compatibility. The
+focused CLI and module-layout route passed 173 tests after the split.
