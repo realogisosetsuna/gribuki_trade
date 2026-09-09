@@ -30,7 +30,7 @@ from gribuki_trade.services.ashare.ashare_paper_day_serialization import (
 )
 
 if TYPE_CHECKING:
-    from .ashare_paper_day import PaperDayLLMPreopenContext
+    from .ashare_paper_day_llm_manifest import PaperDayLLMPreopenContext
 
 
 def _llm_analyzer_identity_document(
@@ -65,7 +65,7 @@ def _llm_analyzer_identity_from_document(value: object) -> AnalyzerAuditIdentity
 
 def _llm_preopen_context_from_document(value: object) -> PaperDayLLMPreopenContext:
     # 延迟导入避免 facade -> payloads 的初始化循环；调用发生在模块初始化后。
-    from .ashare_paper_day import PaperDayLLMPreopenContext
+    from .ashare_paper_day_llm_manifest import PaperDayLLMPreopenContext
 
     document = _llm_object(value, "preopen_context")
     baseline_decision: MacroAnalysisDecision | None = None

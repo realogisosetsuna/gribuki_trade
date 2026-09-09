@@ -222,6 +222,10 @@ def test_adapters_and_services_resolve_to_domain_directories() -> None:
             "services/ashare/ashare_paper_day_llm_payloads.py",
         ),
         (
+            "gribuki_trade.services.ashare.ashare_paper_day_llm_manifest",
+            "services/ashare/ashare_paper_day_llm_manifest.py",
+        ),
+        (
             "gribuki_trade.services.ashare.ashare_paper_day_documents",
             "services/ashare/ashare_paper_day_documents.py",
         ),
@@ -484,6 +488,16 @@ def test_model_extractions_keep_facade_type_identity() -> None:
             "gribuki_trade.services.ashare.ashare_paper_day",
             "gribuki_trade.services.ashare.ashare_paper_day_models",
             ("PaperDayResult",),
+        ),
+        (
+            "gribuki_trade.services.ashare.ashare_paper_day",
+            "gribuki_trade.services.ashare.ashare_paper_day_llm_manifest",
+            (
+                "PaperDayLLMPreopenContext",
+                "PaperDayIntradayLLMPlanFactory",
+                "intraday_llm_manifest_document",
+                "intraday_llm_manifest_compatible",
+            ),
         ),
         (
             "gribuki_trade.gui.integrations",

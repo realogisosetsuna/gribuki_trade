@@ -735,3 +735,12 @@ projection helpers from `reporting/paper_day_renderer.py` to
 section ordering, immutable event JSON serialization, and Markdown contract
 validation; historical private helper identities remain available. Focused
 renderer and module-layout tests plus Ruff, mypy, and compile checks pass.
+
+### 2026-09-10 — PAPER-day LLM manifest contracts
+
+Extracted the pure analyzer identity, point-in-time evidence snapshot, preopen
+LLM context, and restart manifest compatibility contracts into
+`services/ashare/ashare_paper_day_llm_manifest.py`. The PAPER-day runner retains
+session scheduling, recovery, persistence, and execution orchestration while
+the facade re-exports the historical names. Focused PAPER-day and module-layout
+tests pass; transaction and trading side effects were not moved.

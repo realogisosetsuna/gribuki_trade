@@ -48,6 +48,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `services/binance/binance_shadow.py` | `services/binance/binance_shadow_models.py` | Shadow configuration, safety watermark, market quote, adapter snapshot, and session statistics |
 | `services/binance/binance_futures_unattended.py` | `services/binance/binance_futures_unattended_models.py` | Immutable startup and reconciliation summary returned by the unattended Futures service |
 | `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_models.py` | Immutable PAPER-day completion result; the runner retains scheduling, state recovery, execution, persistence, and notification orchestration |
+| `services/ashare/ashare_paper_day.py` | `services/ashare/ashare_paper_day_llm_manifest.py` | Pure LLM analyzer identity, evidence snapshot, preopen context, and restart manifest compatibility; the runner retains session scheduling, storage, and execution orchestration |
 | `cli.py` | `cli_commands/handlers/ashare_review.py` | Candidate-universe mutations and research-review state-machine handlers; the CLI facade retains dispatch and compatibility exports |
 | `cli.py` | `cli_commands/handlers/strategy_lab.py` | Research-only factor discovery, exit-policy evaluation, and result projection handlers |
 | `gui/integrations.py` | `gui/integration_gateway.py` | NapCat/LLM health models, gateway protocol, and credential-backed health/configuration operations; Qt panel remains in the GUI facade |
