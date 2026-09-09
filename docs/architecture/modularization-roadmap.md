@@ -49,6 +49,7 @@ compose these pieces and own retry, reconciliation, and failure policy.
 | `reporting/paper_day_summary.py` | `reporting/paper_day_sidecar_codec.py` | Deterministic sidecar tuple/counter codecs and final-result identity filtering |
 | `adapters/akshare_daily.py` | `adapters/akshare_daily_parsing.py` | Symbol/date normalization, frame parsing, and DailyBar validation |
 | `adapters/market_data/cross_market.py` | `adapters/market_data/cross_market_payload.py` | DataFrame/quote/date/number parsing and exact-universe validation |
+| `features/cross_market_relations.py` | `features/cross_market_models.py` | Cross-market risk enums, point-in-time observations, relation metrics, reports, and calculation-internal pair records |
 | `adapters/market_data/akshare_daily.py` | `adapters/market_data/akshare_daily_stitch.py` | Delayed-history tail stitching and overlap diagnostics |
 | `adapters/market_data/akshare.py` | `adapters/market_data/akshare_payload.py` | Provider record decoding, symbol/number/time normalization, volume-unit conversion, JSONP/Eastmoney payload parsing, and required-column validation |
 | `gui/integrations.py` | `gui/integration_validation.py` | Provider/model/token validation and safe UI error text |

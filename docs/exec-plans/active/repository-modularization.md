@@ -601,3 +601,12 @@ constraints, costs, metrics, evaluation records, and research experiment results
 into `strategy_lab/experiment_models.py`. The experiments facade retains fold
 generation, candidate enumeration, and experiment execution while preserving
 historical imports. Focused tests, Ruff, mypy, and compile checks pass.
+
+
+### 2026-09-09 — cross-market relation models
+
+Extracted cross-market risk enums, point-in-time observations, relation metrics,
+reports, and calculation-internal pair records into
+`features/cross_market_models.py`. The relation facade retains input validation,
+Pearson/EWMA/OLS calculations, and failure projection. Focused tests, Ruff,
+mypy, and compile checks pass.
